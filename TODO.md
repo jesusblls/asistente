@@ -114,11 +114,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ## Baja
 
-- [ ] **Revisar en teléfono "Doctores y Servicios" y "Canales y Telefonía".**
-  Ninguna de las dos se verificó después de volver responsivo el panel; el
-  resumen, la agenda, la bandeja y la bitácora sí.
-  `apps/web/src/app/dashboard/team/`, `settings/` · origen: `7822ab2`
-
 - [ ] **Exportar solo lo sensible.** "Solo sensibles" se calcula en el
   navegador, así que el CSV exporta el filtro completo (la pantalla lo avisa).
   Si hace falta exportar solo lo sensible, mover la clasificación al servidor.

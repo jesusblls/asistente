@@ -873,8 +873,8 @@ export default function TeamAndServicesPage() {
 
       {/* Servicios y Precios */}
       <div className="space-y-4 pt-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-teal-600" /> Catálogo de Servicios y Anticipos
             </h2>
@@ -888,11 +888,88 @@ export default function TeamAndServicesPage() {
               resetServiceForm();
               setIsServiceModalOpen(true);
             }}
-            className="text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1 py-1 px-2 rounded-md hover:bg-teal-50 transition-colors"
+            className="self-start sm:self-auto text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1 py-1 px-2 rounded-md hover:bg-teal-50 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" /> Agregar tratamiento
           </button>
         </div>
+
+        {/* Móvil: tarjetas por tratamiento; la tabla de 6 columnas no cabe en pantallas chicas */}
+        {services.length > 0 && (
+          <div className="md:hidden space-y-3">
+            {services.map((s) => (
+              <div
+                key={s.id}
+                className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 text-sm">{s.name}</div>
+                    {s.description && (
+                      <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{s.description}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() =>
+                      setItemToDelete({
+                        type: 'service',
+                        id: s.id,
+                        name: s.name,
+                      })
+                    }
+                    className="flex h-10 w-10 -mr-1.5 -mt-1 items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                    title="Eliminar tratamiento"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={cn(
+                      'text-xs px-2 py-0.5 rounded-full border font-medium',
+                      getCategoryBadgeClass(s.category)
+                    )}
+                  >
+                    {s.category}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500 tabular-nums font-medium">
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    {s.duration}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      Precio oficial
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 tabular-nums mt-0.5">
+                      {s.price}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      Anticipo
+                    </div>
+                    <div className="mt-0.5">
+                      {s.requiredDepositMxn > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full tabular-nums">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          {s.deposit}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full tabular-nums">
+                          {s.deposit}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {services.length === 0 ? (
           <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">
@@ -918,7 +995,7 @@ export default function TeamAndServicesPage() {
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">

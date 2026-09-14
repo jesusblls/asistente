@@ -34,6 +34,47 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(web): adaptar el catálogo de servicios a móvil con tarjetas
+
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Cerraba la revisión en teléfono que quedó pendiente del cajón lateral
+(`7822ab2`). La revisión confirmó que "Canales y Telefonía" y la lista de
+especialistas ya se portaban bien, pero el catálogo de servicios seguía siendo
+una tabla de seis columnas: 713 px dentro de un contenedor de 334 px. En un
+teléfono, el precio, el anticipo y el botón de eliminar quedaban a un desliz
+horizontal de distancia, contra el criterio que ya siguen doctores, agenda y
+bitácora (tarjetas).
+
+- Bajo 768 px el catálogo se muestra como tarjetas: tratamiento, descripción,
+  categoría, duración, precio oficial y anticipo, con el mismo lenguaje visual
+  que las tarjetas de especialistas. La tabla queda intacta desde 768 px,
+  donde sí cabe completa (952 px de tabla en 1280 px de ventana).
+- El encabezado de la sección se apila en pantallas chicas: antes el título
+  partía en tres líneas entre el badge y "Agregar tratamiento".
+- El botón de eliminar de cada tarjeta tiene objetivo táctil de 40 px.
+
+### Archivos tocados
+
+- `apps/web/src/app/dashboard/team/page.tsx` — tarjetas móviles, encabezado responsivo y tabla oculta bajo 768 px
+- `TODO.md` — se retiró el pendiente de la revisión en teléfono
+- `BITACORA.md` — esta entrada
+
+### Verificación
+
+- `npm run build --workspace=@asistente/web`: compila y pasa TypeScript.
+- ESLint: sin avisos en el archivo tocado y sin cambios en el total (12).
+- Con Playwright (navegador real, administrador desechable creado y borrado):
+  - 390 px: sin scroll horizontal (390/390), cinco tarjetas con precios ($400
+    a $3,200 MXN) y anticipos visibles, tabla oculta, botón de eliminar
+    visible y funcional (abre el modal con el nombre y cancelar cierra).
+  - 1280 px: tabla visible con sus seis columnas, sin scroll interno y
+    tarjetas ocultas; el encabezado vuelve a una sola línea.
+
+---
+
 ## [2026-09-14] fix(ci): validar la minúscula inicial sin depender del locale
 
 **Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `c358cfa`
