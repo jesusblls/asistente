@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# Valida que el mensaje de commit siga Conventional Commits.
+# Protocolo completo: CLAUDE.md § 7.
+#
+# Activación (una vez por clon):
+#   git config core.hooksPath .githooks
+
+set -euo pipefail
+
+MENSAJE_PATH="$1"
+
+# Se ignoran comentarios y el diff que git añade con `commit -v`.
+ENCABEZADO="$(grep -v '^#' "$MENSAJE_PATH" | sed '/^diff --git/,$d' | sed '/./,$!d' | head -n 1)"
+
+TIPOS='feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
+PATRON="^(${TIPOS})(\([a-z0-9,._-]+\))?!?: .+"
+
+rechazar() {
+  echo "" >&2
+  echo "  ✖ Commit rechazado: $1" >&2
+  echo "" >&2
+  echo "  Recibido:" >&2
+  echo "    ${ENCABEZADO}" >&2
+  echo "" >&2
+  echo "  Formato esperado:" >&2
+  echo "    tipo(alcance): descripción en imperativo y minúscula" >&2
+  echo "" >&2
+  echo "  Tipos:    feat, fix, perf, refactor, docs, test, build, ci, chore, style, revert" >&2
+  echo "  Alcances: agent, api, web, db, voice, queue, payments, webhooks, auth, seguridad, deps, docs" >&2
+  echo "" >&2
+  echo "  Ejemplos:" >&2
+  echo "    fix(agent): anclar identidad del paciente al canal autenticado" >&2
+  echo "    perf(api): paginar listados de citas y conversaciones" >&2
+  echo "    feat(payments)!: exigir firma fresca en el webhook" >&2
+  echo "" >&2
+  echo "  No uses --no-verify: corrige el mensaje." >&2
+  echo "  Recuerda también tu entrada en BITACORA.md (CLAUDE.md § 7)." >&2
+  echo "" >&2
+  exit 1
+}
+
+# Los merges y reverts automáticos de git no siguen el formato.
+case "$ENCABEZADO" in
+  "Merge "*|"Revert "*|"fixup!"*|"squash!"*) exit 0 ;;
+esac
+
+if [ -z "$ENCABEZADO" ]; then
+  rechazar "el mensaje está vacío."
+fi
+
+if ! printf '%s' "$ENCABEZADO" | grep -Eq "$PATRON"; then
+  rechazar "no sigue el formato tipo(alcance): descripción."
+fi
+
+if [ "${#ENCABEZADO}" -gt 72 ]; then
+  rechazar "el encabezado tiene ${#ENCABEZADO} caracteres; el máximo es 72."
+fi
+
+case "$ENCABEZADO" in
+  *.) rechazar "la descripción no debe terminar en punto." ;;
+esac
+
+DESCRIPCION="${ENCABEZADO#*: }"
+case "$DESCRIPCION" in
+  [A-ZÁÉÍÓÚÑ]*) rechazar "la descripción debe empezar en minúscula." ;;
+esac
+
+exit 0
