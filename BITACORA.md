@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-13] feat(web): pantalla de bitácora de auditoría en el panel
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `da9e937`
 
 ### Qué se hizo
 
