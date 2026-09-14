@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] feat(web): adaptar el catálogo de servicios a móvil con tarjetas
 
-**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `8703c1a`
 
 ### Qué se hizo
 
