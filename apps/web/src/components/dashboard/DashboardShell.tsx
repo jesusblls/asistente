@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -9,7 +9,6 @@ import {
   Calendar,
   Users,
   Settings,
-  Bot,
   Sparkles,
   ExternalLink,
   ChevronDown,
@@ -19,13 +18,12 @@ import {
   Zap,
   RotateCcw,
   CheckCircle2,
-  Sliders,
-  Radio,
   Eye,
   Activity,
   LogOut,
+  Menu,
 } from 'lucide-react';
-import { useTenant, TenantItem } from '../../context/TenantContext';
+import { useTenant } from '../../context/TenantContext';
 import { clearSession, getUser, type AuthUserInfo } from '../../lib/api';
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -49,6 +47,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [isResetting, setIsResetting] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
+  // En pantallas menores a 1024 px la barra lateral es un cajón deslizable.
+  const [isNavOpen, setIsNavOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeNavButtonRef = useRef<HTMLButtonElement>(null);
+
   // Formulario nuevo cliente
   const [newClinicName, setNewClinicName] = useState('');
   const [newClinicCity, setNewClinicCity] = useState('Monterrey, N.L.');
@@ -60,6 +63,22 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSessionUser(getUser());
   }, []);
+
+  const closeNav = useCallback((returnFocus: boolean) => {
+    setIsNavOpen(false);
+    if (returnFocus) menuButtonRef.current?.focus();
+  }, []);
+
+  // Al abrir el cajón el foco entra en él; Escape lo cierra y lo devuelve al botón.
+  useEffect(() => {
+    if (!isNavOpen) return;
+    closeNavButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeNav(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isNavOpen, closeNav]);
 
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,11 +149,45 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100">
+    <div className="flex h-dvh overflow-hidden bg-slate-100">
+      {/* Fondo del cajón móvil: tocarlo cierra la navegación */}
+      {isNavOpen && (
+        <div
+          aria-hidden="true"
+          onClick={() => closeNav(true)}
+          className="fixed inset-0 z-30 bg-slate-900/50 lg:hidden"
+        />
+      )}
+
       {/* ============================================================ */}
-      {/* SIDEBAR LATERAL */}
+      {/* SIDEBAR LATERAL (cajón deslizable bajo 1024 px) */}
       {/* ============================================================ */}
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 select-none">
+      <aside
+        id="panel-nav"
+        aria-label="Navegación del panel"
+        // La visibilidad cambia al instante al abrir y con retraso al cerrar. Si
+        // también se animara al abrir, en el primer cuadro seguiría oculta y el
+        // foco no podría entrar al cajón.
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col border-r border-slate-800 bg-slate-900 text-slate-300 select-none duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none lg:static lg:z-auto lg:w-64 lg:max-w-none lg:shrink-0 lg:translate-x-0 lg:visible lg:transition-none ${
+          isNavOpen
+            ? 'translate-x-0 visible transition-transform'
+            : '-translate-x-full invisible transition-[transform,visibility]'
+        }`}
+      >
+        {/* Cabecera del cajón (solo móvil) */}
+        <div className="flex items-center justify-between px-4 pt-3 lg:hidden">
+          <span className="text-sm font-bold text-white">AsistentePro</span>
+          <button
+            ref={closeNavButtonRef}
+            type="button"
+            onClick={() => closeNav(true)}
+            aria-label="Cerrar menú"
+            className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
         {/* Selector de Clínica / Multi-Tenant */}
         <div className="p-4 border-b border-slate-800 relative">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center justify-between">
@@ -198,6 +251,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   onClick={() => {
                     setIsTenantDropdownOpen(false);
                     setIsNewTenantModalOpen(true);
+                    setIsNavOpen(false);
                   }}
                   className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-500 rounded-lg transition-colors shadow-sm shadow-teal-600/20"
                 >
@@ -223,7 +277,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                onClick={() => setIsNavOpen(false)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-teal-600 text-white shadow-sm'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -251,7 +307,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/"
             target="_blank"
-            className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <span className="flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -299,17 +355,29 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* ============================================================ */}
       {/* CONTENIDO PRINCIPAL CON TOPBAR */}
       {/* ============================================================ */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-dvh overflow-hidden">
         {/* Top Navbar con Toggle de Modo y Herramientas Sandbox */}
-        <header className="bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          {/* Lado izquierdo: Información de la clínica y canal */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-800">{activeTenant?.name || 'Sonrisas Polanco'}</span>
-              <span className="text-[11px] text-slate-400 font-mono">({activeTenant?.phoneE164 || '+52'})</span>
+        <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          {/* Lado izquierdo: menú (móvil), clínica y canal */}
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              ref={menuButtonRef}
+              type="button"
+              onClick={() => setIsNavOpen(true)}
+              aria-controls="panel-nav"
+              aria-expanded={isNavOpen}
+              aria-label="Abrir menú"
+              className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 transition-colors lg:hidden"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-bold text-slate-800 truncate">{activeTenant?.name || 'Sonrisas Polanco'}</span>
+              <span className="hidden sm:inline text-[11px] text-slate-400 font-mono">({activeTenant?.phoneE164 || '+52'})</span>
             </div>
 
-            <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 pl-3 border-l border-slate-200">
+            <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 pl-3 border-l border-slate-200 shrink-0">
               <Activity className="w-3.5 h-3.5 text-emerald-600" />
               <span>WhatsApp Cloud API Activa</span>
             </div>
@@ -319,14 +387,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center flex-wrap gap-2.5">
             {/* HERRAMIENTAS DE PRUEBA (Sandbox Tools) */}
             {mode === 'live' && (
-              <div className="flex items-center gap-1.5 mr-2">
+              <div className="flex items-center gap-1.5 sm:mr-2">
                 <button
                   onClick={handleSeed}
                   disabled={isSeeding}
                   className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors"
                   title="Generar 4 citas de prueba en este cliente para ver cómo se llena la agenda"
                 >
-                  <Zap className={`w-3 h-3 ${isSeeding ? 'animate-bounce text-amber-500' : 'text-teal-600'}`} />
+                  <Zap className={`w-3 h-3 ${isSeeding ? 'animate-pulse text-amber-500' : 'text-teal-600'}`} />
                   {isSeeding ? 'Generando...' : '+ Citas Demo'}
                 </button>
 
@@ -356,7 +424,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <span className={`w-2 h-2 rounded-full ${mode === 'live' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                🟢 En Vivo / Sandbox
+                <span className="sm:hidden">En Vivo</span>
+                <span className="hidden sm:inline">🟢 En Vivo / Sandbox</span>
               </button>
 
               <button
@@ -371,7 +440,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                🟣 Modo Demo (Clientes)
+                <span className="sm:hidden">Demo</span>
+                <span className="hidden sm:inline">🟣 Modo Demo (Clientes)</span>
               </button>
             </div>
           </div>
@@ -379,7 +449,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         {/* Banner de Notificación Rápida */}
         {actionNotice && (
-          <div className="bg-teal-600 text-white text-xs font-medium px-6 py-2 flex items-center justify-between animate-in slide-in-from-top-1 duration-150">
+          <div className="bg-teal-600 text-white text-xs font-medium px-4 sm:px-6 py-2 flex items-center justify-between animate-in slide-in-from-top-1 duration-150">
             <span>{actionNotice}</span>
             <button onClick={() => setActionNotice(null)} className="text-white/80 hover:text-white">
               <X className="w-3.5 h-3.5" />
@@ -389,16 +459,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         {/* Banner Informativo si está en Modo Demo */}
         {mode === 'demo' && (
-          <div className="bg-purple-50 border-b border-purple-200 px-6 py-2.5 flex items-center justify-between text-xs text-purple-900 font-medium">
-            <div className="flex items-center gap-2">
+          <div className="bg-purple-50 border-b border-purple-200 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 text-xs text-purple-900 font-medium">
+            <div className="flex items-center gap-2 min-w-0">
               <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
               <span>
-                <strong>Modo Demo Showcase Activo:</strong> Estás visualizando datos comerciales ficticios con métricas de alto impacto, ideal para presentaciones de venta con clínicas prospecto.
+                <strong>Modo Demo Showcase Activo</strong>
+                <span className="hidden sm:inline">
+                  : Estás visualizando datos comerciales ficticios con métricas de alto impacto, ideal para presentaciones de venta con clínicas prospecto.
+                </span>
               </span>
             </div>
             <button
               onClick={() => setMode('live')}
-              className="text-xs font-bold text-purple-700 underline hover:text-purple-900 ml-4 shrink-0"
+              className="text-xs font-bold text-purple-700 underline hover:text-purple-900 shrink-0"
             >
               Volver a Modo En Vivo
             </button>

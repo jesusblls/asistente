@@ -34,6 +34,60 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(web): barra lateral como cajón en pantallas angostas
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+La barra lateral medía 256 px fijos y nunca se colapsaba. En un teléfono le
+dejaba unos 120 px al contenido, así que ninguna pantalla del panel era usable.
+Estaba anotado como pendiente en la entrada anterior.
+
+- **Bajo 1024 px la barra es un cajón.** Se abre con el botón de menú y se
+  cierra con Escape, al tocar el fondo o al elegir una sección. Al abrirlo, el
+  foco entra en él; al cerrarlo, vuelve al botón. Cerrado queda `invisible`:
+  no se alcanza con el teclado ni lo lee un lector de pantalla.
+- **Desde 1024 px queda fija, como antes.** El corte está en 1024 y no en 768
+  porque la agenda y la bandeja son densas: en una tablet vertical les conviene
+  todo el ancho.
+- **Encabezado compacto** en pantallas angostas: selector "En Vivo / Demo"
+  corto, teléfono oculto y aviso de Demo en una sola línea.
+- `h-dvh` en lugar de `h-screen`, para que la altura no salte cuando aparece o
+  se oculta la barra del navegador en el teléfono.
+- Objetivos táctiles de 44 px en el botón de menú, el de cierre y los enlaces
+  del cajón.
+- El `animate-bounce` del botón "+ Citas Demo" pasó a un pulso; lo marcaba el
+  detector de diseño.
+- **Detalle técnico:** la visibilidad del cajón cambia al instante al abrir y
+  con retraso al cerrar. Si también se animara al abrir, en el primer cuadro
+  seguiría oculto y el foco no podría entrar. Lo detectó la prueba con
+  Playwright en un iPhone emulado, no la inspección manual.
+
+### Archivos tocados
+
+- `apps/web/src/components/dashboard/DashboardShell.tsx`
+
+### Verificación
+
+- `tsc` limpio; ESLint sin avisos nuevos (los dos que quedan ya existían)
+- En el navegador: móvil con el cajón cerrado y abierto, Escape con el foco de
+  vuelta al botón, tablet con cajón y escritorio con la barra fija
+- En Playwright, con un iPhone 13 emulado y toque real: abrir, tocar el fondo
+  para cerrar, y tocar una sección, que navega y cierra
+- Foco al abrir, repetido tras la corrección: 3 de 3 intentos entraron a
+  "Cerrar menú" y volvieron a "Abrir menú" con Escape. En escritorio la barra
+  sigue fija (256 px, visible) y el botón de menú no aparece
+- Se usó un administrador desechable, creado y borrado para esta prueba
+
+### Pendientes derivados
+
+- **La bandeja omnicanal sigue sin funcionar en teléfono.** Es un diseño de
+  dos paneles lado a lado (lista de 320 px más chat) y necesita su propio
+  patrón lista → detalle.
+
+---
+
 ## [2026-09-13] feat(web): pantalla de bitácora de auditoría en el panel
 
 **Autor:** Claude Opus 5 · **Commit:** `da9e937`
