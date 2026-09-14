@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] feat(api): validar variables de produccion y limpiar eslint en web
 
-**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `022a4a9`
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `64bdeaa`
 
 ### Qué se hizo
 
