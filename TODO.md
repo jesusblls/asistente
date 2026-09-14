@@ -25,23 +25,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   `migrate diff` no los detecta, así que la protección desaparecería sin aviso.
   `packages/database/prisma/migrations/0003_audit_log/` · origen: `402dfc4`, `052a205`
 
-- [ ] **Definir las variables obligatorias de producción.** Sin ellas la API no
-  arranca, responde 503 o rechaza la operación:
-  - `JWT_SECRET` (32 caracteres o más)
-  - `CREDENTIALS_ENCRYPTION_KEY` (32 bytes en base64; obligatoria para guardar
-    credenciales de canal)
-  - `CORS_ORIGINS`
-  - `PUBLIC_API_HOST`
-  - `META_APP_SECRET`
-  - `TWILIO_AUTH_TOKEN`
-  - `MERCADOPAGO_WEBHOOK_SECRET`
-  - `PLATFORM_ADMIN_EMAILS`
-
-  Además, detrás de un balanceador, `TRUST_PROXY=true`: sin ella, la auditoría
-  registra la IP del proxy para todos. Y `METRICS_TOKEN` para exponer
-  `/metrics`.
-  `.env.example` · origen: `402dfc4`, `052a205`
-
 ## Media
 
 ### Auditoría
@@ -92,13 +75,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   - `apps/web/src/app/dashboard/calendar/page.tsx` (1003)
 
   origen: `402dfc4`
-
-- [ ] **12 avisos de ESLint en el panel,** todos anteriores a estas sesiones:
-  - 8 × `react-hooks/set-state-in-effect` (calendario ×2, `TenantContext` ×2,
-    bandeja, configuración, `AuthGuard`, `DashboardShell`)
-  - 1 × `react-hooks/immutability` (`usePolling`)
-  - 1 × `react-hooks/purity` (calendario)
-  - 2 × navegación con `window.location.href` (`lib/api.ts`, `DashboardShell`)
 
 - [ ] **30 usos de `any` y 51 `console.*`** fuera del logger estructurado de
   `@asistente/observability`, sin contar las suites de prueba.

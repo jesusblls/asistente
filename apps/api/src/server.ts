@@ -12,6 +12,7 @@ import {
 } from '@asistente/observability';
 import { registerAuth } from './lib/auth.js';
 import { registerErrorHandler, registerRawJsonBody } from './lib/http.js';
+import { assertProductionEnv } from './lib/env.js';
 import { jobQueue, startQueueWorker } from './services/queue/handlers.js';
 import { authRoutes } from './routes/auth.js';
 import { webhookRoutes } from './routes/webhooks.js';
@@ -45,6 +46,7 @@ function resolveCorsOrigins(): string[] {
 }
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
+  assertProductionEnv();
   const server = fastify({
     logger:
       options.logger === undefined

@@ -59,11 +59,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [newClinicPhone, setNewClinicPhone] = useState('+5281');
   const [newClinicAddress, setNewClinicAddress] = useState('');
   const [isSubmittingTenant, setIsSubmittingTenant] = useState(false);
-  const [sessionUser, setSessionUser] = useState<AuthUserInfo | null>(null);
-
-  useEffect(() => {
-    setSessionUser(getUser());
-  }, []);
+  const [sessionUser] = useState<AuthUserInfo | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return getUser();
+  });
 
   const closeNav = useCallback((returnFocus: boolean) => {
     setIsNavOpen(false);

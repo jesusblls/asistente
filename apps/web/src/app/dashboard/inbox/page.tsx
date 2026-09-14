@@ -434,11 +434,13 @@ export default function OmnichannelInboxPage() {
   }, []);
 
   // Sincronizar selección de conversación activa al cambiar modo
-  useEffect(() => {
+  const [prevMode, setPrevMode] = useState(mode);
+  if (mode !== prevMode) {
+    setPrevMode(mode);
     if (mode === 'demo') {
       setActiveConvId('demo-conv-1');
     }
-  }, [mode]);
+  }
 
   // Sondeo resiliente de conversaciones: pausa con la pestaña oculta y aplica backoff.
   const pollConversations = useCallback(

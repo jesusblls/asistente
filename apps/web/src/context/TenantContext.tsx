@@ -63,27 +63,25 @@ interface TenantContextType {
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<DashboardMode>('live');
-  const [tenants, setTenants] = useState<TenantItem[]>([]);
-  const [activeTenantId, setActiveTenantIdState] = useState<string>('');
-  const [loadingTenants, setLoadingTenants] = useState<boolean>(true);
-
-  // Inicializar modo y clínica guardada en localStorage
-  useEffect(() => {
+  const [mode, setModeState] = useState<DashboardMode>(() => {
+    if (typeof window === 'undefined') return 'live';
     try {
-      const savedMode = localStorage.getItem('asistente_dashboard_mode') as DashboardMode;
-      if (savedMode === 'live' || savedMode === 'demo') {
-        setModeState(savedMode);
-      }
-
-      const savedTenantId = localStorage.getItem('asistente_active_tenant_id');
-      if (savedTenantId) {
-        setActiveTenantIdState(savedTenantId);
-      }
-    } catch (e) {
-      // Ignorar errores de SSR
+      const saved = localStorage.getItem('asistente_dashboard_mode') as DashboardMode;
+      return saved === 'live' || saved === 'demo' ? saved : 'live';
+    } catch {
+      return 'live';
     }
-  }, []);
+  });
+  const [tenants, setTenants] = useState<TenantItem[]>([]);
+  const [activeTenantId, setActiveTenantIdState] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return localStorage.getItem('asistente_active_tenant_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [loadingTenants, setLoadingTenants] = useState<boolean>(true);
 
   const setMode = useCallback((newMode: DashboardMode) => {
     setModeState(newMode);
@@ -106,7 +104,6 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      setLoadingTenants(true);
       const res = await apiFetch(`${API_BASE_URL}/api/tenants`);
       if (res.ok) {
         const data = await res.json();
@@ -134,8 +131,43 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshTenants();
-  }, [refreshTenants]);
+    let active = true;
+    const init = async () => {
+      if (!isAuthenticated()) {
+        if (active) setLoadingTenants(false);
+        return;
+      }
+      try {
+        const res = await apiFetch(`${API_BASE_URL}/api/tenants`);
+        if (active && res.ok) {
+          const data = await res.json();
+          setTenants(data);
+          if (data.length > 0) {
+            const sessionTenant = getSessionTenant();
+            setActiveTenantIdState((prev) => {
+              const exists = data.some((t: TenantItem) => t.id === prev);
+              const sessionMatch = sessionTenant
+                ? data.find((t: TenantItem) => t.id === sessionTenant.id || t.slug === sessionTenant.slug)
+                : undefined;
+              const chosen = exists ? prev : (sessionMatch ? sessionMatch.id : data[0].id);
+              try {
+                localStorage.setItem('asistente_active_tenant_id', chosen);
+              } catch (e) {}
+              return chosen;
+            });
+          }
+        }
+      } catch (err) {
+        if (active) console.error('Error cargando tenants:', err);
+      } finally {
+        if (active) setLoadingTenants(false);
+      }
+    };
+    init();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Crear nuevo cliente
   const createTenant = useCallback(

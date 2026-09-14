@@ -80,43 +80,50 @@ const AI_TONES = [
 export default function SettingsPage() {
   const { mode, setMode, activeTenant, updateTenant, refreshTenants, loadingTenants } = useTenant();
 
-  // Estado del formulario para modo Live
-  const [formData, setFormData] = useState({
-    name: '',
-    phoneE164: '',
-    address: '',
-    welcomeMessage: '',
-    emergencyInstructions: '',
-  });
+  // Estado del formulario para modo Live con sincronización reactiva al cambiar activeTenant
+  const [prevTenantId, setPrevTenantId] = useState(activeTenant?.id);
+  const [formData, setFormData] = useState(() => ({
+    name: activeTenant?.name || '',
+    phoneE164: activeTenant?.phoneE164 || '',
+    address: activeTenant?.address || '',
+    welcomeMessage:
+      activeTenant?.welcomeMessage ||
+      (activeTenant ? `¡Hola! Bienvenido a ${activeTenant.name}. ¿En qué podemos apoyarte hoy?` : ''),
+    emergencyInstructions:
+      activeTenant?.emergencyInstructions ||
+      'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
+  }));
+
+  if (activeTenant && activeTenant.id !== prevTenantId) {
+    setPrevTenantId(activeTenant.id);
+    setFormData({
+      name: activeTenant.name || '',
+      phoneE164: activeTenant.phoneE164 || '',
+      address: activeTenant.address || '',
+      welcomeMessage:
+        activeTenant.welcomeMessage ||
+        `¡Hola! Bienvenido a ${activeTenant.name}. ¿En qué podemos apoyarte hoy?`,
+      emergencyInstructions:
+        activeTenant.emergencyInstructions ||
+        'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
+    });
+  }
 
   const [selectedTone, setSelectedTone] = useState<string>('empathetic');
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sincronizar datos de la clínica activa cuando cambie
+  // Sincronizar tono guardado en almacenamiento local
   useEffect(() => {
-    if (activeTenant) {
-      setFormData({
-        name: activeTenant.name || '',
-        phoneE164: activeTenant.phoneE164 || '',
-        address: activeTenant.address || '',
-        welcomeMessage:
-          activeTenant.welcomeMessage ||
-          `¡Hola! Bienvenido a ${activeTenant.name}. ¿En qué podemos apoyarte hoy?`,
-        emergencyInstructions:
-          activeTenant.emergencyInstructions ||
-          'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
-      });
-
-      try {
-        const savedTone = localStorage.getItem(`asistente_ai_tone_${activeTenant.id}`);
-        if (savedTone) {
-          setSelectedTone(savedTone);
-        }
-      } catch (e) {
-        // Ignorar en SSR
+    if (!activeTenant) return;
+    try {
+      const savedTone = localStorage.getItem(`asistente_ai_tone_${activeTenant.id}`);
+      if (savedTone) {
+        queueMicrotask(() => setSelectedTone(savedTone));
       }
+    } catch {
+      // Ignorar en SSR
     }
   }, [activeTenant]);
 

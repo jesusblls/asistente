@@ -71,6 +71,8 @@ export function usePolling(
     }
   }, []);
 
+  const runCycleRef = useRef<(() => Promise<void>) | null>(null);
+
   const runCycle = useCallback(async () => {
     if (inFlightRef.current) return;
     const generation = generationRef.current;
@@ -112,9 +114,13 @@ export function usePolling(
 
     clearTimer();
     timerRef.current = setTimeout(() => {
-      void runCycle();
+      void runCycleRef.current?.();
     }, baseDelay + jitter);
   }, [backoffFactor, clearTimer, enabled, intervalMs, maxBackoffMs, pauseWhenHidden]);
+
+  useEffect(() => {
+    runCycleRef.current = runCycle;
+  }, [runCycle]);
 
   const refresh = useCallback(() => {
     clearTimer();
@@ -134,7 +140,9 @@ export function usePolling(
 
     activeRef.current = true;
     generationRef.current += 1;
-    void runCycle();
+    queueMicrotask(() => {
+      void runCycleRef.current?.();
+    });
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {

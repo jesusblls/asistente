@@ -195,22 +195,52 @@ const DEMO_APPOINTMENTS: ApiAppointment[] = [
   },
 ];
 
+const DEMO_DOCTORS: TenantDoctor[] = [
+  { id: 'd-1', name: 'Dra. Sofía Silva', specialty: 'Odontología General y Estética' },
+  { id: 'd-2', name: 'Dr. Alejandro Morales', specialty: 'Endodoncia y Cirugía' },
+];
+
+const DEMO_SERVICES: TenantService[] = [
+  { id: 's-1', name: 'Limpieza Dental con Ultrasonido', priceMxn: 850, durationMinutes: 45, requiredDepositMxn: 200 },
+  { id: 's-2', name: 'Blanqueamiento Dental LED', priceMxn: 2600, durationMinutes: 60, requiredDepositMxn: 500 },
+  { id: 's-3', name: 'Tratamiento de Conductos', priceMxn: 3200, durationMinutes: 90, requiredDepositMxn: 300 },
+];
+
 export default function CalendarPage() {
   const { mode, activeTenant, activeTenantId } = useTenant();
-  const [appointments, setAppointments] = useState<ApiAppointment[]>([]);
-  const [doctors, setDoctors] = useState<TenantDoctor[]>([]);
-  const [services, setServices] = useState<TenantService[]>([]);
+  const [appointments, setAppointments] = useState<ApiAppointment[]>(() =>
+    mode === 'demo' ? DEMO_APPOINTMENTS : []
+  );
+  const [doctors, setDoctors] = useState<TenantDoctor[]>(() =>
+    mode === 'demo' ? DEMO_DOCTORS : []
+  );
+  const [services, setServices] = useState<TenantService[]>(() =>
+    mode === 'demo' ? DEMO_SERVICES : []
+  );
   const [tenantId, setTenantId] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(() => mode !== 'demo');
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Ahora');
+
+  // Ajuste de estado durante render al cambiar de modo
+  const [prevMode, setPrevMode] = useState(mode);
+  if (mode !== prevMode) {
+    setPrevMode(mode);
+    if (mode === 'demo') {
+      setDoctors(DEMO_DOCTORS);
+      setServices(DEMO_SERVICES);
+      setAppointments(DEMO_APPOINTMENTS);
+      setLoading(false);
+      setLastSyncTime('Demo');
+    }
+  }
 
   // Filtros
   const [selectedDoctor, setSelectedDoctor] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dateView, setDateView] = useState<'all' | 'today' | 'tomorrow' | 'custom'>('all');
-  const [customDate, setCustomDate] = useState<string>('');
+  const [customDate, setCustomDate] = useState<string>(() => todayInMexicoCity());
 
   // Modal para agregar cita
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -224,43 +254,39 @@ export default function CalendarPage() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Cargar clínicas, doctores y servicios
-  const loadTenantData = useCallback(async () => {
-    if (mode === 'demo') {
-      setDoctors([
-        { id: 'd-1', name: 'Dra. Sofía Silva', specialty: 'Odontología General y Estética' },
-        { id: 'd-2', name: 'Dr. Alejandro Morales', specialty: 'Endodoncia y Cirugía' },
-      ]);
-      setServices([
-        { id: 's-1', name: 'Limpieza Dental con Ultrasonido', priceMxn: 850, durationMinutes: 45, requiredDepositMxn: 200 },
-        { id: 's-2', name: 'Blanqueamiento Dental LED', priceMxn: 2600, durationMinutes: 60, requiredDepositMxn: 500 },
-        { id: 's-3', name: 'Tratamiento de Conductos', priceMxn: 3200, durationMinutes: 90, requiredDepositMxn: 300 },
-      ]);
-      setLoading(false);
-      return;
-    }
+  // Cargar catálogo de doctores y servicios de la clínica en vivo
+  useEffect(() => {
+    if (mode !== 'live' || !activeTenantId) return;
 
-    try {
-      const res = await apiFetch(`${API_BASE_URL}/api/tenants`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          const current = data.find((t: any) => t.id === activeTenantId) || data[0];
-          setTenantId(current.id);
-          setDoctors(current.doctors || []);
-          setServices(current.services || []);
-          if (current.doctors?.length > 0 && !newDoctorId) {
-            setNewDoctorId(current.doctors[0].id);
-          }
-          if (current.services?.length > 0 && !newServiceId) {
-            setNewServiceId(current.services[0].id);
+    let active = true;
+    const fetchCatalog = async () => {
+      try {
+        const res = await apiFetch(`${API_BASE_URL}/api/tenants`);
+        if (active && res.ok) {
+          const data = await res.json();
+          if (data && data.length > 0) {
+            const current = data.find((t: any) => t.id === activeTenantId) || data[0];
+            setTenantId(current.id);
+            setDoctors(current.doctors || []);
+            setServices(current.services || []);
+            if (current.doctors?.length > 0) {
+              setNewDoctorId((prev) => prev || current.doctors[0].id);
+            }
+            if (current.services?.length > 0) {
+              setNewServiceId((prev) => prev || current.services[0].id);
+            }
           }
         }
+      } catch (err) {
+        if (active) console.warn('Error cargando doctores y servicios:', err);
       }
-    } catch (err) {
-      console.warn('Error cargando doctores y servicios:', err);
-    }
-  }, [mode, activeTenantId, newDoctorId, newServiceId]);
+    };
+
+    fetchCatalog();
+    return () => {
+      active = false;
+    };
+  }, [mode, activeTenantId]);
 
   // Cargar citas desde la API o modo demo
   const fetchAppointments = useCallback(async (options: { showLoading?: boolean; signal?: AbortSignal } = {}) => {
@@ -305,11 +331,6 @@ export default function CalendarPage() {
       setRefreshing(false);
     }
   }, [mode, activeTenantId]);
-
-  // Carga inicial de catálogo (doctores/servicios) al cambiar de clínica o modo.
-  useEffect(() => {
-    loadTenantData();
-  }, [loadTenantData]);
 
   // Polling resiliente de citas: pausa con la pestaña oculta y aplica backoff.
   const pollAppointments = useCallback(
@@ -417,16 +438,15 @@ export default function CalendarPage() {
   const getCdmxDayStr = (date: Date) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(date);
 
-  const todayDayStr = getCdmxDayStr(new Date());
-  const tomorrowDayStr = (() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return getCdmxDayStr(tomorrow);
-  })();
+  const todayDate = useMemo(() => new Date(), []);
+  const tomorrowDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d;
+  }, []);
 
-  useEffect(() => {
-    setCustomDate((current) => current || todayDayStr);
-  }, [todayDayStr]);
+  const todayDayStr = useMemo(() => getCdmxDayStr(todayDate), [todayDate]);
+  const tomorrowDayStr = useMemo(() => getCdmxDayStr(tomorrowDate), [tomorrowDate]);
 
   // Filtrado de citas
   const filteredAppointments = useMemo(() => {
@@ -517,7 +537,7 @@ export default function CalendarPage() {
               timeZone: 'America/Mexico_City',
               day: 'numeric',
               month: 'short',
-            }).format(new Date())}
+            }).format(todayDate)}
             )
           </div>
           <div className="text-2xl font-bold text-slate-900 mt-1">{todayCount}</div>
@@ -531,7 +551,7 @@ export default function CalendarPage() {
               timeZone: 'America/Mexico_City',
               day: 'numeric',
               month: 'short',
-            }).format(new Date(Date.now() + 86_400_000))}
+            }).format(tomorrowDate)}
             )
           </div>
           <div className="text-2xl font-bold text-teal-900 mt-1">{tomorrowCount}</div>

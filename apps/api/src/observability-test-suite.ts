@@ -122,6 +122,12 @@ async function runObservabilityTests() {
     delete process.env.METRICS_TOKEN;
     process.env.NODE_ENV = 'production';
     process.env.CORS_ORIGINS = 'http://localhost:3001';
+    process.env.PUBLIC_API_HOST = 'api.clinica.mx';
+    process.env.CREDENTIALS_ENCRYPTION_KEY = Buffer.alloc(32, 'k').toString('base64');
+    process.env.META_APP_SECRET = 'test-meta-secret';
+    process.env.TWILIO_AUTH_TOKEN = 'test-twilio-token';
+    process.env.MERCADOPAGO_WEBHOOK_SECRET = 'test-mp-secret';
+    process.env.PLATFORM_ADMIN_EMAILS = 'admin@clinica.mx';
 
     const productionApp = await buildServer({ logger: false });
     await productionApp.ready();
@@ -138,6 +144,12 @@ async function runObservabilityTests() {
     else process.env.METRICS_TOKEN = originalMetricsToken;
     if (originalCorsOrigins === undefined) delete process.env.CORS_ORIGINS;
     else process.env.CORS_ORIGINS = originalCorsOrigins;
+    delete process.env.PUBLIC_API_HOST;
+    delete process.env.CREDENTIALS_ENCRYPTION_KEY;
+    delete process.env.META_APP_SECRET;
+    delete process.env.TWILIO_AUTH_TOKEN;
+    delete process.env.MERCADOPAGO_WEBHOOK_SECRET;
+    delete process.env.PLATFORM_ADMIN_EMAILS;
     await app.close();
   }
 

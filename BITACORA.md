@@ -34,6 +34,59 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(api): validar variables de produccion y limpiar eslint en web
+
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `022a4a9`
+
+### Qué se hizo
+
+Se atendieron los dos pendientes acordados de `TODO.md`:
+1. **Validación de variables obligatorias de producción al arranque en `apps/api`:**
+   - Creado el módulo `apps/api/src/lib/env.ts` con `validateEnvironment(env)` y `assertProductionEnv(env)` que verifica de forma estricta las variables requeridas en modo producción (`NODE_ENV=production`):
+     - `JWT_SECRET` (mínimo 32 caracteres).
+     - `CREDENTIALS_ENCRYPTION_KEY` (exactamente 32 bytes decodificados en Base64).
+     - `CORS_ORIGINS`, `PUBLIC_API_HOST`, `META_APP_SECRET`, `TWILIO_AUTH_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `PLATFORM_ADMIN_EMAILS`.
+     - Avisos de advertencia en logs ante ausencia de `TRUST_PROXY=true` o `METRICS_TOKEN`.
+   - Integrado en `buildServer()` (`apps/api/src/server.ts`) para fallar de inmediato en el arranque si faltan variables críticas en producción, garantizando arranque seguro.
+   - Creada la suite `apps/api/src/env-validation-test-suite.ts` con 12 casos de prueba de validación y fallos esperados.
+   - Ajustada la suite de observabilidad para inyectar las variables requeridas durante su prueba de servidor de producción.
+
+2. **Resolución del 100% de los avisos de ESLint en `apps/web` (0 errores, 0 warnings):**
+   - Corregidos los 8 avisos de `react-hooks/set-state-in-effect` adaptando los componentes al patrón oficial de React 19:
+     - `DashboardShell.tsx`: Inicialización perezosa de `sessionUser` con `useState(() => getUser())` y navegación con `router.replace('/login')`.
+     - `AuthGuard.tsx`: Migrado al patrón `useSyncExternalStore` para suscribirse y reflejar sincrónicamente el estado de autenticación del cliente sin llamadas a `setState` en efectos.
+     - `TenantContext.tsx`: Inicializadores perezosos para leer el almacenamiento local en montaje y efecto de sincronización no bloqueante.
+     - `settings/page.tsx`: Ajuste de `formData` durante el renderizado cuando cambia el tenant activo (patrón oficial de React para estado derivado de props/contexto).
+     - `inbox/page.tsx`: Sincronización de `activeConvId` durante renderizado al conmutar entre modos Live y Demo.
+     - `usePolling.ts`: Invocación del ciclo inicial diferida mediante `queueMicrotask` para no llamar a `setIsPolling(true)` síncronamente durante la ejecución del efecto.
+   - Resueltos los avisos de impureza (`react-hooks/purity`) e inmutabilidad (`react-hooks/immutability`) en `calendar/page.tsx`: extracción de arreglos de fixtures demo fuera del cuerpo del componente, inicialización perezosa de slots demo y cálculo puro de fechas memoizadas eliminando llamadas a `Date.now()` en JSX.
+
+### Archivos tocados
+- `TODO.md` — removidos los 2 pendientes completados.
+- `apps/api/src/lib/env.ts` — funciones `validateEnvironment` y `assertProductionEnv`.
+- `apps/api/src/server.ts` — llamada a `assertProductionEnv(process.env)` en arranque.
+- `apps/api/src/env-validation-test-suite.ts` — suite de 12 pruebas de validación de entorno.
+- `apps/api/src/observability-test-suite.ts` — mock de entorno de producción completo en prueba 5.
+- `apps/web/src/components/dashboard/DashboardShell.tsx` — lazy useState y router.replace.
+- `apps/web/src/components/auth/AuthGuard.tsx` — useSyncExternalStore.
+- `apps/web/src/context/TenantContext.tsx` — lazy initializers y sync seguro.
+- `apps/web/src/app/dashboard/settings/page.tsx` — adjust-during-render para tenant form.
+- `apps/web/src/app/dashboard/inbox/page.tsx` — adjust-during-render para activeConvId en cambio de modo.
+- `apps/web/src/app/dashboard/calendar/page.tsx` — fixtures externos, pure dates, 0 impurezas.
+- `apps/web/src/hooks/usePolling.ts` — queueMicrotask para ciclo inicial.
+
+### Verificación
+- `npm run lint --workspace=apps/web`: 0 errores, 0 avisos (clean).
+- `npm run test --workspace=@asistente/api`: 9/9 suites aprobadas (12/12 en env validation, 24/24 en security, etc.).
+- `npm run test:e2e --workspace=@asistente/web`: 3/3 pruebas E2E aprobadas en Playwright.
+- `npm run test`: Todas las suites del monorepo aprobadas al 100%.
+- `npm run build`: Compilación limpia de todos los paquetes y aplicaciones sin errores de TypeScript ni Next.js.
+
+### Pendientes derivados
+- Ninguno para esta tarea.
+
+---
+
 ## [2026-09-14] fix(seguridad): migrar sesión JWT de localStorage a cookie httpOnly
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `8e60cf9`
