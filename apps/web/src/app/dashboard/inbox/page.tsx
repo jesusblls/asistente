@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   MessageSquare,
   PhoneCall,
@@ -20,6 +20,8 @@ import {
   RefreshCw,
   Plus,
   ArrowRight,
+  ArrowLeft,
+  ChevronDown,
   RotateCcw,
   Volume2,
   VolumeX,
@@ -237,6 +239,24 @@ export default function OmnichannelInboxPage() {
   const [liveMessages, setLiveMessages] = useState<Record<string, MessageItem[]>>({});
   const [isSeeding, setIsSeeding] = useState(false);
 
+  // Bajo 768 px la bandeja muestra la lista o el chat, nunca ambos a la vez.
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const chatHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  const openConversation = (id: string) => {
+    setActiveConvId(id);
+    setMobileView('chat');
+    // En móvil el foco pasa al encabezado del chat para anunciar el cambio de vista.
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      requestAnimationFrame(() => chatHeadingRef.current?.focus());
+    }
+  };
+
+  const backToList = () => {
+    setMobileView('list');
+    requestAnimationFrame(() => document.getElementById(`conv-${activeConvId}`)?.focus());
+  };
+
   // Simulación de avance de la grabación de llamada
   useEffect(() => {
     if (!isPlayingAudio) return;
@@ -427,6 +447,9 @@ export default function OmnichannelInboxPage() {
     return conversations.find((c) => c.id === activeConvId) || conversations[0];
   }, [conversations, activeConvId]);
 
+  // Sin conversación activa no hay chat que mostrar: la vista móvil vuelve a la lista.
+  const showChat = mobileView === 'chat' && Boolean(activeConv);
+
   // Sondeo resiliente de mensajes para la conversación activa.
   const activeConvIdForPoll = activeConv?.id ?? '';
   const activeConvNameForPoll = activeConv?.patientName ?? '';
@@ -528,8 +551,12 @@ export default function OmnichannelInboxPage() {
 
   return (
     <div className="flex-1 flex h-full overflow-hidden bg-slate-100">
-      {/* Columna Izquierda: Lista de Conversaciones */}
-      <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0">
+      {/* Columna Izquierda: Lista de Conversaciones (en móvil, oculta mientras se ve un chat) */}
+      <div
+        className={`${
+          showChat ? 'hidden md:flex' : 'flex'
+        } w-full md:w-80 bg-white border-r border-slate-200 flex-col shrink-0`}
+      >
         <div className="p-4 border-b border-slate-200">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -578,14 +605,15 @@ export default function OmnichannelInboxPage() {
           )}
 
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            {/* 16 px en móvil: con menos, iOS hace zoom al enfocar el campo. */}
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar paciente o teléfono..."
               aria-label="Buscar conversación por paciente o teléfono"
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-teal-500 transition-colors"
+              className="w-full pl-9 pr-3 py-2.5 sm:py-2 bg-slate-50 border border-slate-200 rounded-lg text-base sm:text-xs focus:outline-none focus:border-teal-500 transition-colors"
             />
           </div>
         </div>
@@ -620,7 +648,9 @@ export default function OmnichannelInboxPage() {
               return (
                 <button
                   key={conv.id}
-                  onClick={() => setActiveConvId(conv.id)}
+                  id={`conv-${conv.id}`}
+                  onClick={() => openConversation(conv.id)}
+                  aria-current={isSelected ? 'true' : undefined}
                   className={`w-full p-3.5 text-left transition-colors flex items-start gap-3 rounded-lg ${
                     isSelected ? 'bg-teal-50/90 ring-1 ring-teal-600/20' : 'hover:bg-slate-50'
                   }`}
@@ -688,31 +718,55 @@ export default function OmnichannelInboxPage() {
         </div>
       </div>
 
-      {/* Columna Central: Conversación Activa */}
+      {/* Columna Central: Conversación Activa (en móvil, solo al abrir un chat) */}
       {activeConv ? (
-        <div className="flex-1 flex flex-col bg-slate-50 border-r border-slate-200 min-w-0">
+        // Contenedor de consultas: el ancho del chat depende de la barra lateral,
+        // la lista y la ficha, no del viewport. Su encabezado se adapta a él.
+        <div
+          className={`${
+            showChat ? 'flex' : 'hidden md:flex'
+          } flex-1 flex-col bg-slate-50 border-r border-slate-200 min-w-0 [container-type:inline-size]`}
+        >
           {/* Header de Conversación */}
-          <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-sm">
+          <div className="p-3 sm:p-4 bg-white border-b border-slate-200 flex items-center justify-between gap-3 shrink-0 shadow-sm">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={backToList}
+                aria-label="Volver a la lista de conversaciones"
+                className="md:hidden -ml-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="hidden sm:flex w-10 h-10 shrink-0 rounded-full bg-teal-600 text-white items-center justify-center font-bold text-sm">
                 {activeConv.patientName.slice(0, 2).toUpperCase()}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-bold text-slate-900">{activeConv.patientName}</h2>
-                  <span className="text-xs text-slate-500 font-mono tabular-nums">{formatMexicanPhone(activeConv.phone)}</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <h2
+                    ref={chatHeadingRef}
+                    tabIndex={-1}
+                    className="text-sm font-bold text-slate-900 truncate focus:outline-none"
+                  >
+                    {activeConv.patientName}
+                  </h2>
+                  {/* Teléfono y etiqueta larga solo si el panel del chat mide 640 px
+                      o más: por debajo truncaban el nombre del paciente. */}
+                  <span className="hidden [@container_(min-width:40rem)]:inline text-xs text-slate-500 font-mono tabular-nums shrink-0">
+                    {formatMexicanPhone(activeConv.phone)}
+                  </span>
                 </div>
-                <p className="text-xs text-slate-500 flex items-center gap-1">
+                <p className="text-xs text-slate-500 truncate">
                   Canal: <strong className="text-slate-700 font-medium">{activeConv.channel}</strong>
-                  <span>•</span>
+                  <span> • </span>
                   <span>Estado: {activeConv.status}</span>
                 </p>
               </div>
             </div>
 
             {/* Botón de Control / Takeover */}
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="text-right hidden [@container_(min-width:48rem)]:block">
                 <span className="text-xs font-semibold text-slate-700 block">
                   {activeConv.isHandedOverToHuman ? '👤 Humano en Control' : '🤖 Asistente IA Activo'}
                 </span>
@@ -724,22 +778,76 @@ export default function OmnichannelInboxPage() {
               </div>
               <button
                 onClick={toggleTakeover}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
                   activeConv.isHandedOverToHuman
                     ? 'bg-amber-500 hover:bg-amber-600 text-white'
                     : 'bg-slate-800 hover:bg-slate-900 text-white'
                 }`}
               >
                 <User className="w-3.5 h-3.5" />
-                {activeConv.isHandedOverToHuman ? 'Devolver a la IA' : 'Tomar Control (Pausar IA)'}
+                <span className="[@container_(min-width:40rem)]:hidden">
+                  {activeConv.isHandedOverToHuman ? 'Devolver a IA' : 'Tomar control'}
+                </span>
+                <span className="hidden [@container_(min-width:40rem)]:inline">
+                  {activeConv.isHandedOverToHuman ? 'Devolver a la IA' : 'Tomar Control (Pausar IA)'}
+                </span>
               </button>
             </div>
           </div>
 
+          {/* Ficha resumida: el panel lateral solo cabe desde 1280 px, y la cita no debe perderse */}
+          {activeConv.appointment && (
+            <details className="xl:hidden group border-b border-slate-200 bg-white px-4 py-2.5 text-xs shrink-0">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
+                <span className="flex min-w-0 items-center gap-1.5 text-slate-600">
+                  <Calendar className="w-3.5 h-3.5 shrink-0 text-teal-600" />
+                  <span className="truncate">
+                    <strong className="font-semibold text-slate-900">
+                      {activeConv.appointment.serviceName}
+                    </strong>{' '}
+                    · {activeConv.appointment.startTime}
+                  </span>
+                </span>
+                <ChevronDown className="w-4 h-4 shrink-0 text-slate-400 transition-transform duration-150 group-open:rotate-180" />
+              </summary>
+              <dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-slate-700">
+                <dt className="text-slate-500">Especialista</dt>
+                <dd>{activeConv.appointment.doctorName}</dd>
+                <dt className="text-slate-500">Estado</dt>
+                <dd>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      activeConv.appointment.status === 'CONFIRMED'
+                        ? 'text-emerald-700 bg-emerald-100'
+                        : 'text-amber-700 bg-amber-100'
+                    }`}
+                  >
+                    {activeConv.appointment.status === 'CONFIRMED' ? 'CONFIRMADA' : 'PENDIENTE'}
+                  </span>
+                </dd>
+                {activeConv.appointment.depositAmountMxn ? (
+                  <>
+                    <dt className="text-slate-500">Anticipo</dt>
+                    <dd className="font-semibold text-emerald-700">
+                      ${activeConv.appointment.depositAmountMxn.toLocaleString('es-MX')} MXN{' '}
+                      {activeConv.appointment.paymentStatus === 'DEPOSIT_PAID' ? 'Pagado' : 'Pendiente'}
+                    </dd>
+                  </>
+                ) : null}
+                {activeConv.appointment.symptoms && (
+                  <>
+                    <dt className="text-slate-500">Triaje</dt>
+                    <dd>{activeConv.appointment.symptoms}</dd>
+                  </>
+                )}
+              </dl>
+            </details>
+          )}
+
           {/* Banner de Urgencia Crítica / Triaje Nivel 2 */}
           {activeConv.isUrgent && (
-            <div className="bg-red-50 border-b border-red-200/80 px-4 py-2.5 flex items-center justify-between text-xs text-red-900 shrink-0">
-              <div className="flex items-center gap-2">
+            <div className="bg-red-50 border-b border-red-200/80 px-4 py-2.5 flex items-center justify-between gap-2 text-xs text-red-900 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 animate-pulse" />
                 <span>
                   <strong className="font-semibold">⚠️ Triaje Nivel 2 — Urgencia Médica/Dental:</strong>{' '}
@@ -754,8 +862,8 @@ export default function OmnichannelInboxPage() {
 
           {/* Banner Informativo de Modo Copiloto / Takeover Humano */}
           {activeConv.isHandedOverToHuman && (
-            <div className="bg-amber-50 border-b border-amber-200/80 px-4 py-2.5 flex items-center justify-between text-xs text-amber-900 shrink-0">
-              <div className="flex items-center gap-2">
+            <div className="bg-amber-50 border-b border-amber-200/80 px-4 py-2.5 flex items-center justify-between gap-2 text-xs text-amber-900 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <User className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
                   <strong className="font-semibold">Modo Copiloto Humano Activo:</strong>{' '}
@@ -773,17 +881,17 @@ export default function OmnichannelInboxPage() {
 
           {/* Reproductor de Audio Twilio con Waveform Dinámico */}
           {activeConv.channel === 'PHONE_CALL' && (
-            <div className="bg-slate-900 text-slate-200 border-b border-slate-800 p-3.5 px-6 flex flex-col gap-2.5 shrink-0 select-none shadow-inner">
+            <div className="bg-slate-900 text-slate-200 border-b border-slate-800 p-3.5 px-4 sm:px-6 flex flex-col gap-2.5 shrink-0 select-none shadow-inner">
               {/* Header de la llamada */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-semibold text-white flex items-center gap-1.5">
-                    <PhoneCall className="w-3.5 h-3.5 text-teal-400" />
-                    Grabación Twilio Voice (+52) • Dr. Roberto Mendoza
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-semibold text-white flex items-center gap-1.5 min-w-0">
+                    <PhoneCall className="w-3.5 h-3.5 shrink-0 text-teal-400" />
+                    <span className="truncate">Grabación Twilio Voice (+52) • Dr. Roberto Mendoza</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-slate-400">
+                <div className="hidden sm:flex items-center gap-3 text-xs text-slate-400">
                   <span className="tabular-nums text-slate-300">
                     Latencia: <strong className="text-teal-400 font-semibold tabular-nums">540ms</strong>
                   </span>
@@ -795,28 +903,30 @@ export default function OmnichannelInboxPage() {
               </div>
 
               {/* Controles y Onda de Audio (Waveform) */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 {/* Play / Pause */}
                 <button
                   onClick={() => setIsPlayingAudio(!isPlayingAudio)}
-                  className="w-9 h-9 rounded-xl bg-teal-600 hover:bg-teal-500 text-white flex items-center justify-center transition-all shadow-md shadow-teal-600/30 shrink-0 active:scale-95"
+                  className="w-10 h-10 sm:w-9 sm:h-9 rounded-xl bg-teal-600 hover:bg-teal-500 text-white flex items-center justify-center transition-all shadow-md shadow-teal-600/30 shrink-0 active:scale-95"
                   title={isPlayingAudio ? 'Pausar llamada' : 'Reproducir llamada'}
+                  aria-label={isPlayingAudio ? 'Pausar llamada' : 'Reproducir llamada'}
                 >
                   {isPlayingAudio ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
                 </button>
 
-                {/* Saltar 10s atrás */}
+                {/* Saltar 10s atrás (en móvil se salta tocando la onda) */}
                 <button
                   onClick={() => setAudioProgress((p) => Math.max(0, p - 10))}
-                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors shrink-0 text-xs"
+                  className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 items-center justify-center transition-colors shrink-0 text-xs"
                   title="Retroceder 10 segundos"
+                  aria-label="Retroceder 10 segundos"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Waveform Interactivo con barras de audio */}
                 <div
-                  className="flex-1 flex items-center gap-1 h-9 px-2.5 bg-slate-950/80 rounded-xl border border-slate-800 cursor-pointer overflow-hidden group select-none"
+                  className="flex-1 min-w-0 flex items-center gap-1 h-10 sm:h-9 px-2.5 bg-slate-950/80 rounded-xl border border-slate-800 cursor-pointer overflow-hidden group select-none"
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const clickX = e.clientX - rect.left;
@@ -849,8 +959,9 @@ export default function OmnichannelInboxPage() {
                 {/* Saltar 10s adelante */}
                 <button
                   onClick={() => setAudioProgress((p) => Math.min(audioDuration, p + 10))}
-                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors shrink-0 text-xs font-mono"
+                  className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 items-center justify-center transition-colors shrink-0 text-xs font-mono"
                   title="Adelantar 10 segundos"
+                  aria-label="Adelantar 10 segundos"
                 >
                   <span className="text-[10px] font-bold font-mono">+10s</span>
                 </button>
@@ -871,6 +982,7 @@ export default function OmnichannelInboxPage() {
                   }}
                   className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-400 border border-slate-700 text-xs font-mono font-bold shrink-0 transition-colors"
                   title="Cambiar velocidad de reproducción"
+                  aria-label={`Velocidad de reproducción ${playbackSpeed}x`}
                 >
                   {playbackSpeed}x
                 </button>
@@ -879,7 +991,7 @@ export default function OmnichannelInboxPage() {
           )}
 
           {/* Mensajes del Thread */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-4">
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4">
             {currentMessages.map((msg) => {
               const isPatient = msg.sender === 'PATIENT';
               const isAI = msg.sender === 'AI_AGENT';
@@ -897,7 +1009,7 @@ export default function OmnichannelInboxPage() {
                   </div>
 
                   <div
-                    className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                    className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
                       isPatient
                         ? 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-sm'
                         : isAI
@@ -905,7 +1017,7 @@ export default function OmnichannelInboxPage() {
                         : 'bg-amber-600 text-white rounded-tr-sm'
                     }`}
                   >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   </div>
                 </div>
               );
@@ -913,25 +1025,27 @@ export default function OmnichannelInboxPage() {
           </div>
 
           {/* Barra Inferior de Entrada */}
-          <div className="p-4 bg-white border-t border-slate-200">
+          <div className="p-3 sm:p-4 bg-white border-t border-slate-200">
             <form onSubmit={handleSendMessage} className="flex gap-2">
+              {/* 16 px en móvil: con menos, iOS hace zoom al enfocar el campo. */}
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 aria-label={`Respuesta manual para ${activeConv.patientName}`}
-                placeholder={`Escribe una respuesta como recepcionista para ${activeConv.patientName}...`}
-                className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-teal-500 transition-colors"
+                placeholder={`Responder a ${activeConv.patientName}...`}
+                className="flex-1 min-w-0 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:outline-none focus:border-teal-500 transition-colors"
               />
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-1.5"
+                aria-label="Enviar respuesta"
+                className="min-h-[44px] px-4 sm:px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-1.5 shrink-0"
               >
                 <Send className="w-4 h-4" />
-                Enviar
+                <span className="hidden sm:inline">Enviar</span>
               </button>
             </form>
-            <div className="flex items-center gap-2 mt-2">
+            <div className="flex flex-wrap items-center gap-2 mt-2">
               <span className="text-[10px] text-slate-400">Atajos rápidos:</span>
               <button
                 type="button"
@@ -940,7 +1054,7 @@ export default function OmnichannelInboxPage() {
                     `Estamos en ${activeTenant?.address || 'Av. Horacio 1520, Polanco'} con estacionamiento disponible.`
                   )
                 }
-                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 sm:py-0.5 rounded transition-colors"
               >
                 📍 Enviar Ubicación
               </button>
@@ -949,7 +1063,7 @@ export default function OmnichannelInboxPage() {
                 onClick={() =>
                   setInputText('Te comparto el enlace seguro para apartar tu cita: https://mpago.li/demo')
                 }
-                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 sm:py-0.5 rounded transition-colors"
               >
                 💳 Enlace Mercado Pago
               </button>
@@ -958,7 +1072,7 @@ export default function OmnichannelInboxPage() {
                 onClick={() =>
                   setInputText('¿Deseas que confirmemos tu asistencia ahora mismo para apartar el consultorio?')
                 }
-                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded transition-colors"
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 sm:py-0.5 rounded transition-colors"
               >
                 ✅ Confirmar Asistencia
               </button>
@@ -966,7 +1080,8 @@ export default function OmnichannelInboxPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 p-8 text-center">
+        // En móvil la lista ya muestra su propio estado vacío con la acción de sembrar datos.
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center bg-slate-50 p-8 text-center">
           <div className="w-16 h-16 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center mb-4 ring-8 ring-teal-50/50">
             <MessageSquare className="w-8 h-8" />
           </div>

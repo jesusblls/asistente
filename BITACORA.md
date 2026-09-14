@@ -34,6 +34,83 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(web): bandeja omnicanal con patrón lista → chat en móvil
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Era el pendiente de la entrada anterior. La bandeja ponía la lista de
+conversaciones (320 px) y el chat lado a lado, y en un teléfono el chat quedaba
+aplastado fuera de la pantalla.
+
+- **Bajo 768 px, patrón lista → chat.** La lista ocupa la pantalla completa, y
+  tocar una conversación abre el chat a pantalla completa con un botón para
+  volver. Al abrir, el foco va al encabezado del chat, para que el lector de
+  pantalla anuncie al paciente; al volver, regresa a la conversación elegida.
+  Desde 768 px siguen los dos paneles, como antes.
+- **La ficha del paciente ya no desaparece.** El panel lateral solo cabe desde
+  1280 px, así que en laptops, tablets y teléfonos la cita, el anticipo y el
+  triaje no se veían. Debajo de 1280 px aparece como una sección plegable
+  (`<details>` nativo) bajo el encabezado del chat.
+- **Campos a 16 px en móvil** (búsqueda y respuesta): con menos, iOS hace zoom
+  al enfocar y descuadra la pantalla.
+- **Encabezado del chat compacto** en pantallas angostas: sin avatar ni
+  teléfono, "Tomar control" en versión corta y botones de 44 px.
+- **El encabezado del chat usa una consulta de contenedor, no del viewport.**
+  El panel del chat mide unos 420–450 px en casi cualquier pantalla: al crecer
+  la ventana también aparecen la barra lateral (desde 1024 px) y la ficha (desde
+  1280 px). Con cortes por viewport, el nombre del paciente se truncaba a una
+  letra en tablet, a 22 px en 1024 px y desaparecía en 1280 px; la medición con
+  Playwright lo reveló dos veces. Ahora el teléfono y la etiqueta larga "Tomar
+  Control (Pausar IA)" aparecen cuando el panel mide 640 px o más, y el resumen
+  de estado cuando mide 768 px o más. Se usa `[container-type:inline-size]` con
+  variantes arbitrarias de Tailwind 3.4, sin agregar plugins.
+- **Reproductor de llamadas:** en pantallas angostas se ocultan los saltos de
+  ±10 s, porque se puede saltar tocando la onda. La latencia y la etiqueta de
+  Twilio aparecen desde 640 px, y los controles tienen etiquetas accesibles.
+- **Burbujas de mensaje** al 85 % del ancho en móvil, con corte de palabra para
+  que los enlaces largos no desborden.
+- Si en vivo desaparece la conversación abierta, la vista móvil vuelve sola a la
+  lista en lugar de quedar en blanco.
+
+### Archivos tocados
+
+- `apps/web/src/app/dashboard/inbox/page.tsx`
+
+### Verificación
+
+- `tsc` limpio. ESLint sin avisos nuevos: los dos que quedan ya existían (el
+  efecto que reinicia la conversación en Demo y la mutación de los datos demo
+  al tomar control)
+- En Playwright, con un iPhone 13 emulado:
+  - Al entrar se ve la lista.
+  - Tocar a Fernando Rivas abre su chat y el foco llega a su nombre.
+  - La ficha plegable se abre.
+  - "Volver" regresa a la lista con el foco en su conversación.
+  - Ambos campos miden 16 px.
+- En tablet (768 px) se ven los dos paneles y no aparece el botón de volver
+- Encabezado del chat medido en cinco anchos de ventana. El nombre del paciente
+  nunca se trunca, y la etiqueta larga y el teléfono solo aparecen cuando el
+  panel tiene espacio:
+
+  | Ventana | Panel del chat | Botón | Teléfono |
+  |---|---|---|---|
+  | 768 px | 447 px | "Tomar control" | oculto |
+  | 1024 px | 447 px | "Tomar control" | oculto |
+  | 1280 px | 415 px | "Tomar control" | oculto |
+  | 1440 px | 575 px | "Tomar control" | oculto |
+  | 1920 px | 1055 px | "Tomar Control (Pausar IA)" | visible |
+- Se usó un administrador desechable, creado y borrado para esta prueba
+
+### Pendientes derivados
+
+- En modo Demo, "Tomar control" modifica directamente el arreglo de datos demo
+  en lugar de usar estado de React, y ESLint lo marca. Funciona, pero conviene
+  pasarlo a estado.
+
+---
+
 ## [2026-09-14] feat(web): barra lateral como cajón en pantallas angostas
 
 **Autor:** Claude Opus 5 · **Commit:** `7822ab2`
