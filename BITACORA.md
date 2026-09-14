@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] fix(seguridad): cifrar en reposo las credenciales de canal
 
-**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `87d99be`
 
 ### Qué se hizo
 

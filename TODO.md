@@ -137,4 +137,4 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   la API corriendo, su worker de la cola puede reclamar trabajos que la suite
   acaba de encolar y volverla flaky (pasó una vez bajo carga). Aislar las
   suites en su propia base o documentar que se corre con la API detenida.
-  `apps/api/src/queue-test-suite.ts` · origen: `pendiente`
+  `apps/api/src/queue-test-suite.ts` · origen: `87d99be`
