@@ -34,9 +34,60 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-13] docs: establecer bitácora obligatoria y estándar de commits
+
+**Autor:** Claude Opus 5 · **Commit:** `ea471f6`
+
+### Qué se hizo
+
+El repositorio no tenía convención de registro ni de mensajes de commit, así
+que cada agente de IA que entraba improvisaba la suya y el porqué de los
+cambios se perdía en cuanto el diff dejaba de ser reciente.
+
+Se creó este archivo como registro cronológico inverso donde cada cambio
+explica su motivación. El procedimiento quedó en `CLAUDE.md § 7` y como
+**regla 0** de `AGENTS.md`, que es lo primero que lee un agente antes de
+escribir código.
+
+La documentación sola no basta —se ignora—, así que el estándar lo hace
+cumplir un hook `commit-msg` que valida tipo, alcance, longitud máxima de 72
+caracteres y que la descripción no termine en punto ni empiece en mayúscula.
+Se probó contra 10 casos: acepta los mensajes válidos y los merges automáticos
+de git, y rechaza mensajes vacíos, sin tipo, con tipo inválido, demasiado
+largos, terminados en punto o con mayúscula inicial.
+
+`AGENTS.md` sumó además dos reglas inviolables destiladas de la auditoría: la
+identidad del paciente la define el canal y nunca el modelo (regla 7), y las
+operaciones destructivas o de cobro exigen rol explícito (regla 8).
+
+### Archivos tocados
+
+- `BITACORA.md` — este registro, con su formato documentado
+- `CLAUDE.md` — § 7 con el protocolo completo, más el aviso en el encabezado
+- `AGENTS.md` — regla 0 de proceso y reglas 7 y 8 de seguridad
+- `README.md` — activación del hook en el arranque del proyecto
+- `.githooks/commit-msg` — validador de Conventional Commits
+- `.gitignore` — se agregaron `.next/`, `next-env.d.ts` y `.agents/`
+
+### Verificación
+
+- Hook probado contra 10 casos (6 rechazos y 4 aceptaciones esperadas)
+- Ambos commits de esta sesión pasaron por el hook ya activo
+- `.gitignore` verificado: el primer intento de `git add -A` arrastraba 829
+  archivos y ~180 MB de caché de Turbopack, y `.agents/skills/impeccable` era
+  un symlink al directorio personal del desarrollador, inútil en otra máquina.
+  Tras corregirlo quedaron 112 archivos y 1.5 MB, sin secretos.
+
+### Pendientes derivados
+
+- Validar el formato del mensaje también en CI, para que el estándar se cumpla
+  aunque alguien clone sin ejecutar `git config core.hooksPath .githooks`.
+
+---
+
 ## [2026-09-13] fix(seguridad): corregir 11 hallazgos de la auditoría inicial
 
-**Autor:** Claude Opus 5 (sesión de auditoría) · **Commits:** ver más abajo
+**Autor:** Claude Opus 5 (sesión de auditoría) · **Commit:** `402dfc4`
 
 ### Qué se hizo
 
