@@ -250,7 +250,7 @@ model AuditLog {
   actorId    String?
   actorEmail String?  // copia al momento del evento: el usuario puede cambiar o borrarse
   actorRole  String?
-  action     String   // LOGIN | LOGIN_FAILED | READ | LIST | CREATE | UPDATE | DELETE
+  action     String   // LOGIN | LOGIN_FAILED | READ | LIST | CREATE | UPDATE | DELETE | EXPORT
   entityType String   // SESSION | TENANT | DOCTOR | SERVICE | PATIENT | APPOINTMENT | CONVERSATION | MESSAGE | AUDIT_LOG
   entityId   String?
   patientId  String?

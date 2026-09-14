@@ -116,12 +116,17 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     window.location.href = '/login';
   };
 
-  const navLinks = [
+  const navLinks: { href: string; label: string; icon: typeof LayoutDashboard; badge?: string }[] = [
     { href: '/dashboard', label: 'Resumen General', icon: LayoutDashboard },
     { href: '/dashboard/inbox', label: 'Bandeja Omnicanal', icon: Inbox, badge: 'WhatsApp' },
     { href: '/dashboard/calendar', label: 'Agenda y Citas', icon: Calendar },
     { href: '/dashboard/team', label: 'Doctores y Servicios', icon: Users },
     { href: '/dashboard/settings', label: 'Canales y Telefonía (+52)', icon: Settings },
+    // En vivo solo ADMIN puede consultar la bitácora; en Demo se muestra a
+    // todos porque el cumplimiento es parte de la presentación comercial.
+    ...(mode === 'demo' || sessionUser?.role === 'ADMIN'
+      ? [{ href: '/dashboard/audit', label: 'Bitácora de Auditoría', icon: Eye }]
+      : []),
   ];
 
   return (

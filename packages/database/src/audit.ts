@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
   'CREATE',
   'UPDATE',
   'DELETE',
+  'EXPORT',
 ] as const;
 export const AUDIT_ENTITY_TYPES = [
   'SESSION',

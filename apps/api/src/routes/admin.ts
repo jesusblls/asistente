@@ -1128,6 +1128,80 @@ export async function adminRoutes(fastify: FastifyInstance) {
     return reply.send(savedMessage);
   });
 
+  type AuditRow = Awaited<ReturnType<typeof db.auditLog.findMany>>[number];
+
+  /** Filtros de la bitácora, compartidos por la consulta y la exportación. */
+  function auditWhere(tenantId: string, query: Record<string, string | undefined>) {
+    const where: Record<string, unknown> = { tenantId };
+    if (query.patientId) where.patientId = requireString(query.patientId, 'patientId', 100);
+    if (query.entityId) where.entityId = requireString(query.entityId, 'entityId', 100);
+    if (query.actorId) where.actorId = requireString(query.actorId, 'actorId', 100);
+    if (query.entityType) {
+      where.entityType = requireEnum(query.entityType, AUDIT_ENTITY_TYPES, 'entityType');
+    }
+    if (query.action) {
+      // Acepta varias separadas por coma: el panel agrupa por categorías
+      // (accesos, cambios, sesiones) y la exportación debe coincidir con eso.
+      const actions = query.action.split(',').map((action) => requireEnum(action.trim(), AUDIT_ACTIONS, 'action'));
+      where.action = actions.length === 1 ? actions[0] : { in: actions };
+    }
+    if (query.from || query.to) {
+      where.createdAt = {
+        ...(query.from && { gte: parseDate(query.from, 'Fecha inicial') }),
+        ...(query.to && { lte: parseDate(query.to, 'Fecha final') }),
+      };
+    }
+    return where;
+  }
+
+  function auditFilters(query: Record<string, string | undefined>) {
+    const { patientId, entityType, entityId, actorId, action, from, to } = query;
+    return { patientId, entityType, entityId, actorId, action, from, to };
+  }
+
+  /**
+   * Nombres del paciente y del empleado de cada fila. AuditLog no tiene
+   * relaciones a propósito (sobrevive a los borrados), así que se resuelven
+   * aparte y en lote; un paciente o usuario ya borrado sale con `null`.
+   */
+  async function withNames(tenantId: string, rows: AuditRow[]) {
+    const patientIds = [...new Set(rows.map((row) => row.patientId).filter((id): id is string => !!id))];
+    const actorIds = [
+      ...new Set(
+        rows
+          .filter((row) => row.actorType === 'USER')
+          .map((row) => row.actorId)
+          .filter((id): id is string => !!id)
+      ),
+    ];
+
+    const [patients, users] = await Promise.all([
+      patientIds.length > 0
+        ? db.patient.findMany({
+            where: { tenantId, id: { in: patientIds } },
+            select: { id: true, fullName: true, phoneE164: true },
+          })
+        : [],
+      actorIds.length > 0
+        ? db.user.findMany({
+            where: { tenantId, id: { in: actorIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+    ]);
+
+    const patientById = new Map(patients.map((patient) => [patient.id, patient]));
+    const userNameById = new Map(users.map((user) => [user.id, user.name]));
+
+    return rows.map((row) => ({
+      ...row,
+      changes: parseJsonField(row.changes),
+      metadata: parseJsonField(row.metadata),
+      patient: row.patientId ? patientById.get(row.patientId) ?? null : null,
+      actorName: row.actorId ? userNameById.get(row.actorId) ?? null : null,
+    }));
+  }
+
   /**
    * Bitácora de auditoría de la clínica (solo ADMIN).
    *
@@ -1139,23 +1213,8 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const user = requireRole(request, ['ADMIN']);
     const query = request.query as Record<string, string | undefined>;
 
-    const where: Record<string, unknown> = { tenantId: user.tenantId };
-    if (query.patientId) where.patientId = requireString(query.patientId, 'patientId', 100);
-    if (query.entityId) where.entityId = requireString(query.entityId, 'entityId', 100);
-    if (query.actorId) where.actorId = requireString(query.actorId, 'actorId', 100);
-    if (query.entityType) {
-      where.entityType = requireEnum(query.entityType, AUDIT_ENTITY_TYPES, 'entityType');
-    }
-    if (query.action) where.action = requireEnum(query.action, AUDIT_ACTIONS, 'action');
-    if (query.from || query.to) {
-      where.createdAt = {
-        ...(query.from && { gte: parseDate(query.from, 'Fecha inicial') }),
-        ...(query.to && { lte: parseDate(query.to, 'Fecha final') }),
-      };
-    }
-
     const rows = await db.auditLog.findMany({
-      where,
+      where: auditWhere(user.tenantId, query),
       orderBy: { createdAt: 'desc' },
       take: parseLimit(query.limit, 100, 500),
     });
@@ -1169,12 +1228,106 @@ export async function adminRoutes(fastify: FastifyInstance) {
       metadata: { count: rows.length },
     });
 
-    return reply.send(
-      rows.map((row) => ({
-        ...row,
-        changes: parseJsonField(row.changes),
-        metadata: parseJsonField(row.metadata),
-      }))
+    return reply.send(await withNames(user.tenantId, rows));
+  });
+
+  const CSV_COLUMNS = [
+    'fecha_hora_cdmx',
+    'actor_tipo',
+    'actor',
+    'actor_correo',
+    'actor_rol',
+    'accion',
+    'entidad',
+    'entidad_id',
+    'paciente',
+    'paciente_id',
+    'cambios',
+    'detalle',
+    'ip',
+    'navegador',
+    'request_id',
+  ];
+
+  const cdmxTimestamp = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  function csvCell(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    let text = typeof value === 'string' ? value : JSON.stringify(value);
+    // Una celda que empieza con = + - @ se ejecuta como fórmula al abrirla en
+    // Excel. El nombre de WhatsApp de un paciente o el correo de un login
+    // fallido los escribe un tercero: sin esto, exportar la bitácora le daría
+    // a un atacante una fórmula en la computadora del director.
+    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  /**
+   * Exporta en CSV exactamente lo filtrado (solo ADMIN). Se genera en el
+   * servidor para que la exportación quede auditada: sacar la bitácora del
+   * sistema es un acceso tan sensible como consultarla, y nunca se agrupa.
+   */
+  fastify.get('/api/audit/export', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requireRole(request, ['ADMIN']);
+    const query = request.query as Record<string, string | undefined>;
+
+    const rows = await db.auditLog.findMany({
+      where: auditWhere(user.tenantId, query),
+      orderBy: { createdAt: 'desc' },
+      take: parseLimit(query.limit, 5000, 5000),
+    });
+    const named = await withNames(user.tenantId, rows);
+
+    await recordAudit({
+      tenantId: user.tenantId,
+      actor: actorFromRequest(request),
+      action: 'EXPORT',
+      entityType: 'AUDIT_LOG',
+      patientId: query.patientId ?? null,
+      metadata: { count: rows.length, filters: auditFilters(query) },
+    });
+
+    const lines = [
+      CSV_COLUMNS.join(','),
+      ...named.map((row) =>
+        [
+          cdmxTimestamp.format(row.createdAt),
+          row.actorType,
+          row.actorName,
+          row.actorEmail,
+          row.actorRole,
+          row.action,
+          row.entityType,
+          row.entityId,
+          row.patient?.fullName,
+          row.patientId,
+          row.changes,
+          row.metadata,
+          row.ipAddress,
+          row.userAgent,
+          row.requestId,
+        ]
+          .map(csvCell)
+          .join(',')
+      ),
+    ];
+
+    const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(
+      new Date()
     );
+
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="bitacora-${dateKey}.csv"`);
+    // El BOM hace que Excel abra el archivo como UTF-8 y respete los acentos.
+    return reply.send(`﻿${lines.join('\r\n')}\r\n`);
   });
 }

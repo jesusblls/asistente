@@ -34,6 +34,127 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-13] feat(web): pantalla de bitácora de auditoría en el panel
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+La auditoría existía solo como API; ahora la dirección de la clínica la
+consulta en `/dashboard/audit`. El usuario eligió la estructura **feed con
+pivote** y pidió además exportar CSV, marcar lo sensible y filtrar por empleado.
+
+Decisiones de diseño, con su porqué:
+
+- **Una frase por evento, no una tabla de logs.** "Dra. Sofía Silva abrió el
+  chat de Mariana Hernández" lo entiende un director sin conocer el modelo de
+  datos. El vocabulario vive en `apps/web/src/lib/audit.ts`.
+- **El pivote es la pieza central.** Al tocar un paciente, la vista se convierte
+  en su expediente de accesos y lo resume en una frase ("2 personas y el
+  Asistente IA accedieron a este expediente en los últimos 7 días"), con chips de
+  quién y cuántas veces. Es la respuesta directa a una solicitud ARCO. Tocar a un
+  empleado muestra lo que hizo; ambos filtros se combinan.
+- **Filtros en la URL**, para compartir el enlace a "quién vio a X" y deshacer
+  un pivote con el botón atrás.
+- **La exportación la genera el servidor**, no el navegador: así queda auditada
+  como `EXPORT` (sacar la bitácora del sistema es tan sensible como consultarla)
+  y se neutralizan fórmulas. El nombre de WhatsApp de un paciente lo escribe un
+  tercero; algo como `=HYPERLINK(...)` se ejecutaría en el Excel del director.
+- **Sin polling.** Cada consulta a la bitácora genera su propia fila de
+  auditoría; refrescar es manual.
+- **Lo sensible se marca en rojo o ámbar según gravedad:** login fallido y
+  borrados (crítico), exportación, pago marcado a mano y actividad del personal
+  fuera de 7:00–21:00 CDMX (atención). El rojo y el ámbar quedan reservados para
+  esto, igual que en el resto del panel.
+- **Demo coherente con el resto del showcase.** Los pacientes y horarios
+  coinciden con la agenda demo del resumen, y las horas son fijas en CDMX para
+  que los logins fallidos de madrugada y el acceso fuera de horario se vean igual
+  a cualquier hora en que se haga la demostración.
+- **Acceso.** El enlace de la barra lateral solo aparece para ADMIN en vivo (en
+  Demo para todos, como argumento de venta). Un rol no autorizado ve una
+  explicación, no un error.
+- **Mundo visual heredado.** No hay `DESIGN.md`: la pantalla extiende el sistema
+  que ya vive en el código. El contrato de dirección quedó en
+  `apps/web/.impeccable/surfaces/`.
+
+Backend de apoyo: `GET /api/audit` resuelve en lote el nombre del paciente y
+del empleado (la tabla no tiene relaciones a propósito), `action` acepta
+varias separadas por coma para las categorías Accesos, Cambios y Sesiones, y se
+agregó `GET /api/audit/export` con la acción `EXPORT`.
+
+El estado de la pantalla se deriva en lugar de sincronizarse con efectos: el
+resultado en vivo se guarda con la clave de los filtros que lo originaron, y
+"cargando" es simplemente que esa clave no coincide. Esto elimina los renders
+en cascada que marcaba la regla `react-hooks/set-state-in-effect`.
+
+### Archivos tocados
+
+- `apps/web/src/app/dashboard/audit/page.tsx` — la pantalla
+- `apps/web/src/lib/audit.ts` — frases, sensibilidad, diff, rastro técnico, CSV del Demo
+- `apps/web/src/app/dashboard/audit/demo.ts` — bitácora ficticia del Demo
+- `apps/web/src/components/dashboard/DashboardShell.tsx` — enlace en la barra lateral
+- `apps/api/src/routes/admin.ts` — nombres resueltos, multi-acción y exportación CSV
+- `packages/database/src/audit.ts`, `schema.prisma` — acción `EXPORT`
+- `apps/api/src/audit-test-suite.ts` — pruebas de nombres, exportación y multi-acción
+- `apps/web/.impeccable/surfaces/…audit-page-tsx.md` — contrato de dirección
+- `AGENTS.md` (catálogo de endpoints y rutas), `.gitignore` (`.impeccable/review/`)
+
+### Verificación
+
+- `tsc` limpio en API y panel; ESLint sin avisos en los archivos nuevos
+- Suite de auditoría **34/34**: incluye nombres resueltos, 403 para STAFF al
+  exportar, una fórmula en el nombre del paciente que sale neutralizada, la
+  exportación registrada y el filtro de varias acciones
+- `npm test` 7/7 suites; `npm run test:stress` 40/40
+- En el navegador: Demo, pivote por paciente, pivote por empleado, solo
+  sensibles, detalle con diff y rastro técnico, En Vivo con datos reales, acceso
+  denegado para STAFF (sin enlace en la barra) y tablet
+- Detector de Impeccable: 3 avisos, uno falso positivo en el botón deshabilitado
+  y dos preexistentes en `DashboardShell`
+- **Revisión final** por un revisor independiente, con el procedimiento de
+  Impeccable. El veredicto fue **fix**, y se corrigió en un solo lote:
+  1. El pivote heredaba el filtro de tipo. Con "Sesiones" activo, podía decir
+     "nadie accedió a este expediente" de uno que sí se había consultado.
+     Ahora pivotar limpia los filtros, y si alguien los reactiva, la frase los
+     nombra.
+  2. El contraste de los encabezados de día (4.4:1 y 2.4:1) subió a AA.
+  3. En pantallas angostas la hora pasa a la línea de detalle, para que la
+     frase conserve el ancho.
+
+  Además se resolvieron:
+  - Revisar la bitácora ya no se marca "fuera de horario".
+  - La redacción ahora dice "eliminó al Dr. … y sus 2 citas".
+  - Las IPs del Demo usan rangos reservados a documentación (RFC 5737); antes
+    una IP real hacía de atacante.
+  - `aria-controls` apunta a un elemento que existe.
+  - El texto secundario de las filas críticas toma su tono rojo.
+
+  Los anillos de foco no se tocaron: `globals.css` ya los define en teal para
+  toda la app. En la verificación sobre capturas nuevas, el revisor calificó
+  las tres correcciones como **resueltas**, confirmó los ajustes menores, no
+  encontró regresiones y cerró con **ship**.
+- Al ser una extensión del panel, no se escribió `DESIGN.md`: la pantalla usa
+  el sistema que ya vive en el código.
+- Para verificar En Vivo se creó un ADMIN desechable, se obtuvo su token por
+  `curl` y se inyectó en el navegador, sin escribir contraseñas en él. Se borró
+  al terminar.
+
+### Pendientes derivados
+
+- **El panel completo no funciona en teléfono:** la barra lateral de
+  `DashboardShell` mide 256 px fijos y no se colapsa. Ya existía y afecta a todas
+  las pantallas, no solo a esta.
+- "Fuera de horario" usa 7:00–21:00 fijo; debería leer el horario real de la
+  clínica y de cada doctor.
+- "Solo sensibles" se calcula en el navegador, así que el CSV exporta el filtro
+  completo, no solo lo sensible (la pantalla lo avisa).
+- En `DashboardShell` quedan los avisos preexistentes del detector:
+  `animate-bounce` y texto gris sobre rojo.
+- `.claude/launch.json` (arranque de servidores para el navegador integrado) no
+  se versiona.
+
+---
+
 ## [2026-09-13] feat(seguridad): registrar accesos y cambios clínicos en AuditLog
 
 **Autor:** Claude Opus 5 · **Commit:** `052a205`

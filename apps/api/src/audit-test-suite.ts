@@ -326,8 +326,65 @@ async function runAuditTests() {
     });
     assert(auditOfAudit !== null, 'Consultar la bitácora también queda registrado');
 
+    const sessionsOnly = await app.inject({
+      method: 'GET',
+      url: '/api/audit?action=LOGIN,LOGIN_FAILED',
+      headers: authAdminA,
+    });
+    const sessionRows = sessionsOnly.json() as Array<{ action: string }>;
+    assert(
+      sessionsOnly.statusCode === 200 &&
+        sessionRows.length >= 2 &&
+        sessionRows.every((row) => row.action === 'LOGIN' || row.action === 'LOGIN_FAILED'),
+      'El filtro acepta varias acciones a la vez (las categorías del panel)'
+    );
+
     // ------------------------------------------------------------------
-    console.log('\n🧹 6. Borrado masivo');
+    console.log('\n📤 6. Nombres y exportación');
+    const namedRows = byPatient.json() as Array<{ patient: { fullName: string } | null }>;
+    assert(
+      namedRows[0]?.patient?.fullName === 'Paciente Auditado',
+      'Cada fila trae el nombre del paciente para mostrarlo'
+    );
+
+    const staffExport = await app.inject({
+      method: 'GET',
+      url: '/api/audit/export',
+      headers: authStaffA,
+    });
+    assert(staffExport.statusCode === 403, 'Un usuario STAFF no puede exportar la bitácora (403)');
+
+    // El nombre de WhatsApp lo escribe el paciente: es el vector real de
+    // inyección de fórmulas al abrir el CSV en Excel.
+    await db.patient.update({
+      where: { id: appointment.patientId },
+      data: { fullName: '=HYPERLINK("http://evil.test","clic")' },
+    });
+    const exportRes = await app.inject({
+      method: 'GET',
+      url: `/api/audit/export?patientId=${appointment.patientId}`,
+      headers: authAdminA,
+    });
+    assert(
+      exportRes.statusCode === 200 &&
+        String(exportRes.headers['content-type']).includes('text/csv') &&
+        exportRes.body.includes('fecha_hora_cdmx'),
+      'La exportación entrega un CSV con encabezados'
+    );
+    assert(
+      exportRes.body.includes(`"'=HYPERLINK`) && !exportRes.body.includes(`,"=HYPERLINK`),
+      'Una fórmula en el nombre del paciente sale neutralizada en el CSV'
+    );
+    const exportRow = await db.auditLog.findFirst({
+      where: { tenantId: tenantA.id, action: 'EXPORT', actorId: adminA.id },
+    });
+    assert(
+      (parse(exportRow?.metadata ?? null)?.count ?? 0) >= 1,
+      'Exportar queda registrado con cuántos eventos salieron'
+    );
+
+    // ------------------------------------------------------------------
+    console.log('\n🧹 7. Borrado masivo');
     const before = await db.auditLog.count({ where: { tenantId: tenantA.id } });
     const reset = await app.inject({
       method: 'DELETE',

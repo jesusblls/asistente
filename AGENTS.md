@@ -345,7 +345,8 @@ Servidor Node.js de alto rendimiento con TypeScript, Fastify v5.2, WebSockets y 
 - `POST /api/conversations/:id/reply`: Envía un mensaje redactado por el recepcionista humano y lo transmite al paciente vía WhatsApp.
 
 #### Auditoría (LFPDPPP / NOM-024-SSA3)
-- `GET /api/audit[?patientId=...&entityType=...&entityId=...&actorId=...&action=...&from=...&to=...&limit=...]`: Bitácora de accesos y cambios de la clínica, más reciente primero. Solo ADMIN; consultarla también queda registrado.
+- `GET /api/audit[?patientId=...&entityType=...&entityId=...&actorId=...&action=...&from=...&to=...&limit=...]`: Bitácora de accesos y cambios de la clínica, más reciente primero, con el nombre del paciente (`patient`) y del empleado (`actorName`) resueltos. `action` acepta varias separadas por coma (`READ,LIST,EXPORT`). Solo ADMIN; consultarla también queda registrado.
+- `GET /api/audit/export[?mismos filtros]`: CSV (UTF-8 con BOM, horas de CDMX) de exactamente lo filtrado, hasta 5,000 eventos. Solo ADMIN; cada exportación queda registrada como `EXPORT`. Las celdas que empiezan con `= + - @` se neutralizan: el nombre de WhatsApp de un paciente lo escribe un tercero y Excel lo ejecutaría como fórmula.
 
 ### 6.2 Webhooks (Meta WhatsApp & Twilio Voice)
 
@@ -393,6 +394,7 @@ Construido sobre Next.js 15 (App Router), React 19, Tailwind CSS y Lucide React.
 - `/dashboard/calendar`: Calendario visual e interactivo de consultas con filtro por doctor y visualización de estatus de anticipo.
 - `/dashboard/team`: Gestión del equipo médico y catálogo de servicios con asignación de precios y anticipos obligatorios.
 - `/dashboard/settings`: Configuración general de la clínica, teléfono E.164, mensaje de bienvenida y protocolo de emergencias.
+- `/dashboard/audit`: Bitácora de auditoría (solo ADMIN en vivo; visible para todos en Demo). Feed por día con una frase por evento; al tocar un paciente o un empleado la vista pivota a su expediente de accesos. Filtros en la URL (`period`, `type`, `actorId`, `patientId`, `sensitive`), marcado de eventos sensibles y exportación CSV auditada. Vocabulario en `src/lib/audit.ts`; datos ficticios del Demo en `app/dashboard/audit/demo.ts`.
 
 ### 7.2 Estado Global Dual: Sandbox en Vivo vs. Showcase Demo
 
