@@ -34,6 +34,41 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(ci): validar la minúscula inicial sin depender del locale
+
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+
+### Qué se hizo
+
+El hook `commit-msg` exige que la descripción empiece en minúscula con el
+patrón `[A-ZÁÉÍÓÚÑ]`, pero los rangos de corchetes dependen del collation de
+`LC_COLLATE`: con `es_MX.UTF-8` —el de esta máquina— el rango "A" a "Z" abarca
+también las minúsculas b–z (en la colación española van intercaladas), así que
+el hook veía mayúsculas donde hay minúsculas. Se descubrió al commitear la
+bandeja demo: `fix(web): usar estado de React…` fue rechazado por empezar en
+"u". Solo una descripción que empezara con "a" pasaba, y el protocolo prohíbe
+la salida fácil (`--no-verify`): toca corregir el hook.
+
+- La comprobación usa ahora la clase POSIX `[[:upper:]]`, que en el mismo
+  entorno distingue mayúsculas reales (incluidas Á, É, Í, Ó, Ú, Ñ) de las
+  minúsculas. b–z pasan; "Usar" y "Ánimo" se siguen rechazando.
+
+### Archivos tocados
+
+- `.githooks/commit-msg` — la comprobación de minúscula inicial
+- `BITACORA.md` — esta entrada
+
+### Verificación
+
+- En la máquina afectada (macOS, bash 3.2.57, `LC_COLLATE=es_MX.UTF-8`):
+  - Con el patrón anterior, 24 de 26 letras (b–z) daban falso positivo.
+  - Con `[[:upper:]]`: "usar" y "anclar" pasan; "Usar" y "Ánimo" se rechazan.
+- El commit de la bandeja demo (`91e50a2`) entró porque su descripción empieza
+  con "a", la única letra segura con el hook roto.
+- El commit de esta misma entrada se hizo con el hook corregido.
+
+---
+
 ## [2026-09-14] fix(web): usar estado de React en la bandeja en modo demo
 
 **Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`

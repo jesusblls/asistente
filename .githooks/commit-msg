@@ -62,8 +62,12 @@ case "$ENCABEZADO" in
 esac
 
 DESCRIPCION="${ENCABEZADO#*: }"
+# Clase POSIX y no un rango literal: los rangos ([A-Z]) dependen del collation
+# de LC_COLLATE, y con es_MX.UTF-8 el rango "A" a "Z" abarca también las
+# minúsculas b-z (en la colación española van intercaladas), rechazando
+# mensajes válidos.
 case "$DESCRIPCION" in
-  [A-ZÁÉÍÓÚÑ]*) rechazar "la descripción debe empezar en minúscula." ;;
+  [[:upper:]]*) rechazar "la descripción debe empezar en minúscula." ;;
 esac
 
 exit 0
