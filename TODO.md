@@ -17,12 +17,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ## Alta — antes de producción
 
-- [ ] **Cifrar `ChannelConfig.credentials`.** Los tokens de WhatsApp de cada
-  clínica se guardan en texto plano; el propio esquema dice "JSON cifrado o
-  plano". Cifrarlos con una llave que viva fuera de la base (KMS o variable de
-  entorno) y definir cómo rotarla.
-  `packages/database/prisma/schema.prisma` · origen: auditoría inicial (`402dfc4`)
-
 - [ ] **Migrar de SQLite a PostgreSQL y reescribir los triggers de `AuditLog`.**
   SQLite admite un solo escritor, y ese es el cuello de botella real bajo
   webhooks concurrentes y la cola de trabajos. Los dos triggers que hacen
@@ -38,6 +32,8 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 - [ ] **Definir las variables obligatorias de producción.** Sin ellas la API no
   arranca, responde 503 o rechaza la operación:
   - `JWT_SECRET` (32 caracteres o más)
+  - `CREDENTIALS_ENCRYPTION_KEY` (32 bytes en base64; obligatoria para guardar
+    credenciales de canal)
   - `CORS_ORIGINS`
   - `PUBLIC_API_HOST`
   - `META_APP_SECRET`
@@ -124,9 +120,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   CDMX) ese grupo sale vacío.
   `apps/web/src/app/dashboard/audit/demo.ts` · origen: `da9e937`
 
-- [ ] **Definir `JWT_SECRET` en el `.env` local.** Hoy no está definido: la API
-  genera un secreto efímero y cada reinicio invalida todas las sesiones.
-
 - [ ] **Actualizar `CLAUDE.md`.** El árbol de arquitectura no incluye
   `packages/observability`, la cola durable, el pipeline de voz, la
   autenticación ni la auditoría, y dice Next.js 15 cuando el panel usa 16.3.
@@ -139,3 +132,9 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   optimista cambia `isHandedOverToHuman` pero no recalcula `status`; el botón
   y el banner sí van al instante.
   `apps/web/src/app/dashboard/inbox/page.tsx` · origen: `91e50a2`
+
+- [ ] **Las suites comparten `dev.db` con los servidores de desarrollo.** Con
+  la API corriendo, su worker de la cola puede reclamar trabajos que la suite
+  acaba de encolar y volverla flaky (pasó una vez bajo carga). Aislar las
+  suites en su propia base o documentar que se corre con la API detenida.
+  `apps/api/src/queue-test-suite.ts` · origen: `pendiente`

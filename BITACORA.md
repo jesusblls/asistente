@@ -34,6 +34,71 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(seguridad): cifrar en reposo las credenciales de canal
+
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Era el pendiente de prioridad alta de la auditoría inicial (`402dfc4`): los
+tokens por clínica de `ChannelConfig.credentials` vivían en texto plano. Quien
+obtuviera un respaldo de la base —o el archivo SQLite, que es uno solo— se
+llevaba las credenciales de todas las clínicas; con las de WhatsApp podía
+enviar mensajes a nombre de la clínica.
+
+- `packages/database/src/credentials.ts`: AES-256-GCM en formato
+  `enc:v1:<base64(iv | tag | cuerpo)>`. El prefijo numera el esquema para
+  poder rotar la llave sin adivinar el formato. La llave vive fuera de la
+  base, en `CREDENTIALS_ENCRYPTION_KEY` (32 bytes en base64).
+- Falla en cerrado: en producción, guardar credenciales sin llave lanza; en
+  desarrollo se guarda en claro con un aviso. Las filas legadas en claro se
+  siguen leyendo (migración perezosa).
+- El webhook de Meta descifra al resolver la clínica por `phoneNumberId`; el
+  catch que ya ignoraba credenciales ilegibles ahora cubre también una llave
+  faltante sin tumbar los demás canales.
+- `credentials:rotate` (`packages/database`): pasa a cifrado las filas legadas
+  y rota la llave (`CREDENTIALS_ENCRYPTION_KEY_PREVIOUS` →
+  `CREDENTIALS_ENCRYPTION_KEY`). Idempotente.
+- El fixture del suite de cola ahora se guarda cifrado, como en producción.
+- En los `.env` locales (fuera del repositorio) quedaron `JWT_SECRET` y
+  `CREDENTIALS_ENCRYPTION_KEY` generados; con eso se retira también el
+  pendiente del `JWT_SECRET` local (ya no hay secreto efímero que invalide
+  las sesiones al reiniciar).
+
+### Archivos tocados
+
+- `packages/database/src/credentials.ts` — nuevo
+- `packages/database/src/rotate-credentials.ts` — nuevo
+- `packages/database/src/index.ts` · `packages/database/package.json`
+- `packages/database/prisma/schema.prisma` — comentario del campo
+- `apps/api/src/routes/webhooks.ts` · `apps/api/src/queue-test-suite.ts`
+- `.env.example` — la llave y cómo generarla/rotarla
+- `TODO.md` — dos pendientes resueltos, alta de la variable y del hallazgo de las suites
+- `BITACORA.md` — esta entrada
+
+### Verificación
+
+- Prueba de ida y vuelta (script temporal): 11/11 — prefijo correcto, el JSON
+  en claro no aparece en el valor guardado, ida y vuelta, llave explícita,
+  valor alterado lanza (auth tag), llave equivocada lanza, fila legada pasa
+  tal cual, sin llave: leer cifrado lanza y en producción guardar lanza,
+  rotación A→B se descifra con la nueva.
+- La fila real de `dev.db` pasó de `{"phoneNumberId":…}` a `enc:v1:…` con
+  `credentials:rotate`, y la resolución tipo webhook la descifra y resuelve
+  `dental-polanco`.
+- `npm test` en limpio (con la API detenida, por el hallazgo de abajo):
+  20/20 del agente y 7/7 suites de la API (10 + 34 + 10 + 7 + 28 + 24 + 59).
+  La suite de cola ejerce el fixture cifrado de extremo a extremo.
+- `npm run build` completo en verde.
+
+### Pendientes derivados
+
+- Las suites comparten `dev.db` con los servidores de desarrollo: con la API
+  corriendo, su worker de la cola puede reclamar trabajos que la suite acaba
+  de encolar y volverla flaky (pasó una vez bajo carga). Anotado en `TODO.md`.
+
+---
+
 ## [2026-09-14] feat(web): adaptar el catálogo de servicios a móvil con tarjetas
 
 **Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `8703c1a`

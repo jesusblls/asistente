@@ -182,7 +182,7 @@ model ChannelConfig {
   id            String   @id @default(cuid())
   tenantId      String
   channelType   String   // WHATSAPP, INSTAGRAM, MESSENGER, TWILIO
-  credentials   String   // JSON cifrado o plano con tokens/API keys
+  credentials   String   // JSON con tokens/API keys; cifrado enc:v1: con CREDENTIALS_ENCRYPTION_KEY o claro en desarrollo
   webhookSecret String?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())

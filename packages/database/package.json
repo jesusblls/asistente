@@ -8,6 +8,7 @@
     "push": "prisma db push",
     "seed": "tsx src/seed.ts",
     "admin:create": "tsx src/create-admin.ts",
+    "credentials:rotate": "tsx src/rotate-credentials.ts",
     "migrate": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
     "build": "prisma generate && tsc",

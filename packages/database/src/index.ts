@@ -2,6 +2,7 @@ export { db, getPrismaClient } from './client.js';
 
 export * from '@prisma/client';
 export { hashPassword, verifyPassword, burnPasswordTiming } from './password.js';
+export { decryptCredentials, encryptCredentials, isEncryptedCredential } from './credentials.js';
 export { appointmentSlotKey } from './slotKey.js';
 export {
   AUDIT_ACTIONS,

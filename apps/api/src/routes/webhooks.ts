@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db } from '@asistente/database';
+import { db, decryptCredentials } from '@asistente/database';
 import { normalizeMexicanPhone, MercadoPagoService } from '@asistente/ai-agent';
 import { WhatsAppService } from '../services/whatsappService.js';
 import { enqueueMetaInbound } from '../services/queue/handlers.js';
@@ -23,7 +23,7 @@ async function resolveTenantByWhatsApp(params: {
 
     for (const config of configs) {
       try {
-        const credentials = JSON.parse(config.credentials) as { phoneNumberId?: string };
+        const credentials = JSON.parse(decryptCredentials(config.credentials)) as { phoneNumberId?: string };
         if (credentials.phoneNumberId && credentials.phoneNumberId === params.phoneNumberId) {
           return db.tenant.findFirst({ where: { id: config.tenantId, isActive: true } });
         }

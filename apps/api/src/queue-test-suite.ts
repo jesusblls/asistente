@@ -1,4 +1,4 @@
-import { db } from '@asistente/database';
+import { db, encryptCredentials } from '@asistente/database';
 import { buildServer } from './server.js';
 import { computeMetaSignature } from './lib/webhookSecurity.js';
 import { JobQueue } from './services/queue/queue.js';
@@ -18,6 +18,9 @@ process.env.META_APP_SECRET = 'queue-test-meta-secret';
 process.env.MERCADOPAGO_WEBHOOK_SECRET = 'queue-test-mp-secret';
 process.env.META_WHATSAPP_TOKEN = 'queue-test-wa-token';
 process.env.META_PHONE_NUMBER_ID = 'queue-test-default-phone-id';
+// Llave fija de prueba (32 bytes 'a' en base64): los fixtures de canal se
+// guardan cifrados, como en producción, y el webhook los descifra al resolver.
+process.env.CREDENTIALS_ENCRYPTION_KEY ||= 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=';
 // Un solo intento por ejecución del job: así se prueba el reintento de la cola
 // y no el reintento interno del cliente de WhatsApp.
 process.env.WHATSAPP_SEND_ATTEMPTS = '1';
@@ -229,7 +232,7 @@ async function runQueueTests() {
           create: [
             {
               channelType: 'WHATSAPP',
-              credentials: JSON.stringify({ phoneNumberId: PHONE_NUMBER_ID }),
+              credentials: encryptCredentials(JSON.stringify({ phoneNumberId: PHONE_NUMBER_ID })),
             },
           ],
         },
