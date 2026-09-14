@@ -344,6 +344,9 @@ Servidor Node.js de alto rendimiento con TypeScript, Fastify v5.2, WebSockets y 
   > **Regla estricta:** Cuando `isHandedOverToHuman === true`, la IA permanece 100% en silencio.
 - `POST /api/conversations/:id/reply`: Envía un mensaje redactado por el recepcionista humano y lo transmite al paciente vía WhatsApp.
 
+#### Auditoría (LFPDPPP / NOM-024-SSA3)
+- `GET /api/audit[?patientId=...&entityType=...&entityId=...&actorId=...&action=...&from=...&to=...&limit=...]`: Bitácora de accesos y cambios de la clínica, más reciente primero. Solo ADMIN; consultarla también queda registrado.
+
 ### 6.2 Webhooks (Meta WhatsApp & Twilio Voice)
 
 #### Webhook de Meta (`/webhooks/meta`)
@@ -414,7 +417,7 @@ El frontend implementa el hook `useTenant()` mediante `TenantContext.tsx`:
 
 ## 8. Reglas de Código Inviolables para Agentes de IA
 
-Cualquier agente de IA que modifique o extienda este código debe cumplir con las siguientes 9 reglas inviolables:
+Cualquier agente de IA que modifique o extienda este código debe cumplir con las siguientes 10 reglas inviolables:
 
 0. **Bitácora y Commit en Cada Cambio (regla de proceso, no negociable):**
    - Ninguna tarea está terminada hasta que exista una entrada en [`BITACORA.md`](BITACORA.md) y un commit con formato Conventional Commits. Ver el procedimiento completo en [CLAUDE.md § 7](CLAUDE.md).
@@ -442,6 +445,11 @@ Cualquier agente de IA que modifique o extienda este código debe cumplir con la
 8. **Rol Explícito en Operaciones Destructivas y de Cobro:**
    - Borrar historial, generar datos de prueba, o tocar `paymentStatus`, `depositAmountMxn` y `paymentReferenceId` exige `requireRole()`. Tener sesión válida no basta: marcar una cita como pagada sin que Mercado Pago lo confirme es un agujero de dinero.
    - Todo listado debe llevar `take` acotado (`parseLimit`). Sin límite, cada refresco del panel baja el historial completo de la clínica.
+9. **Todo Acceso o Cambio a Datos Clínicos Deja Rastro en `AuditLog`:**
+   - Cualquier endpoint, herramienta del agente o webhook que lea el expediente de un paciente concreto, o que modifique `Appointment`, `Conversation`, `Message`, `Patient`, `Doctor`, `Service` o `Tenant`, debe llamar a `recordAudit()` de `@asistente/database`, con `patientId` cuando aplique. Es lo que permite responder "quién vio o modificó este expediente" ante la LFPDPPP y la NOM-024-SSA3.
+   - En escrituras pasa el cliente de la transacción (`recordAudit(entry, tx)`): el cambio y su rastro se confirman o se descartan juntos. `SchedulerService.bookAppointment` exige `auditActor` por tipo; no hay forma de agendar sin auditar.
+   - Registra el diff con `diffChanges(antes, data)`. No copies el contenido de mensajes a la auditoría: ya vive en el propio mensaje.
+   - `AuditLog` es de solo inserción. Triggers de base de datos rechazan todo `UPDATE` y el `DELETE` de filas con menos de 5 años (NOM-004-SSA3-2012). No intentes limpiarla en pruebas ni migraciones.
 
 ---
 

@@ -1,8 +1,41 @@
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
-import { db } from '@asistente/database';
+import {
+  db,
+  diffChanges,
+  recordAudit,
+  type AuditActor,
+  type AuditEntry,
+} from '@asistente/database';
 import { SchedulerService } from '../calendar/scheduler.js';
 import { evaluateTriage } from '../triage/triageEngine.js';
 import { normalizeMexicanPhone } from '../utils/phone.js';
+
+/**
+ * Actor de auditoría para lo que el agente hace por su cuenta: agendar,
+ * confirmar, cancelar o revelar una cita por el canal.
+ */
+const AGENT_AUDIT_ACTOR: AuditActor = { type: 'AI_AGENT', id: 'omnichannel-agent' };
+
+function agentAuditMetadata(context: AgentContext, tool: string): Record<string, unknown> {
+  return { tool, channel: context.channel, conversationId: context.conversationId ?? null };
+}
+
+function auditAgentAction(
+  context: AgentContext,
+  tool: string,
+  entry: Pick<AuditEntry, 'action' | 'entityType' | 'entityId' | 'patientId' | 'changes'>,
+  writer?: Parameters<typeof recordAudit>[1]
+): Promise<void> {
+  return recordAudit(
+    {
+      ...entry,
+      tenantId: context.tenantId,
+      actor: AGENT_AUDIT_ACTOR,
+      metadata: agentAuditMetadata(context, tool),
+    },
+    writer
+  );
+}
 
 export interface AgentContext {
   tenantId: string;
@@ -359,6 +392,8 @@ Fecha y hora actual: ${new Date().toISOString()}.
               startTimeIso: args.horarioInicioIso,
               symptoms: args.sintomas,
               channelOrigin: context.channel,
+              auditActor: AGENT_AUDIT_ACTOR,
+              auditMetadata: agentAuditMetadata(context, name),
             });
             bookedAppointment = appt;
             toolResult = {
@@ -375,12 +410,26 @@ Fecha y hora actual: ${new Date().toISOString()}.
               ? await findNextAppointment(context.tenantId, callerPhone)
               : null;
             if (appt) {
-              await db.appointment.update({
-                where: { id: appt.id },
-                data: {
-                  status: 'CONFIRMED',
-                  notes: ((appt.notes || '') + ' | Asistencia confirmada vía WhatsApp').trim(),
-                },
+              await db.$transaction(async (tx) => {
+                await tx.appointment.update({
+                  where: { id: appt.id },
+                  data: {
+                    status: 'CONFIRMED',
+                    notes: ((appt.notes || '') + ' | Asistencia confirmada vía WhatsApp').trim(),
+                  },
+                });
+                await auditAgentAction(
+                  context,
+                  name,
+                  {
+                    action: 'UPDATE',
+                    entityType: 'APPOINTMENT',
+                    entityId: appt.id,
+                    patientId: appt.patientId,
+                    changes: diffChanges({ status: appt.status }, { status: 'CONFIRMED' }),
+                  },
+                  tx
+                );
               });
               toolResult = {
                 confirmed: true,
@@ -397,6 +446,15 @@ Fecha y hora actual: ${new Date().toISOString()}.
             const appt = callerPhone
               ? await findNextAppointment(context.tenantId, callerPhone)
               : null;
+            if (appt) {
+              // Revelar la cita por el canal es un acceso al expediente.
+              await auditAgentAction(context, name, {
+                action: 'READ',
+                entityType: 'APPOINTMENT',
+                entityId: appt.id,
+                patientId: appt.patientId,
+              });
+            }
             toolResult = appt
               ? {
                   doctor: appt.doctor.name,
@@ -411,13 +469,27 @@ Fecha y hora actual: ${new Date().toISOString()}.
               ? await findNextAppointment(context.tenantId, callerPhone)
               : null;
             if (appt) {
-              await db.appointment.update({
-                where: { id: appt.id },
-                data: {
-                  status: 'CANCELLED',
-                  slotKey: null,
-                  notes: ((appt.notes || '') + ' | Cancelada por el paciente').trim(),
-                },
+              await db.$transaction(async (tx) => {
+                await tx.appointment.update({
+                  where: { id: appt.id },
+                  data: {
+                    status: 'CANCELLED',
+                    slotKey: null,
+                    notes: ((appt.notes || '') + ' | Cancelada por el paciente').trim(),
+                  },
+                });
+                await auditAgentAction(
+                  context,
+                  name,
+                  {
+                    action: 'UPDATE',
+                    entityType: 'APPOINTMENT',
+                    entityId: appt.id,
+                    patientId: appt.patientId,
+                    changes: diffChanges({ status: appt.status }, { status: 'CANCELLED' }),
+                  },
+                  tx
+                );
               });
               toolResult = { cancelled: true, message: 'Cita cancelada con éxito.' };
             } else {
@@ -621,15 +693,28 @@ Fecha y hora actual: ${new Date().toISOString()}.
 
     if (isConfirmAttendance) {
       if (activeAppointment) {
-        // Actualizar estatus en base de datos
-        await db.appointment.update({
-          where: { id: activeAppointment.id },
-          data: {
-            status: 'CONFIRMED',
-            notes: (
-              (activeAppointment.notes || '') + ' | Asistencia confirmada por el paciente vía WhatsApp'
-            ).trim(),
-          },
+        await db.$transaction(async (tx) => {
+          await tx.appointment.update({
+            where: { id: activeAppointment.id },
+            data: {
+              status: 'CONFIRMED',
+              notes: (
+                (activeAppointment.notes || '') + ' | Asistencia confirmada por el paciente vía WhatsApp'
+              ).trim(),
+            },
+          });
+          await auditAgentAction(
+            context,
+            'fallback:confirmar_asistencia',
+            {
+              action: 'UPDATE',
+              entityType: 'APPOINTMENT',
+              entityId: activeAppointment.id,
+              patientId: activeAppointment.patientId,
+              changes: diffChanges({ status: activeAppointment.status }, { status: 'CONFIRMED' }),
+            },
+            tx
+          );
         });
 
         const dayPrefix = isTomorrowAppointment
@@ -736,15 +821,29 @@ Fecha y hora actual: ${new Date().toISOString()}.
 
     if (isCancelAppointment) {
       if (activeAppointment) {
-        await db.appointment.update({
-          where: { id: activeAppointment.id },
-          data: {
-            status: 'CANCELLED',
-            slotKey: null,
-            notes: (
-              (activeAppointment.notes || '') + ' | Cancelada por el paciente vía WhatsApp'
-            ).trim(),
-          },
+        await db.$transaction(async (tx) => {
+          await tx.appointment.update({
+            where: { id: activeAppointment.id },
+            data: {
+              status: 'CANCELLED',
+              slotKey: null,
+              notes: (
+                (activeAppointment.notes || '') + ' | Cancelada por el paciente vía WhatsApp'
+              ).trim(),
+            },
+          });
+          await auditAgentAction(
+            context,
+            'fallback:cancelar_cita',
+            {
+              action: 'UPDATE',
+              entityType: 'APPOINTMENT',
+              entityId: activeAppointment.id,
+              patientId: activeAppointment.patientId,
+              changes: diffChanges({ status: activeAppointment.status }, { status: 'CANCELLED' }),
+            },
+            tx
+          );
         });
 
         return {
@@ -872,6 +971,8 @@ Fecha y hora actual: ${new Date().toISOString()}.
           startTimeIso: chosenSlot.startTimeIso,
           symptoms: 'Agendado vía WhatsApp',
           channelOrigin: 'WHATSAPP',
+          auditActor: AGENT_AUDIT_ACTOR,
+          auditMetadata: agentAuditMetadata(context, 'fallback:agendar_cita'),
         });
 
         return {

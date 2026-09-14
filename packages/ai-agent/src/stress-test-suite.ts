@@ -193,6 +193,7 @@ async function runStressTestSuite() {
     // Cita en Clínica A
     const apptSlotA = new Date(slotsA[0].startTimeIso);
     const apptA = await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'stress-test-suite' },
       tenantId: tenantA.id,
       patientFullName: 'Carlos Mendoza Polanco',
       patientPhone: '+525512345001',
@@ -206,6 +207,7 @@ async function runStressTestSuite() {
     // Cita en Clínica B
     const apptSlotB = new Date(slotsB[0].startTimeIso);
     const apptB = await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'stress-test-suite' },
       tenantId: tenantB.id,
       patientFullName: 'Lucía Fernández Roma',
       patientPhone: '+525512345002',
@@ -274,6 +276,7 @@ async function runStressTestSuite() {
 
     // Paciente 1 reserva exitosamente
     const booked1 = await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'stress-test-suite' },
       tenantId: tenantA.id,
       patientFullName: 'Valeria Garza Primer Intento',
       patientPhone: '+525544332211',
@@ -289,6 +292,7 @@ async function runStressTestSuite() {
     let collisionErrorMessage = '';
     try {
       await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'stress-test-suite' },
         tenantId: tenantA.id,
         patientFullName: 'Roberto Peña Segundo Intento (Conflicto)',
         patientPhone: '+525588990011',
@@ -506,6 +510,7 @@ async function runStressTestSuite() {
     depositSlot.setHours(17, 0, 0, 0);
 
     const apptWithDeposit = await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'stress-test-suite' },
       tenantId: tenantA.id,
       patientFullName: 'Fernanda Ortiz No-Show Test',
       patientPhone: '+525566778899',

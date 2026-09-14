@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db, verifyPassword, burnPasswordTiming } from '@asistente/database';
+import { db, verifyPassword, burnPasswordTiming, recordAudit } from '@asistente/database';
 import { HttpError, requireString } from '../lib/http.js';
+import { actorFromRequest } from '../lib/audit.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   /**
@@ -37,8 +38,37 @@ export async function authRoutes(fastify: FastifyInstance) {
         : await burnPasswordTiming(password);
 
       if (!user || !passwordOk) {
+        // Se registra aunque no haya clínica atribuible: los intentos fallidos
+        // repetidos contra un mismo correo son la huella de la fuerza bruta.
+        // El motivo queda solo en la auditoría; al cliente siempre se le
+        // responde lo mismo para no delatar qué cuentas existen.
+        await recordAudit({
+          tenantId: user?.tenantId ?? null,
+          actor: { ...actorFromRequest(request), email },
+          action: 'LOGIN_FAILED',
+          entityType: 'SESSION',
+          entityId: user?.id ?? null,
+          metadata: {
+            reason:
+              users.length > 1 ? 'AMBIGUOUS_TENANT' : user ? 'BAD_PASSWORD' : 'NO_MATCHING_USER',
+          },
+        });
         throw new HttpError(401, 'Credenciales inválidas');
       }
+
+      await recordAudit({
+        tenantId: user.tenantId,
+        actor: {
+          ...actorFromRequest(request),
+          type: 'USER',
+          id: user.id,
+          email: user.email,
+          role: user.role,
+        },
+        action: 'LOGIN',
+        entityType: 'SESSION',
+        entityId: user.id,
+      });
 
       const token = fastify.jwt.sign({
         userId: user.id,

@@ -1,4 +1,4 @@
-import { db, appointmentSlotKey } from '@asistente/database';
+import { db, appointmentSlotKey, recordAudit, type AuditActor } from '@asistente/database';
 import { addMinutes } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { normalizeMexicanPhone } from '../utils/phone.js';
@@ -279,6 +279,10 @@ export class SchedulerService {
     startTimeIso: string;
     symptoms?: string;
     channelOrigin?: string;
+    /** Quién agenda. Obligatorio: ningún camino de agendado puede omitir la auditoría. */
+    auditActor: AuditActor;
+    /** Contexto adicional para la fila de auditoría (herramienta del agente, conversación). */
+    auditMetadata?: Record<string, unknown>;
   }) {
     const {
       tenantId,
@@ -289,6 +293,8 @@ export class SchedulerService {
       startTimeIso,
       symptoms,
       channelOrigin = 'WHATSAPP',
+      auditActor,
+      auditMetadata,
     } = params;
 
     const patientPhoneE164 = normalizeMexicanPhone(patientPhone);
@@ -359,7 +365,7 @@ export class SchedulerService {
       });
 
       try {
-        return await tx.appointment.create({
+        const appointment = await tx.appointment.create({
           data: {
             tenantId,
             patientId: patient.id,
@@ -381,6 +387,28 @@ export class SchedulerService {
             tenant: true,
           },
         });
+
+        // Dentro de la transacción: si la auditoría falla, la cita no se crea.
+        await recordAudit(
+          {
+            tenantId,
+            actor: auditActor,
+            action: 'CREATE',
+            entityType: 'APPOINTMENT',
+            entityId: appointment.id,
+            patientId: patient.id,
+            metadata: {
+              ...auditMetadata,
+              channelOrigin,
+              doctorId,
+              serviceId,
+              startTime: startTime.toISOString(),
+            },
+          },
+          tx
+        );
+
+        return appointment;
       } catch (error) {
         // P2002 sobre slotKey: otra reserva ganó la carrera entre el SELECT de
         // colisiones y este INSERT.

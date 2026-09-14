@@ -54,6 +54,10 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
           }
         : options.logger,
     bodyLimit: Number(process.env.BODY_LIMIT_BYTES || 1024 * 1024),
+    // Detrás de un proxy o balanceador, sin esto `request.ip` es la IP del
+    // proxy: la auditoría registraría la misma IP para todos y el rate limit
+    // metería a todos los usuarios en una sola cubeta.
+    trustProxy: process.env.TRUST_PROXY === 'true',
   });
 
   registerErrorHandler(server);

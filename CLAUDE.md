@@ -173,6 +173,10 @@ asistente/
    * El `OmnichannelAgent` cuenta con un motor de fallback por intenciones que garantiza que frases como `"confirmo"`, `"asistencia"`, `"muchas gracias"`, `"¿a qué hora es mi cita?"` o `"¿dónde están ubicados?"` devuelvan respuestas útiles, cálidas y con contexto real sin ciclarse en el menú de bienvenida.
 5. **No inventar URLs en producción:**
    * Las URLs base de API deben resolverse desde `process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'`.
+6. **Auditoría Obligatoria de Datos Clínicos (LFPDPPP / NOM-024-SSA3):**
+   * Todo acceso al expediente de un paciente concreto y toda modificación de citas, conversaciones, mensajes, pacientes, doctores, servicios o clínicas se registra con `recordAudit()` de `@asistente/database`.
+   * En escrituras se pasa el cliente de la transacción (`recordAudit(entry, tx)`) para que el cambio y su rastro se confirmen juntos.
+   * `AuditLog` es de solo inserción: triggers de base de datos rechazan cualquier `UPDATE` y el `DELETE` de filas con menos de 5 años. La consulta es `GET /api/audit` (solo ADMIN).
 
 ---
 
@@ -243,9 +247,10 @@ bitácora es trabajo incompleto.
 2. **Escribe la entrada** en [`BITACORA.md`](BITACORA.md), **hasta arriba** (orden
    cronológico inverso), usando el formato que el propio archivo documenta.
 3. **Haz el commit** con un mensaje en formato Conventional Commits (§ 7.3).
-4. **Anota el hash** del commit en la entrada de la bitácora. Si prefieres
-   hacerlo en un solo paso, usa `git commit --amend` inmediatamente después para
-   incorporar el hash, o deja `pendiente` y complétalo en el siguiente commit.
+4. **Anota el hash** del commit en la entrada de la bitácora y confírmalo en un
+   commit `docs(bitacora): ...` aparte. No uses `--amend` para esto: reescribir
+   el commit cambia justo el hash que intentas anotar. Hasta entonces, la
+   entrada lleva `pendiente`.
 
 ### 7.2 Qué debe contener la entrada de bitácora
 

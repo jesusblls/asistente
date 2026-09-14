@@ -210,6 +210,7 @@ async function runSecurityTests() {
     let crossTenantServiceRejected = false;
     try {
       await SchedulerService.bookAppointment({
+        auditActor: { type: 'SYSTEM', id: 'security-test-suite' },
         tenantId: tenantA.id,
         patientFullName: 'Intruso Servicio Ajeno',
         patientPhone: '+529900001003',
@@ -225,6 +226,7 @@ async function runSecurityTests() {
     let crossTenantDoctorRejected = false;
     try {
       await SchedulerService.bookAppointment({
+        auditActor: { type: 'SYSTEM', id: 'security-test-suite' },
         tenantId: tenantA.id,
         patientFullName: 'Intruso Doctor Ajeno',
         patientPhone: '+529900001004',
@@ -239,6 +241,7 @@ async function runSecurityTests() {
 
     console.log('\n📞 4. Normalización telefónica E.164');
     const normalizedAppointment = await SchedulerService.bookAppointment({
+        auditActor: { type: 'SYSTEM', id: 'security-test-suite' },
       tenantId: tenantA.id,
       patientFullName: 'Paciente Telefono Crudo',
       patientPhone: '5512340000',
@@ -339,6 +342,7 @@ async function runSecurityTests() {
     assert(twilioGood.statusCode === 200, 'Webhook Twilio con firma válida responde TwiML');
 
     const depositAppointment = await SchedulerService.bookAppointment({
+        auditActor: { type: 'SYSTEM', id: 'security-test-suite' },
       tenantId: tenantA.id,
       patientFullName: 'Paciente Pago',
       patientPhone: '+529900001005',

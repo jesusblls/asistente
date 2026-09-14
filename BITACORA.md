@@ -34,6 +34,116 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-13] feat(seguridad): registrar accesos y cambios clínicos en AuditLog
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Era el pendiente más importante de la auditoría inicial: no quedaba rastro de
+quién consultó o modificó un expediente, que es lo que la LFPDPPP y la
+NOM-024-SSA3 exigen a un sistema de información en salud. Ahora cada acceso y
+cada cambio responde *quién, qué, a qué paciente, cuándo y desde dónde*.
+
+Decisiones de diseño, con su porqué:
+
+- **Tabla sin relaciones.** `AuditLog` no tiene FK hacia clínica, usuario ni
+  paciente: una FK con cascada borraría el rastro junto con lo que rastrea. El
+  correo y el rol del actor se copian al momento del evento por la misma razón.
+- **Inmutabilidad en la base de datos, no en la aplicación.** Dos triggers
+  rechazan todo `UPDATE` y el `DELETE` de filas con menos de 5 años (1827 días,
+  plazo de conservación del expediente según la NOM-004-SSA3-2012). Una regla
+  en el código la salta cualquier bug o script; un trigger no.
+- **Atómica y fail-closed.** `recordAudit(entry, tx)` se escribe en la misma
+  transacción que el cambio: o se confirman los dos o ninguno. Si la auditoría
+  no se puede escribir, la operación falla; es preferible a un cambio sin rastro.
+- **Imposible de olvidar al agendar.** Hay tres caminos que crean citas
+  (recepción, herramienta de Gemini, motor de fallback). `bookAppointment` ahora
+  exige `auditActor` en su firma, así que el compilador rechaza un cuarto camino
+  que no audite.
+- **Lecturas con límite de frecuencia.** La bandeja refresca los mensajes cada
+  2 s: sin límite serían ~1800 filas por hora por chat abierto. Se registra una
+  lectura por usuario y expediente cada 10 min (`AUDIT_READ_THROTTLE_MS`), que
+  basta para saber quién accedió y cuándo. Los cambios se registran siempre.
+- **Sin copiar datos clínicos de más.** Se guarda el diff de campos
+  (`diffChanges`), nunca el contenido de los mensajes, que ya vive en el propio
+  mensaje. Los campos internos (`slotKey`, `updatedAt`) no entran en el diff.
+- **Login.** Éxitos y fallos quedan registrados; los fallos con su motivo
+  (`BAD_PASSWORD`, `NO_MATCHING_USER`, `AMBIGUOUS_TENANT`) y nunca con la
+  contraseña intentada. Al cliente se le sigue respondiendo lo mismo en todos
+  los casos para no delatar qué cuentas existen.
+- **IP real.** `TRUST_PROXY=true` para despliegues detrás de un balanceador;
+  sin él, la auditoría registraría la IP del proxy para todos.
+
+**Cobertura:** login; creación de clínica, doctores y servicios; datos demo y
+reset; cambios de configuración; creación, modificación, cancelación y link de
+anticipo de citas; listados y lectura de chats; toma de control; respuestas de
+recepción; las acciones del agente de IA en ambos motores (agendar, confirmar,
+consultar, cancelar); y la acreditación de anticipos por el webhook de
+Mercado Pago. La consulta es `GET /api/audit` (solo ADMIN, filtrable por
+paciente, entidad, actor, acción y fechas), y consultarla también se registra.
+
+De paso se corrigió el paso 4 del protocolo en `CLAUDE.md § 7.1`: sugería
+`git commit --amend` para anotar el hash, pero reescribir el commit cambia justo
+el hash que se quiere anotar.
+
+### Archivos tocados
+
+- `packages/database/prisma/schema.prisma` — modelo `AuditLog` con 4 índices
+- `packages/database/prisma/migrations/0003_audit_log/` — tabla generada con
+  `prisma migrate diff` más los dos triggers, que Prisma no puede expresar
+- `packages/database/src/audit.ts` — `recordAudit`, `diffChanges`, límite de
+  lecturas y catálogos de acciones, actores y entidades
+- `packages/database/src/client.ts` — el cliente Prisma sale de `index.ts` para
+  evitar un import circular con `audit.ts` (los paquetes compilan a CommonJS)
+- `apps/api/src/lib/audit.ts` — actor a partir del request (usuario, IP,
+  user-agent, request-id) y actor de webhook
+- `apps/api/src/routes/admin.ts` — auditoría en 15 endpoints y `GET /api/audit`
+- `apps/api/src/routes/auth.ts` — login exitoso y fallido
+- `apps/api/src/routes/webhooks.ts`, `packages/ai-agent/src/payment/mercadoPagoService.ts`
+  — acreditación del anticipo en la misma transacción que su auditoría
+- `packages/ai-agent/src/calendar/scheduler.ts` — `auditActor` obligatorio
+- `packages/ai-agent/src/agent/geminiAgent.ts` — actor `AI_AGENT` con
+  herramienta, canal y conversación en cada acción
+- `apps/api/src/server.ts` — `trustProxy`
+- `apps/api/src/audit-test-suite.ts` — suite nueva
+- Suites existentes, `.env.example`, `CLAUDE.md` (regla 6 y § 7.1) y
+  `AGENTS.md` (regla 9 y catálogo de endpoints)
+
+### Verificación
+
+- `npm run build` sin errores
+- Suite nueva `audit-test-suite.ts`: **28/28**. Cubre login (incluido que la
+  contraseña nunca se guarda), creación y diff de citas, límite de lecturas con
+  3 refrescos → 1 fila, fila propia por cada usuario distinto, toma de control,
+  cancelación atribuida al agente de IA, 403 para STAFF, aislamiento entre
+  clínicas, auditoría de la consulta, supervivencia al reset, y los dos
+  triggers: `UPDATE` bloqueado, `DELETE` reciente bloqueado y depuración de una
+  fila de más de 5 años permitida
+- `npm test`: 7/7 suites (206 pruebas). `npm run test:stress`: 40/40
+- Migración aplicada sobre `dev.db` (respaldado antes en el scratchpad);
+  `prisma migrate diff` reporta sin deriva y ambos triggers están instalados
+
+### Pendientes derivados
+
+- **Escrituras que origina el paciente o el canal no se auditan:** mensaje
+  entrante, alta de paciente desde WhatsApp o voz, estados de entrega. El propio
+  registro es el rastro y no hay actor humano. Es una decisión deliberada;
+  revisarla si un auditor externo pide lo contrario.
+- `bookAppointment` sobrescribe `Patient.fullName` sin que el cambio de nombre
+  aparezca como diff.
+- El link de anticipo se audita fuera de la transacción, porque el update lo
+  hace `MercadoPagoService.createDepositPreference`.
+- El límite de lecturas vive en memoria: con varias instancias de la API puede
+  haber una fila por instancia dentro de la misma ventana.
+- **Al migrar a PostgreSQL hay que reescribir los triggers** en PL/pgSQL:
+  Prisma no los genera y `migrate diff` no los detecta.
+- Falta la pantalla de auditoría en el panel; hoy solo existe la API.
+- Las suites dejan filas en el `AuditLog` de `dev.db`: el trigger de retención
+  impide borrarlas, que es justo lo que se prueba.
+
+---
+
 ## [2026-09-13] docs: establecer bitácora obligatoria y estándar de commits
 
 **Autor:** Claude Opus 5 · **Commit:** `ea471f6`

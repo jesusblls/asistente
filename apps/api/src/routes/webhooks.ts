@@ -10,6 +10,7 @@ import {
   verifyMetaSignature,
   verifyTwilioSignature,
 } from '../lib/webhookSecurity.js';
+import { webhookActor } from '../lib/audit.js';
 
 async function resolveTenantByWhatsApp(params: {
   phoneNumberId?: string;
@@ -298,7 +299,10 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       signatureHeader: request.headers['x-signature'] as string | undefined,
     });
 
-    const updated = await MercadoPagoService.processPaymentWebhook(body);
+    const updated = await MercadoPagoService.processPaymentWebhook(
+      body,
+      webhookActor(request, 'mercadopago')
+    );
 
     if (updated.paymentStatus === 'DEPOSIT_PAID') {
       await WhatsAppService.sendAppointmentConfirmation(updated);

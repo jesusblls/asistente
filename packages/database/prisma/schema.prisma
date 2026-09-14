@@ -232,3 +232,37 @@ model FaqItem {
 
   @@index([tenantId])
 }
+
+/// Bitácora de auditoría de accesos y cambios a datos clínicos (LFPDPPP,
+/// NOM-024-SSA3): quién vio o modificó qué expediente, cuándo y desde dónde.
+///
+/// Solo inserción. Triggers de base de datos (migración 0003) rechazan todo
+/// UPDATE y el DELETE de filas con menos de 5 años, plazo mínimo de
+/// conservación del expediente clínico (NOM-004-SSA3-2012).
+///
+/// Sin relaciones a propósito: el rastro debe sobrevivir al borrado de la
+/// clínica, del usuario que actuó o del paciente, y una FK con cascada lo
+/// borraría junto con ellos. Se escribe con `recordAudit()`.
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?  // null solo si no se pudo atribuir (login con correo inexistente)
+  actorType  String   // USER | AI_AGENT | WEBHOOK | SYSTEM | ANONYMOUS
+  actorId    String?
+  actorEmail String?  // copia al momento del evento: el usuario puede cambiar o borrarse
+  actorRole  String?
+  action     String   // LOGIN | LOGIN_FAILED | READ | LIST | CREATE | UPDATE | DELETE
+  entityType String   // SESSION | TENANT | DOCTOR | SERVICE | PATIENT | APPOINTMENT | CONVERSATION | MESSAGE | AUDIT_LOG
+  entityId   String?
+  patientId  String?
+  changes    String?  // JSON { campo: { before, after } }
+  metadata   String?  // JSON con contexto adicional (canal, filtros, conteos)
+  ipAddress  String?
+  userAgent  String?
+  requestId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, patientId, createdAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, actorId, createdAt])
+}

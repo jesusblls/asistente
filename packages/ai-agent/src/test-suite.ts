@@ -79,6 +79,7 @@ async function runVerificationTests() {
   if (service && doctor && slots[0]) {
     const targetSlot = slots[0];
     const appt = await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'test-suite' },
       tenantId: tenant.id,
       patientFullName: 'Carlos Gómez Prueba',
       patientPhone: '+525588776655',
@@ -95,6 +96,7 @@ async function runVerificationTests() {
     let collisionDetected = false;
     try {
       await SchedulerService.bookAppointment({
+      auditActor: { type: 'SYSTEM', id: 'test-suite' },
         tenantId: tenant.id,
         patientFullName: 'Segundo Paciente Conflicto',
         patientPhone: '+525511223344',

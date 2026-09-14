@@ -1,5 +1,8 @@
-import { db } from '@asistente/database';
+import { db, diffChanges, recordAudit, type AuditActor } from '@asistente/database';
 import { roundMxn } from '../utils/money.js';
+
+/** Actor por defecto: la acreditación del anticipo solo la dispara el webhook. */
+const MERCADOPAGO_WEBHOOK_ACTOR: AuditActor = { type: 'WEBHOOK', id: 'mercadopago' };
 
 export interface CreateDepositPreferenceParams {
   appointmentId: string;
@@ -152,7 +155,10 @@ export class MercadoPagoService {
    * Con token configurado, reconsulta el pago en la API de MP y valida estado,
    * cita asociada y monto antes de acreditar el anticipo.
    */
-  static async processPaymentWebhook(payload: PaymentWebhookPayload) {
+  static async processPaymentWebhook(
+    payload: PaymentWebhookPayload,
+    auditActor: AuditActor = MERCADOPAGO_WEBHOOK_ACTOR
+  ) {
     const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
     const paymentId = payload.data?.id ? String(payload.data.id) : undefined;
 
@@ -196,7 +202,7 @@ export class MercadoPagoService {
         throw new Error('El monto pagado no coincide con el anticipo configurado de la cita');
       }
 
-      return this.markDepositAsPaid(appointment.id);
+      return this.markDepositAsPaid(appointment.id, auditActor);
     }
 
     if (accessToken && !paymentId) {
@@ -212,19 +218,24 @@ export class MercadoPagoService {
           where: { paymentReferenceId: referenceId },
         });
         if (appointmentByReference) {
-          return this.markDepositAsPaid(appointmentByReference.id);
+          return this.markDepositAsPaid(appointmentByReference.id, auditActor);
         }
       }
       throw new Error('No se pudo identificar la cita asociada al pago de Mercado Pago');
     }
 
-    return this.markDepositAsPaid(targetAppointmentId);
+    return this.markDepositAsPaid(targetAppointmentId, auditActor);
   }
 
   /**
-   * Marca el anticipo como DEPOSIT_PAID de forma idempotente.
+   * Marca el anticipo como DEPOSIT_PAID de forma idempotente. El cambio y su
+   * fila de auditoría se confirman en la misma transacción: un anticipo nunca
+   * queda acreditado sin rastro de quién lo acreditó.
    */
-  static async markDepositAsPaid(appointmentId: string) {
+  static async markDepositAsPaid(
+    appointmentId: string,
+    auditActor: AuditActor = MERCADOPAGO_WEBHOOK_ACTOR
+  ) {
     const appt = await db.appointment.findUnique({
       where: { id: appointmentId },
       include: { service: true, patient: true, doctor: true, tenant: true },
@@ -238,16 +249,33 @@ export class MercadoPagoService {
       return appt;
     }
 
-    return db.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        paymentStatus: 'DEPOSIT_PAID',
-        notes: (
-          (appt.notes || '') +
-          ` | Anticipo de $${appt.depositAmountMxn || appt.service.requiredDepositMxn} MXN acreditado exitosamente vía Mercado Pago (No-Show Shield)`
-        ).trim(),
-      },
-      include: { patient: true, doctor: true, service: true, tenant: true },
+    return db.$transaction(async (tx) => {
+      const updated = await tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          paymentStatus: 'DEPOSIT_PAID',
+          notes: (
+            (appt.notes || '') +
+            ` | Anticipo de $${appt.depositAmountMxn || appt.service.requiredDepositMxn} MXN acreditado exitosamente vía Mercado Pago (No-Show Shield)`
+          ).trim(),
+        },
+        include: { patient: true, doctor: true, service: true, tenant: true },
+      });
+
+      await recordAudit(
+        {
+          tenantId: appt.tenantId,
+          actor: auditActor,
+          action: 'UPDATE',
+          entityType: 'APPOINTMENT',
+          entityId: appt.id,
+          patientId: appt.patientId,
+          changes: diffChanges(appt, { paymentStatus: 'DEPOSIT_PAID' }),
+        },
+        tx
+      );
+
+      return updated;
     });
   }
 

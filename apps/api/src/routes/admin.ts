@@ -1,7 +1,15 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db, appointmentSlotKey } from '@asistente/database';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITY_TYPES,
+  appointmentSlotKey,
+  db,
+  diffChanges,
+  recordAudit,
+} from '@asistente/database';
 import { SchedulerService, MercadoPagoService, roundMxn } from '@asistente/ai-agent';
 import { WhatsAppService } from '../services/whatsappService.js';
+import { actorFromRequest } from '../lib/audit.js';
 import {
   HttpError,
   optionalString,
@@ -41,6 +49,15 @@ function parseDate(value: unknown, field: string): Date {
     throw new HttpError(400, `${field} no es una fecha válida`);
   }
   return date;
+}
+
+function parseJsonField(value: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function requirePlatformAdmin(request: FastifyRequest): void {
@@ -116,49 +133,66 @@ export async function adminRoutes(fastify: FastifyInstance) {
       .replace(/^-|-$/g, '');
     const slug = `${baseSlug || 'clinica'}-${Date.now().toString(36)}`;
 
-    const tenant = await db.tenant.create({
-      data: {
-        name,
-        slug,
-        phoneE164,
-        address: address || `${city || 'Ciudad de México'}, México`,
-        timezone: 'America/Mexico_City',
-        emergencyInstructions:
-          'Acudir a urgencias o llamar al 911 en caso de dolor incapacitante o traumatismo.',
-        welcomeMessage: `¡Hola! Bienvenido a ${name}. ¿En qué podemos apoyarte hoy?`,
-        doctors: {
-          create: [
-            {
-              name: optionalString(body.doctorName, 'Nombre del doctor', 200) || 'Dra. María Fernández',
-              specialty:
-                optionalString(body.doctorSpecialty, 'Especialidad', 200) ||
-                'Odontología General y Estética',
-              phone: phoneE164,
-            },
-          ],
+    const tenant = await db.$transaction(async (tx) => {
+      const created = await tx.tenant.create({
+        data: {
+          name,
+          slug,
+          phoneE164,
+          address: address || `${city || 'Ciudad de México'}, México`,
+          timezone: 'America/Mexico_City',
+          emergencyInstructions:
+            'Acudir a urgencias o llamar al 911 en caso de dolor incapacitante o traumatismo.',
+          welcomeMessage: `¡Hola! Bienvenido a ${name}. ¿En qué podemos apoyarte hoy?`,
+          doctors: {
+            create: [
+              {
+                name:
+                  optionalString(body.doctorName, 'Nombre del doctor', 200) || 'Dra. María Fernández',
+                specialty:
+                  optionalString(body.doctorSpecialty, 'Especialidad', 200) ||
+                  'Odontología General y Estética',
+                phone: phoneE164,
+              },
+            ],
+          },
+          services: {
+            create: [
+              {
+                name: 'Valoración y Diagnóstico con Rx',
+                description: 'Revisión bucodental completa con radiografía periapical.',
+                durationMinutes: 30,
+                priceMxn: 450,
+                requiredDepositMxn: 0,
+                category: 'Diagnóstico',
+              },
+              {
+                name: 'Limpieza Dental con Ultrasonido',
+                description: 'Profilaxis con ultrasonido y pulido dental.',
+                durationMinutes: 45,
+                priceMxn: 900,
+                requiredDepositMxn: 200,
+                category: 'Prevención',
+              },
+            ],
+          },
         },
-        services: {
-          create: [
-            {
-              name: 'Valoración y Diagnóstico con Rx',
-              description: 'Revisión bucodental completa con radiografía periapical.',
-              durationMinutes: 30,
-              priceMxn: 450,
-              requiredDepositMxn: 0,
-              category: 'Diagnóstico',
-            },
-            {
-              name: 'Limpieza Dental con Ultrasonido',
-              description: 'Profilaxis con ultrasonido y pulido dental.',
-              durationMinutes: 45,
-              priceMxn: 900,
-              requiredDepositMxn: 200,
-              category: 'Prevención',
-            },
-          ],
+        include: { doctors: true, services: true },
+      });
+
+      await recordAudit(
+        {
+          tenantId: created.id,
+          actor: actorFromRequest(request),
+          action: 'CREATE',
+          entityType: 'TENANT',
+          entityId: created.id,
+          metadata: { name, slug },
         },
-      },
-      include: { doctors: true, services: true },
+        tx
+      );
+
+      return created;
     });
 
     return reply.status(201).send(tenant);
@@ -171,6 +205,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     requireRole(request, ['ADMIN']);
     const tenantId = resolveTenantId(request, id);
+    const actor = actorFromRequest(request);
 
     const tenant = await db.tenant.findFirst({
       where: { id: tenantId },
@@ -255,7 +290,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
           create: { tenantId, fullName: sample.name, phoneE164: sample.phone },
         });
 
-        await tx.appointment.create({
+        const appointment = await tx.appointment.create({
           data: {
             tenantId,
             patientId: patient.id,
@@ -304,6 +339,19 @@ export async function adminRoutes(fastify: FastifyInstance) {
             },
           },
         });
+
+        await recordAudit(
+          {
+            tenantId,
+            actor,
+            action: 'CREATE',
+            entityType: 'APPOINTMENT',
+            entityId: appointment.id,
+            patientId: patient.id,
+            metadata: { source: 'DEMO_SEED' },
+          },
+          tx
+        );
       });
 
       created += 1;
@@ -330,11 +378,32 @@ export async function adminRoutes(fastify: FastifyInstance) {
     requireRole(request, ['ADMIN']);
     const tenantId = resolveTenantId(request, id);
 
-    await db.$transaction([
-      db.message.deleteMany({ where: { tenantId } }),
-      db.conversation.deleteMany({ where: { tenantId } }),
-      db.appointment.deleteMany({ where: { tenantId } }),
-    ]);
+    // El borrado queda registrado con sus conteos. La bitácora de auditoría
+    // no se toca: es justo el rastro de que este borrado ocurrió.
+    await db.$transaction(async (tx) => {
+      const messages = await tx.message.deleteMany({ where: { tenantId } });
+      const conversations = await tx.conversation.deleteMany({ where: { tenantId } });
+      const appointments = await tx.appointment.deleteMany({ where: { tenantId } });
+
+      await recordAudit(
+        {
+          tenantId,
+          actor: actorFromRequest(request),
+          action: 'DELETE',
+          entityType: 'TENANT',
+          entityId: tenantId,
+          metadata: {
+            scope: 'CLINICAL_HISTORY',
+            deleted: {
+              messages: messages.count,
+              conversations: conversations.count,
+              appointments: appointments.count,
+            },
+          },
+        },
+        tx
+      );
+    });
 
     return reply.send({ success: true, message: 'Datos de prueba eliminados con éxito' });
   });
@@ -348,26 +417,45 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const tenantId = resolveTenantId(request, id);
     const body = (request.body ?? {}) as Record<string, unknown>;
 
-    const updated = await db.tenant.update({
-      where: { id: tenantId },
-      data: {
-        ...(body.name !== undefined && { name: requireString(body.name, 'Nombre', 200) }),
-        ...(body.phoneE164 !== undefined && {
-          phoneE164: requireMexicanPhone(body.phoneE164, 'Teléfono de la clínica'),
-        }),
-        ...(body.address !== undefined && { address: optionalString(body.address, 'Dirección', 300) }),
-        ...(body.welcomeMessage !== undefined && {
-          welcomeMessage: optionalString(body.welcomeMessage, 'Mensaje de bienvenida', 1000),
-        }),
-        ...(body.emergencyInstructions !== undefined && {
-          emergencyInstructions: optionalString(
-            body.emergencyInstructions,
-            'Instrucciones de emergencia',
-            1000
-          ),
-        }),
-      },
-      include: { doctors: true, services: true },
+    const data = {
+      ...(body.name !== undefined && { name: requireString(body.name, 'Nombre', 200) }),
+      ...(body.phoneE164 !== undefined && {
+        phoneE164: requireMexicanPhone(body.phoneE164, 'Teléfono de la clínica'),
+      }),
+      ...(body.address !== undefined && { address: optionalString(body.address, 'Dirección', 300) }),
+      ...(body.welcomeMessage !== undefined && {
+        welcomeMessage: optionalString(body.welcomeMessage, 'Mensaje de bienvenida', 1000),
+      }),
+      ...(body.emergencyInstructions !== undefined && {
+        emergencyInstructions: optionalString(
+          body.emergencyInstructions,
+          'Instrucciones de emergencia',
+          1000
+        ),
+      }),
+    };
+
+    const updated = await db.$transaction(async (tx) => {
+      const before = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+      const row = await tx.tenant.update({
+        where: { id: tenantId },
+        data,
+        include: { doctors: true, services: true },
+      });
+
+      await recordAudit(
+        {
+          tenantId,
+          actor: actorFromRequest(request),
+          action: 'UPDATE',
+          entityType: 'TENANT',
+          entityId: tenantId,
+          changes: diffChanges(before, data),
+        },
+        tx
+      );
+
+      return row;
     });
 
     return reply.send(updated);
@@ -390,8 +478,24 @@ export async function adminRoutes(fastify: FastifyInstance) {
         : null;
     const email = optionalString(body.email, 'Email', 200) || null;
 
-    const doctor = await db.doctor.create({
-      data: { tenantId, name, specialty, phone, email },
+    const doctor = await db.$transaction(async (tx) => {
+      const created = await tx.doctor.create({
+        data: { tenantId, name, specialty, phone, email },
+      });
+
+      await recordAudit(
+        {
+          tenantId,
+          actor: actorFromRequest(request),
+          action: 'CREATE',
+          entityType: 'DOCTOR',
+          entityId: created.id,
+          metadata: { name, specialty },
+        },
+        tx
+      );
+
+      return created;
     });
 
     return reply.status(201).send(doctor);
@@ -408,10 +512,24 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const doctor = await db.doctor.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!doctor) return reply.status(404).send({ error: 'Doctor no encontrado' });
 
-    await db.$transaction([
-      db.appointment.deleteMany({ where: { doctorId: id, tenantId: user.tenantId } }),
-      db.doctor.delete({ where: { id } }),
-    ]);
+    await db.$transaction(async (tx) => {
+      const appointments = await tx.appointment.deleteMany({
+        where: { doctorId: id, tenantId: user.tenantId },
+      });
+      await tx.doctor.delete({ where: { id } });
+
+      await recordAudit(
+        {
+          tenantId: user.tenantId,
+          actor: actorFromRequest(request),
+          action: 'DELETE',
+          entityType: 'DOCTOR',
+          entityId: id,
+          metadata: { name: doctor.name, appointmentsDeleted: appointments.count },
+        },
+        tx
+      );
+    });
 
     return reply.send({ success: true });
   });
@@ -435,16 +553,32 @@ export async function adminRoutes(fastify: FastifyInstance) {
       requireNumber(body.requiredDepositMxn ?? 0, 'Anticipo MXN', { min: 0, max: priceMxn })
     );
 
-    const service = await db.service.create({
-      data: {
-        tenantId,
-        name,
-        description: optionalString(body.description, 'Descripción', 1000) || null,
-        durationMinutes,
-        priceMxn,
-        requiredDepositMxn,
-        category: optionalString(body.category, 'Categoría', 120) || 'General',
-      },
+    const service = await db.$transaction(async (tx) => {
+      const created = await tx.service.create({
+        data: {
+          tenantId,
+          name,
+          description: optionalString(body.description, 'Descripción', 1000) || null,
+          durationMinutes,
+          priceMxn,
+          requiredDepositMxn,
+          category: optionalString(body.category, 'Categoría', 120) || 'General',
+        },
+      });
+
+      await recordAudit(
+        {
+          tenantId,
+          actor: actorFromRequest(request),
+          action: 'CREATE',
+          entityType: 'SERVICE',
+          entityId: created.id,
+          metadata: { name, priceMxn, requiredDepositMxn },
+        },
+        tx
+      );
+
+      return created;
     });
 
     return reply.status(201).send(service);
@@ -461,10 +595,24 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const service = await db.service.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!service) return reply.status(404).send({ error: 'Servicio no encontrado' });
 
-    await db.$transaction([
-      db.appointment.deleteMany({ where: { serviceId: id, tenantId: user.tenantId } }),
-      db.service.delete({ where: { id } }),
-    ]);
+    await db.$transaction(async (tx) => {
+      const appointments = await tx.appointment.deleteMany({
+        where: { serviceId: id, tenantId: user.tenantId },
+      });
+      await tx.service.delete({ where: { id } });
+
+      await recordAudit(
+        {
+          tenantId: user.tenantId,
+          actor: actorFromRequest(request),
+          action: 'DELETE',
+          entityType: 'SERVICE',
+          entityId: id,
+          metadata: { name: service.name, appointmentsDeleted: appointments.count },
+        },
+        tx
+      );
+    });
 
     return reply.send({ success: true });
   });
@@ -513,6 +661,17 @@ export async function adminRoutes(fastify: FastifyInstance) {
       take: parseLimit(query.limit, 200, 1000),
     });
 
+    await recordAudit({
+      tenantId,
+      actor: actorFromRequest(request),
+      action: 'LIST',
+      entityType: 'APPOINTMENT',
+      metadata: {
+        count: appointments.length,
+        filters: { status: query.status ?? null, from: query.from ?? null, to: query.to ?? null },
+      },
+    });
+
     return reply.send(appointments);
   });
 
@@ -539,6 +698,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
               'Canal'
             )
           : 'WEBCHAT',
+        auditActor: actorFromRequest(request),
       });
 
       return reply.status(201).send(appointment);
@@ -644,10 +804,27 @@ export async function adminRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const updated = await db.appointment.update({
-        where: { id },
-        data,
-        include: { patient: true, doctor: true, service: true },
+      const updated = await db.$transaction(async (tx) => {
+        const row = await tx.appointment.update({
+          where: { id },
+          data,
+          include: { patient: true, doctor: true, service: true },
+        });
+
+        await recordAudit(
+          {
+            tenantId: user.tenantId,
+            actor: actorFromRequest(request),
+            action: 'UPDATE',
+            entityType: 'APPOINTMENT',
+            entityId: id,
+            patientId: existing.patientId,
+            changes: diffChanges(existing, data),
+          },
+          tx
+        );
+
+        return row;
       });
 
       return reply.send(updated);
@@ -691,6 +868,20 @@ export async function adminRoutes(fastify: FastifyInstance) {
         patientName: appointment.patient.fullName,
       });
 
+      await recordAudit({
+        tenantId: user.tenantId,
+        actor: actorFromRequest(request),
+        action: 'UPDATE',
+        entityType: 'APPOINTMENT',
+        entityId: id,
+        patientId: appointment.patientId,
+        changes: diffChanges(appointment, {
+          paymentStatus: 'DEPOSIT_PENDING',
+          depositAmountMxn: amountMxn,
+        }),
+        metadata: { event: 'DEPOSIT_LINK_CREATED' },
+      });
+
       return reply.send(preference);
     }
   );
@@ -705,9 +896,26 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const appointment = await db.appointment.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!appointment) return reply.status(404).send({ error: 'Cita no encontrada' });
 
-    const updated = await db.appointment.update({
-      where: { id },
-      data: { status: 'CANCELLED', slotKey: null },
+    const updated = await db.$transaction(async (tx) => {
+      const row = await tx.appointment.update({
+        where: { id },
+        data: { status: 'CANCELLED', slotKey: null },
+      });
+
+      await recordAudit(
+        {
+          tenantId: user.tenantId,
+          actor: actorFromRequest(request),
+          action: 'UPDATE',
+          entityType: 'APPOINTMENT',
+          entityId: id,
+          patientId: appointment.patientId,
+          changes: diffChanges(appointment, { status: 'CANCELLED' }),
+        },
+        tx
+      );
+
+      return row;
     });
 
     return reply.send({ success: true, appointment: updated });
@@ -760,6 +968,14 @@ export async function adminRoutes(fastify: FastifyInstance) {
       take: parseLimit(query.limit, 100, 500),
     });
 
+    await recordAudit({
+      tenantId,
+      actor: actorFromRequest(request),
+      action: 'LIST',
+      entityType: 'CONVERSATION',
+      metadata: { count: conversations.length },
+    });
+
     return reply.send(conversations);
   });
 
@@ -775,7 +991,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
       const conversation = await db.conversation.findFirst({
         where: { id, tenantId: user.tenantId },
-        select: { id: true },
+        select: { id: true, patientId: true },
       });
       if (!conversation) return reply.status(404).send({ error: 'Conversación no encontrada' });
 
@@ -785,6 +1001,17 @@ export async function adminRoutes(fastify: FastifyInstance) {
         where: { conversationId: id, tenantId: user.tenantId },
         orderBy: { createdAt: 'desc' },
         take: parseLimit(query.limit, 200, 500),
+      });
+
+      // Abrir un chat es leer el expediente de ese paciente. La bandeja
+      // refresca cada 2 s; `recordAudit` deja una sola fila por ventana.
+      await recordAudit({
+        tenantId: user.tenantId,
+        actor: actorFromRequest(request),
+        action: 'READ',
+        entityType: 'CONVERSATION',
+        entityId: id,
+        patientId: conversation.patientId,
       });
 
       return reply.send(messages.reverse());
@@ -807,9 +1034,26 @@ export async function adminRoutes(fastify: FastifyInstance) {
       });
       if (!conversation) return reply.status(404).send({ error: 'Conversación no encontrada' });
 
-      const updated = await db.conversation.update({
-        where: { id },
-        data: { isHandedOverToHuman: isHandedOver },
+      const updated = await db.$transaction(async (tx) => {
+        const row = await tx.conversation.update({
+          where: { id },
+          data: { isHandedOverToHuman: isHandedOver },
+        });
+
+        await recordAudit(
+          {
+            tenantId: user.tenantId,
+            actor: actorFromRequest(request),
+            action: 'UPDATE',
+            entityType: 'CONVERSATION',
+            entityId: id,
+            patientId: conversation.patientId,
+            changes: diffChanges(conversation, { isHandedOverToHuman: isHandedOver }),
+          },
+          tx
+        );
+
+        return row;
       });
 
       return reply.send({ success: true, isHandedOverToHuman: updated.isHandedOverToHuman });
@@ -833,16 +1077,35 @@ export async function adminRoutes(fastify: FastifyInstance) {
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversación no encontrada' });
 
-    const savedMessage = await db.message.create({
-      data: {
-        conversationId: id,
-        tenantId: user.tenantId,
-        direction: 'OUTBOUND',
-        senderRole: 'HUMAN_STAFF',
-        content: staffName ? `[${staffName}]: ${text}` : text,
-        channel: conversation.channel,
-        deliveryStatus: conversation.channel === 'WHATSAPP' ? 'PENDING' : null,
-      },
+    // El contenido no se copia a la auditoría: ya vive en el propio mensaje, y
+    // duplicarlo solo multiplica los lugares donde hay datos clínicos.
+    const savedMessage = await db.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: {
+          conversationId: id,
+          tenantId: user.tenantId,
+          direction: 'OUTBOUND',
+          senderRole: 'HUMAN_STAFF',
+          content: staffName ? `[${staffName}]: ${text}` : text,
+          channel: conversation.channel,
+          deliveryStatus: conversation.channel === 'WHATSAPP' ? 'PENDING' : null,
+        },
+      });
+
+      await recordAudit(
+        {
+          tenantId: user.tenantId,
+          actor: actorFromRequest(request),
+          action: 'CREATE',
+          entityType: 'MESSAGE',
+          entityId: message.id,
+          patientId: conversation.patientId,
+          metadata: { conversationId: id, channel: conversation.channel },
+        },
+        tx
+      );
+
+      return message;
     });
 
     let delivered: boolean | null = null;
@@ -863,5 +1126,55 @@ export async function adminRoutes(fastify: FastifyInstance) {
     }
 
     return reply.send(savedMessage);
+  });
+
+  /**
+   * Bitácora de auditoría de la clínica (solo ADMIN).
+   *
+   * Responde "quién vio o modificó el expediente de este paciente": filtra por
+   * `patientId`, entidad, actor, acción o rango de fechas. Consultarla también
+   * queda registrado, porque la propia bitácora contiene datos sensibles.
+   */
+  fastify.get('/api/audit', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requireRole(request, ['ADMIN']);
+    const query = request.query as Record<string, string | undefined>;
+
+    const where: Record<string, unknown> = { tenantId: user.tenantId };
+    if (query.patientId) where.patientId = requireString(query.patientId, 'patientId', 100);
+    if (query.entityId) where.entityId = requireString(query.entityId, 'entityId', 100);
+    if (query.actorId) where.actorId = requireString(query.actorId, 'actorId', 100);
+    if (query.entityType) {
+      where.entityType = requireEnum(query.entityType, AUDIT_ENTITY_TYPES, 'entityType');
+    }
+    if (query.action) where.action = requireEnum(query.action, AUDIT_ACTIONS, 'action');
+    if (query.from || query.to) {
+      where.createdAt = {
+        ...(query.from && { gte: parseDate(query.from, 'Fecha inicial') }),
+        ...(query.to && { lte: parseDate(query.to, 'Fecha final') }),
+      };
+    }
+
+    const rows = await db.auditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: parseLimit(query.limit, 100, 500),
+    });
+
+    await recordAudit({
+      tenantId: user.tenantId,
+      actor: actorFromRequest(request),
+      action: 'LIST',
+      entityType: 'AUDIT_LOG',
+      patientId: query.patientId ?? null,
+      metadata: { count: rows.length },
+    });
+
+    return reply.send(
+      rows.map((row) => ({
+        ...row,
+        changes: parseJsonField(row.changes),
+        metadata: parseJsonField(row.metadata),
+      }))
+    );
   });
 }
