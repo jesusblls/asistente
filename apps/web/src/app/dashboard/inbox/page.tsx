@@ -237,6 +237,14 @@ export default function OmnichannelInboxPage() {
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [liveMessages, setLiveMessages] = useState<Record<string, MessageItem[]>>({});
+  // La demo vive en estado de React, no en las constantes del módulo: así los
+  // cambios se reflejan al instante y no se filtran entre navegaciones.
+  const [demoConversations, setDemoConversations] = useState<ConversationItem[]>(() =>
+    DEMO_CONVERSATIONS.map((c) => ({ ...c }))
+  );
+  const [demoMessages, setDemoMessages] = useState<Record<string, MessageItem[]>>(() =>
+    Object.fromEntries(Object.entries(DEMO_MESSAGES).map(([id, msgs]) => [id, [...msgs]]))
+  );
   const [isSeeding, setIsSeeding] = useState(false);
 
   // Bajo 768 px la bandeja muestra la lista o el chat, nunca ambos a la vez.
@@ -281,10 +289,10 @@ export default function OmnichannelInboxPage() {
   // Determinar conversaciones activas según el modo seleccionado
   const conversations = useMemo(() => {
     if (mode === 'demo') {
-      return DEMO_CONVERSATIONS;
+      return demoConversations;
     }
     return liveConversations;
-  }, [mode, liveConversations]);
+  }, [mode, liveConversations, demoConversations]);
 
   // Filtrar por búsqueda
   const filteredConversations = useMemo(() => {
@@ -468,9 +476,17 @@ export default function OmnichannelInboxPage() {
     const nextState = !activeConv.isHandedOverToHuman;
 
     if (mode === 'demo') {
-      activeConv.isHandedOverToHuman = nextState;
-      activeConv.status = nextState ? 'Modo Humano Activo' : 'Atendido por IA';
-      setActiveConvId((id) => id); // trigger re-render
+      setDemoConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConv.id
+            ? {
+                ...c,
+                isHandedOverToHuman: nextState,
+                status: nextState ? 'Modo Humano Activo' : 'Atendido por IA',
+              }
+            : c
+        )
+      );
       return;
     }
 
@@ -507,8 +523,10 @@ export default function OmnichannelInboxPage() {
     };
 
     if (mode === 'demo') {
-      DEMO_MESSAGES[activeConv.id] = [...(DEMO_MESSAGES[activeConv.id] || []), newMsg];
-      setActiveConvId((id) => id);
+      setDemoMessages((prev) => ({
+        ...prev,
+        [activeConv.id]: [...(prev[activeConv.id] || []), newMsg],
+      }));
       return;
     }
 
@@ -531,10 +549,10 @@ export default function OmnichannelInboxPage() {
   const currentMessages = useMemo(() => {
     if (!activeConv) return [];
     if (mode === 'demo') {
-      return DEMO_MESSAGES[activeConv.id] || [];
+      return demoMessages[activeConv.id] || [];
     }
     return liveMessages[activeConv.id] || [];
-  }, [mode, activeConv, liveMessages]);
+  }, [mode, activeConv, liveMessages, demoMessages]);
 
   const handleSeedFromInbox = async () => {
     if (!activeTenantId) return;

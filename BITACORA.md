@@ -34,6 +34,63 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(web): usar estado de React en la bandeja en modo demo
+
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Era el pendiente que anotó la entrada de la bandeja móvil (`ce12a56`): en Modo
+Demo, "Tomar control" y "Enviar" mutaban directamente `DEMO_CONVERSATIONS` y
+`DEMO_MESSAGES`, constantes del módulo, en lugar de usar estado de React.
+
+Al reproducirlo en un navegador real, el síntoma resultó peor de lo anotado:
+`setActiveConvId((id) => id)` pedía el re-render devolviendo el mismo valor, así
+que React descartaba la actualización y el click no producía ninguna señal —ni
+banner, ni cambio de color, ni estado—. El cambio aparecía "por arte de magia"
+al salir y volver a la bandeja, porque la constante del módulo ya había quedado
+mutada y las mutaciones sobrevivían a la navegación. En una demo comercial eso
+es un botón muerto seguido de un estado fantasma.
+
+- La demo ahora vive en dos estados (`demoConversations` y `demoMessages`),
+  clonados de las constantes al montar; las constantes quedan intactas.
+- `toggleTakeover` y `handleSendMessage` actualizan con funciones inmutables:
+  el feedback es inmediato y, al salir y volver, la demo arranca limpia.
+- Los memos `conversations` y `currentMessages` leen el estado en Demo y los
+  datos del API en vivo; el camino en vivo no cambió.
+
+### Archivos tocados
+
+- `apps/web/src/app/dashboard/inbox/page.tsx` — estados de demo y actualizaciones inmutables
+- `TODO.md` — se retiró el pendiente resuelto, el conteo de ESLint bajó (13 → 12) y se dio de alta el pendiente derivado
+- `BITACORA.md` — esta entrada
+
+### Verificación
+
+- `npm run build --workspace=@asistente/web` (Turbopack): compila, TypeScript
+  limpio y las 11 rutas generadas.
+- ESLint: 13 → 12 avisos, sin avisos nuevos. Desapareció la mutación de la
+  bandeja; queda la de `usePolling` y el resto ya anotado en `TODO.md`.
+- Con Playwright (navegador real, 1280 px), en Modo Demo:
+  - "Tomar control" → banner ámbar, botón "Devolver a la IA" y badge "Humano"
+    en la lista, al instante y sin navegar.
+  - Apagarlo → "Atendido por IA" al instante.
+  - Salir a Resumen y volver → estado fresco (antes quedaba "Modo Humano
+    Activo" fantasma).
+  - Enviar un mensaje → aparece al instante; ya no sobrevive a la navegación.
+- En vivo (administrador desechable, creado y borrado para la prueba): la
+  bandeja carga sus 8 conversaciones, el takeover llega a la API, sobrevive al
+  sondeo de 3 s, y apagarlo deja la conversación como estaba.
+
+### Pendientes derivados
+
+- En vivo, la etiqueta "Estado:" del encabezado del chat tarda hasta un ciclo
+  de sondeo (≤3 s) en reflejar el apagado del takeover: la actualización
+  optimista cambia `isHandedOverToHuman` pero no recalcula `status`. El botón
+  y el banner sí van al instante.
+
+---
+
 ## [2026-09-14] docs: reunir los pendientes en TODO.md
 
 **Autor:** Claude Opus 5 · **Commit:** `020c689`

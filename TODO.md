@@ -101,16 +101,10 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
   origen: `402dfc4`
 
-- [ ] **La bandeja en modo Demo modifica constantes del módulo.** "Tomar
-  control" y "Enviar" cambian `DEMO_CONVERSATIONS` y `DEMO_MESSAGES` en lugar
-  de usar estado de React: los cambios sobreviven entre navegaciones y ESLint
-  lo marca.
-  `apps/web/src/app/dashboard/inbox/page.tsx` · origen: `ce12a56`
-
-- [ ] **13 avisos de ESLint en el panel,** todos anteriores a estas sesiones:
+- [ ] **12 avisos de ESLint en el panel,** todos anteriores a estas sesiones:
   - 8 × `react-hooks/set-state-in-effect` (calendario ×2, `TenantContext` ×2,
     bandeja, configuración, `AuthGuard`, `DashboardShell`)
-  - 2 × `react-hooks/immutability` (bandeja, `usePolling`)
+  - 1 × `react-hooks/immutability` (`usePolling`)
   - 1 × `react-hooks/purity` (calendario)
   - 2 × navegación con `window.location.href` (`lib/api.ts`, `DashboardShell`)
 
@@ -144,3 +138,9 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 - [ ] **Crear `DESIGN.md`** con el sistema visual del panel (paleta, tipografía,
   componentes). Hoy vive solo en el código.
+
+- [ ] **La etiqueta "Estado:" de la bandeja en vivo tarda hasta un ciclo de
+  sondeo (≤3 s) en reflejar el apagado del takeover.** La actualización
+  optimista cambia `isHandedOverToHuman` pero no recalcula `status`; el botón
+  y el banner sí van al instante.
+  `apps/web/src/app/dashboard/inbox/page.tsx` · origen: `pendiente`
