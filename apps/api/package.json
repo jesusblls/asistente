@@ -13,6 +13,7 @@
     "@asistente/database": "*",
     "@asistente/observability": "*",
     "@asistente/shared-types": "*",
+    "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^10.0.2",
     "@fastify/formbody": "^8.0.2",
     "@fastify/helmet": "^13.1.1",

@@ -31,3 +31,4 @@ blob-report/
 .gstack/
 # Capturas de revisión de diseño (se regeneran en cada verificación)
 **/.impeccable/review/
+.claude/

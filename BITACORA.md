@@ -34,6 +34,58 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(seguridad): migrar sesión JWT de localStorage a cookie httpOnly
+
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `8e60cf9`
+
+### Qué se hizo
+
+Se resolvió el pendiente de prioridad alta de seguridad (`402dfc4`): el token JWT de sesión (12 horas) se guardaba en el `localStorage` del navegador, dejando la sesión expuesta a sustracción ante eventuales vulnerabilidades XSS.
+
+- `apps/api`:
+  - Instalado y registrado `@fastify/cookie`.
+  - En `apps/api/src/lib/auth.ts`: la autenticación ahora extrae el token prioritariamente desde la cookie `asistente_session`. Si no existe, admite el header `Authorization: Bearer <token>` para garantizar retrocompatibilidad total con APIs directas, webhooks y suites de prueba.
+  - En `apps/api/src/routes/auth.ts`:
+    - `/auth/login`: emite la cookie `asistente_session` con `httpOnly: true`, `SameSite: Lax`, `path: '/'`, `maxAge: 12h` y `secure` en producción.
+    - `/auth/logout`: nuevo endpoint que limpia la cookie de sesión y registra el evento `LOGOUT` en la bitácora de auditoría (`AuditLog`).
+- `packages/database`:
+  - En `packages/database/src/audit.ts`: agregada la acción `LOGOUT` al catálogo inmutable de `AUDIT_ACTIONS`.
+- `apps/web`:
+  - En `apps/web/src/lib/api.ts`: el token JWT ya no se almacena en `localStorage` (se remueve proactivamente si existiera). `apiFetch` y `loginRequest` transmiten las credenciales con `credentials: 'same-origin'`, y se agregó la función `logoutRequest()`.
+  - En `apps/web/src/components/dashboard/DashboardShell.tsx`: el botón "Cerrar sesión" invoca `await logoutRequest()` y redirige mediante `useRouter().replace('/login')`, eliminando también el warning de ESLint por `window.location.href`.
+  - En `apps/web/src/context/TenantContext.tsx`: `refreshTenants` ahora valida con `isAuthenticated()` en lugar de `getToken()`, y sincroniza con el tenant activo de la sesión.
+- Pruebas y verificación:
+  - Creada la suite `apps/api/src/cookie-auth-test-suite.ts` (13/13 pruebas en verde).
+  - Actualizada la suite `apps/web/e2e/login.spec.ts` (3/3 pruebas E2E en verde con Playwright).
+
+### Archivos tocados
+
+- `packages/database/src/audit.ts`
+- `apps/api/package.json`
+- `apps/api/src/lib/auth.ts`
+- `apps/api/src/routes/auth.ts`
+- `apps/api/src/cookie-auth-test-suite.ts` — nuevo
+- `apps/web/src/lib/api.ts`
+- `apps/web/src/context/TenantContext.tsx`
+- `apps/web/src/components/dashboard/DashboardShell.tsx`
+- `apps/web/e2e/login.spec.ts`
+- `TODO.md`
+- `BITACORA.md`
+
+### Verificación
+
+- `npx tsx apps/api/src/cookie-auth-test-suite.ts`: 13/13 pruebas exitosas (Set-Cookie httpOnly, SameSite=Lax, autenticación con cookie, rechazo sin credenciales, compatibilidad con Bearer token, y logout con registro en AuditLog).
+- `npm run test --workspace=@asistente/api`: 8/8 suites completas de la API pasaron (10 + 34 + 13 + 10 + 7 + 28 + 24 + 59 pruebas).
+- `npm run test:e2e`: 3/3 pruebas de Playwright pasadas (login válido, login inválido, logout y expiración de cookie).
+- Verificación interactiva en navegador Chromium confirmando `cookie.httpOnly === true`, `cookie.sameSite === 'Lax'` y `localStorage.asistente_auth_token === null`.
+- `npm run build`: compilación de todo el monorepo en verde.
+
+### Pendientes derivados
+
+- Ninguno.
+
+---
+
 ## [2026-09-14] fix(seguridad): cifrar en reposo las credenciales de canal
 
 **Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `87d99be`

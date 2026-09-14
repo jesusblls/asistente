@@ -10,7 +10,7 @@
  */
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-const TOKEN_KEY = 'asistente_auth_token';
+const TOKEN_KEY = 'asistente_auth_token'; // Clave obsoleta: se remueve de localStorage para evitar tokens expuestos
 const USER_KEY = 'asistente_auth_user';
 const TENANT_KEY = 'asistente_auth_tenant';
 
@@ -27,16 +27,15 @@ export interface AuthTenantInfo {
   slug: string;
 }
 
+/**
+ * @deprecated El token JWT ahora se gestiona exclusivamente en la cookie httpOnly asistente_session
+ */
 export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export function isAuthenticated(): boolean {
-  return Boolean(getToken());
+  return Boolean(getUser());
 }
 
 export function getUser(): AuthUserInfo | null {
@@ -57,10 +56,34 @@ export function getSessionTenant(): AuthTenantInfo | null {
   }
 }
 
-export function setSession(token: string, user: AuthUserInfo, tenant: AuthTenantInfo): void {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  localStorage.setItem(TENANT_KEY, JSON.stringify(tenant));
+export function setSession(
+  userOrToken: string | AuthUserInfo,
+  userOrTenant?: AuthUserInfo | AuthTenantInfo,
+  maybeTenant?: AuthTenantInfo
+): void {
+  try {
+    // Asegurar que ningún token quede en localStorage
+    localStorage.removeItem(TOKEN_KEY);
+
+    let user: AuthUserInfo | undefined;
+    let tenant: AuthTenantInfo | undefined;
+
+    if (typeof userOrToken === 'string') {
+      user = userOrTenant as AuthUserInfo;
+      tenant = maybeTenant;
+    } else {
+      user = userOrToken;
+      tenant = userOrTenant as AuthTenantInfo;
+    }
+
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    if (tenant) {
+      localStorage.setItem(TENANT_KEY, JSON.stringify(tenant));
+      localStorage.setItem('asistente_active_tenant_id', tenant.id);
+    }
+  } catch {
+    // Ignorar restricciones de almacenamiento del navegador.
+  }
 }
 
 export function clearSession(): void {
@@ -68,6 +91,7 @@ export function clearSession(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(TENANT_KEY);
+    localStorage.removeItem('asistente_active_tenant_id');
   } catch {
     // Ignorar restricciones de almacenamiento del navegador.
   }
@@ -76,19 +100,22 @@ export function clearSession(): void {
 export function redirectToLogin(): void {
   if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
     clearSession();
-    window.location.href = '/login';
+    window.location.replace('/login');
   }
 }
 
 /**
- * Envoltorio de fetch que adjunta el token de sesión y expulsa al login ante 401.
+ * Envoltorio de fetch que transmite la cookie de sesión (httpOnly) y expulsa al login ante 401.
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const token = getToken();
   const headers = new Headers(init.headers || {});
-  if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const response = await fetch(input, { ...init, headers });
+  const response = await fetch(input, {
+    ...init,
+    credentials: init.credentials ?? 'same-origin',
+    headers,
+  });
+
   if (response.status === 401) {
     redirectToLogin();
   }
@@ -102,6 +129,7 @@ export async function loginRequest(params: {
 }): Promise<{ token: string; user: AuthUserInfo; tenant: AuthTenantInfo }> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
@@ -111,4 +139,17 @@ export async function loginRequest(params: {
     throw new Error(data.error || 'No se pudo iniciar sesión');
   }
   return data;
+}
+
+export async function logoutRequest(): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+  } catch {
+    // Ignorar errores de red en logout
+  } finally {
+    clearSession();
+  }
 }

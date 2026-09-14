@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db, verifyPassword, burnPasswordTiming, recordAudit } from '@asistente/database';
 import { HttpError, requireString } from '../lib/http.js';
 import { actorFromRequest } from '../lib/audit.js';
+import { AUTH_COOKIE_NAME, getAuthCookieOptions, type AuthUser } from '../lib/auth.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   /**
@@ -77,6 +78,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         email: user.email,
       });
 
+      reply.setCookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+
       return reply.send({
         token,
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
@@ -84,6 +87,49 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  /**
+   * Cierre de sesión: invalida la cookie de sesión y registra el evento de auditoría.
+   */
+  fastify.post('/auth/logout', async (request: FastifyRequest, reply: FastifyReply) => {
+    let claims: AuthUser | undefined;
+    try {
+      const cookieToken = request.cookies?.[AUTH_COOKIE_NAME];
+      if (cookieToken) {
+        claims = fastify.jwt.verify<AuthUser>(cookieToken);
+      } else if (request.headers.authorization) {
+        await request.jwtVerify();
+        claims = request.user as AuthUser;
+      }
+    } catch {
+      // Ignorar error de verificación si el token ya expiró o no es válido
+    }
+
+    if (claims) {
+      await recordAudit({
+        tenantId: claims.tenantId,
+        actor: {
+          ...actorFromRequest(request),
+          type: 'USER',
+          id: claims.userId,
+          email: claims.email,
+          role: claims.role,
+        },
+        action: 'LOGOUT',
+        entityType: 'SESSION',
+        entityId: claims.userId,
+      });
+    }
+
+    reply.clearCookie(AUTH_COOKIE_NAME, {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+
+    return reply.send({ ok: true });
+  });
 
   /**
    * Datos de la sesión actual.

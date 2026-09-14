@@ -25,10 +25,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   `migrate diff` no los detecta, así que la protección desaparecería sin aviso.
   `packages/database/prisma/migrations/0003_audit_log/` · origen: `402dfc4`, `052a205`
 
-- [ ] **Sacar el JWT de `localStorage`.** Cualquier XSS permite robar una sesión
-  de 12 horas. Pasar a una cookie `httpOnly` con `SameSite` y protección CSRF.
-  `apps/web/src/lib/api.ts`, `apps/api/src/lib/auth.ts` · origen: `402dfc4`
-
 - [ ] **Definir las variables obligatorias de producción.** Sin ellas la API no
   arranca, responde 503 o rechaza la operación:
   - `JWT_SECRET` (32 caracteres o más)

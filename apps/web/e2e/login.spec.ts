@@ -71,8 +71,16 @@ test('un usuario válido inicia sesión y llega al dashboard', async ({ page }) 
   ).toBeVisible();
   await expect(page.getByText(tenantName).first()).toBeVisible();
 
-  const token = await page.evaluate(() => localStorage.getItem('asistente_auth_token'));
-  expect(token).toBeTruthy();
+  // El JWT ya NO se almacena en localStorage (mitigación XSS)
+  const tokenInStorage = await page.evaluate(() => localStorage.getItem('asistente_auth_token'));
+  expect(tokenInStorage).toBeNull();
+
+  // El JWT vive en la cookie httpOnly asistente_session
+  const cookies = await page.context().cookies();
+  const sessionCookie = cookies.find((c) => c.name === 'asistente_session');
+  expect(sessionCookie).toBeDefined();
+  expect(sessionCookie?.httpOnly).toBe(true);
+  expect(sessionCookie?.value).toBeTruthy();
 });
 
 test('credenciales inválidas muestran el error y no abren el panel', async ({ page }) => {
@@ -84,4 +92,20 @@ test('credenciales inválidas muestran el error y no abren el panel', async ({ p
 
   await expect(page.getByText('Credenciales inválidas')).toBeVisible();
   await expect(page).toHaveURL(/\/login/);
+});
+
+test('el cierre de sesión invalida la cookie httpOnly y redirige al login', async ({ page }) => {
+  await page.goto('/login');
+
+  await fillWhenHydrated(page, 'Correo electrónico', email);
+  await fillWhenHydrated(page, 'Contraseña', password);
+  await page.getByRole('button', { name: 'Entrar al panel' }).click();
+  await page.waitForURL('**/dashboard', { timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+  await page.waitForURL('**/login', { timeout: 15_000 });
+
+  const cookies = await page.context().cookies();
+  const sessionCookie = cookies.find((c) => c.name === 'asistente_session');
+  expect(sessionCookie?.value || '').toBe('');
 });

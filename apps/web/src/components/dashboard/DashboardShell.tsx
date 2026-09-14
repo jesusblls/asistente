@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Inbox,
@@ -24,10 +24,11 @@ import {
   Menu,
 } from 'lucide-react';
 import { useTenant } from '../../context/TenantContext';
-import { clearSession, getUser, type AuthUserInfo } from '../../lib/api';
+import { logoutRequest, getUser, type AuthUserInfo } from '../../lib/api';
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const {
     mode,
     setMode,
@@ -130,9 +131,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     setTimeout(() => setActionNotice(null), 4000);
   };
 
-  const handleLogout = () => {
-    clearSession();
-    window.location.href = '/login';
+  const handleLogout = async () => {
+    await logoutRequest();
+    router.replace('/login');
   };
 
   const navLinks: { href: string; label: string; icon: typeof LayoutDashboard; badge?: string }[] = [

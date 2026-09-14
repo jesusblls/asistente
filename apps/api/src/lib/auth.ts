@@ -1,7 +1,20 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
+import fastifyCookie from '@fastify/cookie';
 import { randomBytes } from 'node:crypto';
 import { db } from '@asistente/database';
+
+export const AUTH_COOKIE_NAME = 'asistente_session';
+
+export function getAuthCookieOptions() {
+  return {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: 12 * 60 * 60, // 12h en segundos
+  };
+}
 
 export interface AuthUser {
   userId: string;
@@ -46,6 +59,7 @@ export function resolveJwtSecret(): string {
 }
 
 export async function registerAuth(app: FastifyInstance): Promise<void> {
+  await app.register(fastifyCookie);
   await app.register(fastifyJwt, {
     secret: resolveJwtSecret(),
     sign: { expiresIn: process.env.JWT_EXPIRES_IN || '12h' },
@@ -54,8 +68,13 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
   app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
     let claims: AuthUser;
     try {
-      await request.jwtVerify();
-      claims = request.user as AuthUser;
+      const cookieToken = request.cookies?.[AUTH_COOKIE_NAME];
+      if (cookieToken) {
+        claims = app.jwt.verify<AuthUser>(cookieToken);
+      } else {
+        await request.jwtVerify();
+        claims = request.user as AuthUser;
+      }
     } catch {
       return reply.status(401).send({ error: 'No autenticado' });
     }

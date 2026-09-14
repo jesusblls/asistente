@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL, apiFetch, getToken } from '../lib/api';
+import { API_BASE_URL, apiFetch, isAuthenticated, getSessionTenant } from '../lib/api';
 
 export type DashboardMode = 'live' | 'demo';
 
@@ -101,7 +101,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
   // Cargar lista de tenants desde la API
   const refreshTenants = useCallback(async () => {
-    if (!getToken()) {
+    if (!isAuthenticated()) {
       setLoadingTenants(false);
       return;
     }
@@ -112,10 +112,13 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         setTenants(data);
         if (data.length > 0) {
-          // Si no hay seleccionado o el seleccionado ya no existe, seleccionar el primero
+          const sessionTenant = getSessionTenant();
           setActiveTenantIdState((prev) => {
             const exists = data.some((t: TenantItem) => t.id === prev);
-            const chosen = exists ? prev : data[0].id;
+            const sessionMatch = sessionTenant
+              ? data.find((t: TenantItem) => t.id === sessionTenant.id || t.slug === sessionTenant.slug)
+              : undefined;
+            const chosen = exists ? prev : (sessionMatch ? sessionMatch.id : data[0].id);
             try {
               localStorage.setItem('asistente_active_tenant_id', chosen);
             } catch (e) {}

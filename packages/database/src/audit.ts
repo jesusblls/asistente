@@ -14,6 +14,7 @@ export const AUDIT_ACTOR_TYPES = ['USER', 'AI_AGENT', 'WEBHOOK', 'SYSTEM', 'ANON
 export const AUDIT_ACTIONS = [
   'LOGIN',
   'LOGIN_FAILED',
+  'LOGOUT',
   'READ',
   'LIST',
   'CREATE',
