@@ -1,0 +1,24 @@
+{
+  "name": "@asistente/ai-agent",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "test": "tsx src/test-suite.ts",
+    "test:stress": "tsx src/stress-test-suite.ts"
+  },
+  "dependencies": {
+    "@asistente/database": "*",
+    "@asistente/observability": "*",
+    "@asistente/shared-types": "*",
+    "@google/genai": "^2.21.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

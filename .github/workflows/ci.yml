@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: file:./dev.db
+      JWT_SECRET: ci-jwt-secret-with-at-least-32-characters
+      META_VERIFY_TOKEN: ci-verify-token
+      META_APP_SECRET: ci-meta-app-secret
+      TWILIO_AUTH_TOKEN: ci-twilio-auth-token
+      MERCADOPAGO_WEBHOOK_SECRET: ci-mp-webhook-secret
+      META_WHATSAPP_TOKEN: ''
+      META_PHONE_NUMBER_ID: ''
+      GEMINI_API_KEY: ''
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Preparar base de datos
+        run: |
+          node -e "require('fs').writeFileSync('packages/database/prisma/dev.db','')"
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Compilar monorepo
+        run: npm run build
+
+      - name: Lint del frontend
+        run: npm run lint --workspace=@asistente/web
+
+      - name: Pruebas (unitarias, seguridad, pagos y API)
+        run: npm test
+
+      - name: Instalar navegador de Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Pruebas E2E del panel (login -> dashboard)
+        run: npm run test:e2e
+
+      - name: Suite de estrés E2E
+        run: npm run test:stress

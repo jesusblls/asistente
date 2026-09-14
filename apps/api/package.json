@@ -1,0 +1,32 @@
+{
+  "name": "@asistente/api",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "tsx src/run-suites.ts"
+  },
+  "dependencies": {
+    "@asistente/ai-agent": "*",
+    "@asistente/database": "*",
+    "@asistente/observability": "*",
+    "@asistente/shared-types": "*",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/jwt": "^10.2.2",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/websocket": "^11.0.2",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

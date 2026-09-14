@@ -1,0 +1,88 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import fastifyJwt from '@fastify/jwt';
+import { randomBytes } from 'node:crypto';
+import { db } from '@asistente/database';
+
+export interface AuthUser {
+  userId: string;
+  tenantId: string;
+  role: string;
+  email: string;
+}
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    authUser?: AuthUser;
+  }
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: AuthUser;
+    user: AuthUser;
+  }
+}
+
+/**
+ * Resuelve el secreto de firma de sesiones.
+ * En producción es obligatorio; en desarrollo se genera uno efímero para no
+ * depender de un secreto hardcodeado en el repositorio.
+ */
+export function resolveJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (secret && secret.length >= 32) return secret;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET es obligatorio en producción y debe tener al menos 32 caracteres');
+  }
+
+  console.warn(
+    '⚠️ JWT_SECRET no configurado (o menor a 32 caracteres). Se generó un secreto efímero: las sesiones se invalidarán al reiniciar el servidor.'
+  );
+  return randomBytes(32).toString('hex');
+}
+
+export async function registerAuth(app: FastifyInstance): Promise<void> {
+  await app.register(fastifyJwt, {
+    secret: resolveJwtSecret(),
+    sign: { expiresIn: process.env.JWT_EXPIRES_IN || '12h' },
+  });
+
+  app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+    let claims: AuthUser;
+    try {
+      await request.jwtVerify();
+      claims = request.user as AuthUser;
+    } catch {
+      return reply.status(401).send({ error: 'No autenticado' });
+    }
+
+    // El token vive 12 h, así que la firma por sí sola no basta: dar de baja a
+    // un empleado o desactivar una clínica debe cortar el acceso en la
+    // siguiente petición, no cuando caduque el token. El rol también se relee,
+    // para que degradar a alguien surta efecto de inmediato.
+    const user = await db.user.findFirst({
+      where: {
+        id: claims.userId,
+        tenantId: claims.tenantId,
+        isActive: true,
+        tenant: { isActive: true },
+      },
+      select: { id: true, tenantId: true, role: true, email: true },
+    });
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Sesión inválida' });
+    }
+
+    request.authUser = {
+      userId: user.id,
+      tenantId: user.tenantId,
+      role: user.role,
+      email: user.email,
+    };
+  });
+}

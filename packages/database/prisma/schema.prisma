@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                    String            @id @default(cuid())
+  name                  String
+  slug                  String            @unique
+  phoneE164             String            // Ej: "+525512345678"
+  timezone              String            @default("America/Mexico_City")
+  address               String?
+  emergencyInstructions String?
+  welcomeMessage        String?
+  isActive              Boolean           @default(true)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  users                 User[]
+  doctors               Doctor[]
+  services              Service[]
+  patients              Patient[]
+  appointments          Appointment[]
+  conversations         Conversation[]
+  channelConfigs        ChannelConfig[]
+  faqItems              FaqItem[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  name         String
+  role         String   @default("STAFF") // ADMIN, RECEPTIONIST, DOCTOR, STAFF
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+}
+
+model Doctor {
+  id                String        @id @default(cuid())
+  tenantId          String
+  name              String
+  specialty         String
+  phone             String?
+  email             String?
+  calendarId        String?
+  availabilityRules String?       // JSON serializado con horarios de consulta y buffers
+  isActive          Boolean       @default(true)
+
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments      Appointment[]
+
+  @@index([tenantId, isActive])
+}
+
+model Service {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  name               String
+  description        String?
+  durationMinutes    Int           @default(30)
+  priceMxn           Float         @default(0.0)
+  requiredDepositMxn Float         @default(0.0)
+  category           String?
+  isActive           Boolean       @default(true)
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments       Appointment[]
+
+  @@index([tenantId, isActive])
+}
+
+model Patient {
+  id            String         @id @default(cuid())
+  tenantId      String
+  fullName      String
+  phoneE164     String         // Normalizado E.164: +52...
+  whatsappId    String?
+  instagramId   String?
+  messengerId   String?
+  email         String?
+  notes         String?
+  isVip         Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  conversations Conversation[]
+
+  @@unique([tenantId, phoneE164])
+  @@index([tenantId, fullName])
+}
+
+model Appointment {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  patientId          String
+  doctorId           String
+  serviceId          String
+  startTime          DateTime
+  endTime            DateTime
+  status             String   @default("CONFIRMED") // PENDING, CONFIRMED, CANCELLED, RESCHEDULED, COMPLETED, NO_SHOW
+  paymentStatus      String   @default("NONE")      // NONE, DEPOSIT_PENDING, DEPOSIT_PAID, FULLY_PAID
+  depositAmountMxn   Float?
+  depositPaymentUrl  String?
+  paymentReferenceId String?
+  channelOrigin      String   @default("WHATSAPP")  // WHATSAPP, INSTAGRAM, MESSENGER, PHONE_CALL, WEBCHAT
+  symptoms           String?
+  notes              String?
+  reminderSent24h    Boolean  @default(false)
+  reminderSent2h     Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  /// Candado de doble reserva a nivel de base de datos: "<doctorId>|<startTime ISO>"
+  /// mientras la cita ocupa el horario, y NULL cuando se cancela (los NULL no
+  /// colisionan entre sí, así que el hueco queda libre para reagendar).
+  /// La verificación de traslape en `SchedulerService` es la primera línea;
+  /// esto atrapa las reservas simultáneas que pasan entre el SELECT y el INSERT.
+  slotKey            String?  @unique
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient            Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor             Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  service            Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startTime])
+  @@index([doctorId, startTime])
+}
+
+model Conversation {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  patientId           String
+  channel             String    // WHATSAPP, INSTAGRAM, MESSENGER, PHONE_CALL, WEBCHAT
+  externalChannelId   String    // ID del chat en WhatsApp/IG/Twilio Call SID
+  isHandedOverToHuman Boolean   @default(false)
+  lastMessageAt       DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient             Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  messages            Message[]
+
+  @@unique([tenantId, channel, externalChannelId])
+  @@index([tenantId, lastMessageAt])
+}
+
+model Message {
+  id                String       @id @default(cuid())
+  conversationId    String
+  tenantId          String
+  direction         String       // INBOUND, OUTBOUND
+  senderRole        String       // PATIENT, AI_AGENT, HUMAN_STAFF, SYSTEM
+  content           String
+  mediaUrl          String?
+  channel           String       // WHATSAPP, INSTAGRAM, etc.
+  externalMessageId String?      // wamid de Meta para idempotencia
+  rawPayload        String?      // JSON
+  deliveryStatus    String?      // PENDING, SENT, FAILED (solo salientes)
+  createdAt         DateTime     @default(now())
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, externalMessageId])
+  @@index([tenantId, createdAt])
+  @@index([conversationId, createdAt])
+}
+
+model ChannelConfig {
+  id            String   @id @default(cuid())
+  tenantId      String
+  channelType   String   // WHATSAPP, INSTAGRAM, MESSENGER, TWILIO
+  credentials   String   // JSON cifrado o plano con tokens/API keys
+  webhookSecret String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channelType])
+}
+
+/// Cola de trabajos durable (outbox + webhooks en segundo plano).
+///
+/// Los webhooks de Meta/Twilio/Mercado Pago deben responder 200 en pocos
+/// segundos: el trabajo pesado (agente Gemini, envío a WhatsApp) se persiste
+/// aquí y lo procesa un worker con reintentos, backoff exponencial e
+/// idempotencia vía `dedupeKey`.
+model Job {
+  id          String    @id @default(cuid())
+  tenantId    String?
+  type        String // META_INBOUND_MESSAGE | WHATSAPP_SEND | VOICE_POST_CALL_FOLLOWUP
+  payload     String // JSON serializado
+  status      String    @default("PENDING") // PENDING | RUNNING | DONE | FAILED | DEAD
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAt       DateTime  @default(now())
+  dedupeKey   String?   @unique
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+  @@index([tenantId, type])
+  @@index([status, updatedAt])
+}
+
+model FaqItem {
+  id        String   @id @default(cuid())
+  tenantId  String
+  question  String
+  answer    String
+  category  String?  // Precios, Ubicación, Procedimientos, Cuidados
+  keywords  String?  // Separados por comas para búsqueda semántica/léxica
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
