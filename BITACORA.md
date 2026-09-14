@@ -34,6 +34,45 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] docs: reunir los pendientes en TODO.md
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Los pendientes estaban repartidos en la sección "Pendientes derivados" de cada
+entrada, mezclados con otros que ya se habían resuelto después (la tabla y la
+pantalla de auditoría, el panel y la bandeja en teléfono). Se reunieron en
+`TODO.md` por prioridad: alta (bloquea producción o cumplimiento), media y
+baja. Cada uno dice por qué importa, dónde está y el commit que lo originó.
+
+Se quitaron los ya resueltos y se sumaron los que surgieron en las sesiones sin
+quedar anotados: la lista de variables obligatorias de producción, el
+`JWT_SECRET` ausente en el `.env` local, `CLAUDE.md` desactualizado, las dos
+pantallas sin verificar en teléfono y la falta de `DESIGN.md`.
+
+Las cifras se midieron de nuevo en el código al escribirlas, sin contar las
+suites de prueba: tamaño de los archivos-dios, 30 usos de `any`, 51
+`console.*` y 13 avisos de ESLint desglosados por regla. La auditoría inicial
+contaba 44 y 125 porque incluía las suites.
+
+El archivo explica cómo usarlo: al resolver un pendiente se borra de ahí y se
+registra en esta bitácora; al descubrir uno nuevo se agrega en su prioridad y
+en la entrada que lo originó.
+
+### Archivos tocados
+
+- `TODO.md` — nuevo
+
+### Verificación
+
+- Conteos obtenidos con `wc -l`, `grep` y `eslint -f json` sobre el estado
+  actual del repositorio
+- Cada pendiente se contrastó con las entradas posteriores de la bitácora para
+  no incluir nada ya resuelto
+
+---
+
 ## [2026-09-14] feat(web): bandeja omnicanal con patrón lista → chat en móvil
 
 **Autor:** Claude Opus 5 · **Commit:** `ce12a56`
