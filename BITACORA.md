@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] feat(web): bandeja omnicanal con patrón lista → chat en móvil
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `ce12a56`
 
 ### Qué se hizo
 
