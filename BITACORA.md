@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] fix(ci): validar la minúscula inicial sin depender del locale
 
-**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `c358cfa`
 
 ### Qué se hizo
 
@@ -71,7 +71,7 @@ la salida fácil (`--no-verify`): toca corregir el hook.
 
 ## [2026-09-14] fix(web): usar estado de React en la bandeja en modo demo
 
-**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `pendiente`
+**Autor:** Hermes Agent (DeepSeek Flash) · **Commit:** `91e50a2`
 
 ### Qué se hizo
 

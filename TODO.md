@@ -143,4 +143,4 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   sondeo (≤3 s) en reflejar el apagado del takeover.** La actualización
   optimista cambia `isHandedOverToHuman` pero no recalcula `status`; el botón
   y el banner sí van al instante.
-  `apps/web/src/app/dashboard/inbox/page.tsx` · origen: `pendiente`
+  `apps/web/src/app/dashboard/inbox/page.tsx` · origen: `91e50a2`
