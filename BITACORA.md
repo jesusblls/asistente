@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-13] feat(seguridad): registrar accesos y cambios clínicos en AuditLog
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `052a205`
 
 ### Qué se hizo
 
