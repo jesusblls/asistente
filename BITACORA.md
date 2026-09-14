@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] feat(web): barra lateral como cajón en pantallas angostas
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `7822ab2`
 
 ### Qué se hizo
 
