@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] docs(seguridad): cerrar el pendiente de auditar escrituras del paciente
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `3b01b45`
 
 ### Qué se hizo
 
