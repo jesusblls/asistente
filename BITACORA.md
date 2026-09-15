@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-15] fix(seguridad): ignorar deploy/.env.production en git
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `8ca218c`
 
 ### Qué se hizo
 Al preparar este repo para subirlo a un GitHub público, se encontró que
