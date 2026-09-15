@@ -137,12 +137,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
     }
 
-    reply.clearCookie(AUTH_COOKIE_NAME, {
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    });
+    reply.clearCookie(AUTH_COOKIE_NAME, getAuthCookieOptions());
 
     return reply.send({ ok: true });
   });

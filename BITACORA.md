@@ -116,6 +116,46 @@ hubiera detectado). Stack de prueba desmontado (`down -v`) al terminar.
   pendiente de construir.
 
 ---
+
+## [2026-09-15] fix(auth): permitir desactivar la cookie Secure para despliegues sin TLS aún
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`getAuthCookieOptions()` fijaba `secure: process.env.NODE_ENV === 'production'`,
+asumiendo que producción siempre corre bajo HTTPS. Eso no es cierto en el
+despliegue nuevo al VPS (ver entrada de arriba): sin dominio todavía, Caddy sirve por HTTP plano en el puerto 80, así que
+`NODE_ENV=production` + HTTP plano producía una cookie `Secure` que **todo
+navegador real descarta en silencio** sobre una conexión sin TLS — el login
+parecía fallar (quedaba en "Verificando…" / sin sesión) sin ningún error en
+consola ni en los logs del servidor. `curl` no detecta esto porque no respeta
+el flag `Secure` como lo hace un navegador; el bug solo apareció al probar el
+login en el navegador embebido, no con curl.
+
+Se agregó `COOKIE_SECURE` (`true`/`false`) como override explícito, con el
+mismo valor por defecto de siempre (`NODE_ENV === 'production'`) si se omite
+— no cambia el comportamiento de nadie que no la use. Documentado en
+`deploy/.env.production.example`: `false` mientras no haya dominio, `true` (o
+sin definir) en cuanto Caddy tenga HTTPS. De paso, `POST /auth/logout` dejó
+de duplicar inline las mismas opciones de cookie (`secure`, `httpOnly`,
+`sameSite`) y ahora reusa `getAuthCookieOptions()`, para que login y logout
+no puedan divergir.
+
+### Archivos tocados
+- `apps/api/src/lib/auth.ts` — `resolveCookieSecure()` con override vía `COOKIE_SECURE`.
+- `apps/api/src/routes/auth.ts` — `clearCookie` en logout reusa `getAuthCookieOptions()`.
+- `docker-compose.yml` — pasa `COOKIE_SECURE` al contenedor `api`.
+- `deploy/.env.production.example` — documenta la variable y cuándo cambiarla.
+
+### Verificación
+`npm run build --workspace=@asistente/api`. Reproducido el bug real contra
+el contenedor Docker (`Set-Cookie` con `Secure` sobre `http://localhost:18080`)
+y confirmado que desaparece con `COOKIE_SECURE=false`; login completo
+verificado en el navegador embebido (Browser pane) con la cookie
+persistiendo entre navegaciones y el dashboard cargando con sesión activa.
+
+---
+
 ## [2026-09-15] fix(web): el badge "En vivo" de la bandeja ya no se parte en dos líneas
 
 **Autor:** Claude Sonnet 5 · **Commit:** `2888cf1`

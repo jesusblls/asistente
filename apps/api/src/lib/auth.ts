@@ -9,11 +9,27 @@ const logger = createLogger('auth');
 
 export const AUTH_COOKIE_NAME = 'asistente_session';
 
+/**
+ * Por defecto la cookie es "Secure" en producción, pero un VPS recién
+ * levantado sin dominio todavía sirve por HTTP plano (Caddy en `:80`, ver
+ * deploy/Caddyfile) — un navegador real descarta silenciosamente cualquier
+ * cookie Secure sobre HTTP, así que el login parecería fallar sin ningún
+ * error visible. COOKIE_SECURE permite desactivarlo explícitamente durante
+ * esa fase y se reactiva solo al pasar a `true` (o quitando la variable) en
+ * cuanto haya dominio + HTTPS.
+ */
+function resolveCookieSecure(): boolean {
+  const override = process.env.COOKIE_SECURE?.trim().toLowerCase();
+  if (override === 'true') return true;
+  if (override === 'false') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
 export function getAuthCookieOptions() {
   return {
     path: '/',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: resolveCookieSecure(),
     sameSite: 'lax' as const,
     maxAge: 12 * 60 * 60, // 12h en segundos
   };
