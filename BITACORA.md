@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-15] fix(web): el badge "En vivo" de la bandeja ya no se parte en dos líneas
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `2888cf1`
 
 ### Qué se hizo
 
