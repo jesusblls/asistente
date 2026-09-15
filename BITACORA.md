@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-15] build(deploy): soportar VPS compartido con reverse proxy propio
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `27807c8`
 
 ### Qué se hizo
 El despliegue Docker original asumía un VPS dedicado, con el Caddy incluido
@@ -64,9 +64,15 @@ un repo remoto que no existe todavía.
 `docker compose -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml config` (con variables de prueba) confirma que en la Opción B no se incluye el servicio `caddy` y que `api`/`web` quedan en las redes `default` + `proxy` (red externa, nombre `proxy`); `docker compose -f docker-compose.yml --profile standalone config --services` confirma que la Opción A sigue trayendo los 5 servicios de siempre. Inspección real y de solo lectura del VPS del usuario por SSH (`docker ps`, `docker compose ls`, `ss -tlnp`, Caddyfile existente) para confirmar el patrón de red externa + enrutamiento por hostname antes de diseñar el override, en vez de asumirlo.
 
 ### Pendientes derivados
-- Falta el despliegue real en el VPS del usuario (siguiente paso de esta
-  misma tarea): transferir el código, levantar el stack con la Opción B,
-  agregar el bloque al Caddyfile existente y verificar en navegador.
+- Ninguno: el despliegue real en el VPS del usuario (`vps-56f4b093.vps.ovh.ca`,
+  proyecto `asistente` en `~/apps/asistente`) se completó y verificó en la
+  misma sesión — código transferido con `git archive`, stack levantado con
+  la Opción B, bloque agregado a `infra/proxy/caddy/Caddyfile` (con backup
+  previo y `caddy validate` antes del reload), cert real de Let's Encrypt
+  emitido para `asistente.144-217-83-25.sslip.io`, seed corrido una vez y
+  login verificado en navegador real contra la URL pública. Los otros
+  proyectos del VPS (`panel`, `syk`, `tickets-elina`) se confirmaron
+  intactos después del cambio al Caddyfile compartido.
 
 ---
 
