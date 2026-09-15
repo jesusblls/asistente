@@ -113,19 +113,17 @@ export class WhatsAppService {
         if (response.ok) return true;
 
         const errorText = await response.text();
-        logger.error('Intento fallido al enviar mensaje por WhatsApp', {
+        logger.error('Intento fallido al enviar mensaje por WhatsApp', errorText.slice(0, 300), {
           attempt,
           maxAttempts: MAX_SEND_ATTEMPTS,
           status: response.status,
           to: maskPhone(toPhoneE164),
-          error: errorText.slice(0, 300),
         });
       } catch (error) {
-        logger.error('Error de red al enviar mensaje por WhatsApp', {
+        logger.error('Error de red al enviar mensaje por WhatsApp', error, {
           attempt,
           maxAttempts: MAX_SEND_ATTEMPTS,
           to: maskPhone(toPhoneE164),
-          error: error instanceof Error ? error.message : error,
         });
       }
 

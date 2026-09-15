@@ -34,6 +34,40 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(observability): no perder el error real en logger.error
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+En el commit `5eb30f1c` se migraron varios `console.error`/`console.warn` a
+`logger.error()` de `@asistente/observability`, pero la firma del método es
+`error(message, error?, context?)` y tres llamadas nuevas pasaban el objeto
+de contexto como segundo argumento en vez de como tercero. Como `error()`
+serializa el segundo argumento con `serializeError()`, y ese objeto no era
+una instancia de `Error`, el log terminaba con `"err":{"message":"[object
+Object]"}`: se perdía el detalle real (status HTTP, texto de la respuesta,
+mensaje de excepción) justo en los tres puntos más sensibles para depurar en
+producción — el fallback del agente de Gemini, el envío de WhatsApp y la
+creación de preferencias de Mercado Pago.
+
+Se corrigió pasando el error real como segundo argumento y el resto de datos
+como contexto (tercer argumento). Se verificó reproduciendo cada llamada con
+un logger real: el `stack` y el `message` ahora aparecen completos en el
+NDJSON en vez de `[object Object]`.
+
+### Archivos tocados
+- `packages/ai-agent/src/agent/geminiAgent.ts` — `logger.error` con el error real cuando falla la llamada a Gemini
+- `apps/api/src/services/whatsappService.ts` — error HTTP y de red de WhatsApp en el segundo argumento
+- `packages/ai-agent/src/payment/mercadoPagoService.ts` — detalle del rechazo de Mercado Pago en el segundo argumento
+
+### Verificación
+- Script ad-hoc con `createLogger()` reproduciendo las 4 llamadas afectadas: el NDJSON ahora incluye `message`/`stack` reales en vez de `[object Object]`.
+- `npm run build --workspaces --if-present` — 6/6 workspaces.
+- `npm run test --workspace=@asistente/api` — 9/9 suites.
+- `npm run test:stress --workspace=@asistente/ai-agent` — 40/40 pruebas.
+
+---
+
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`

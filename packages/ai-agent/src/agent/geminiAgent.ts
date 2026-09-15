@@ -552,7 +552,7 @@ Fecha y hora actual: ${new Date().toISOString()}.
         requiresHumanHandover: requiresHandover,
       };
     } catch (err: unknown) {
-      logger.error('Error invocando Gemini 2.5 Flash', { err });
+      logger.error('Error invocando Gemini 2.5 Flash', err);
       // En caso de error de red o cuota, degradación elegante con motor local
       return this.handleFallbackProcessing(incomingText, context, tenant, triage, conversationHistory);
     }

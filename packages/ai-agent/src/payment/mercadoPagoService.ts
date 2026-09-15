@@ -108,7 +108,7 @@ export class MercadoPagoService {
 
       if (!response.ok) {
         const detail = await response.text();
-        logger.error('Error creando preferencia de Mercado Pago', { status: response.status, detail: detail.slice(0, 300) });
+        logger.error('Error creando preferencia de Mercado Pago', detail.slice(0, 300), { status: response.status });
         throw new Error('Mercado Pago rechazó la creación de la preferencia de pago');
       }
 
