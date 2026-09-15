@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=packages/database && npm run build --workspace=packages/shared-types && npm run build --workspace=packages/observability && npm run build --workspace=packages/ai-agent && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "build": "npm run build --workspace=packages/observability && npm run build --workspace=packages/database && npm run build --workspace=packages/shared-types && npm run build --workspace=packages/ai-agent && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "db:migrate": "npm run migrate --workspace=packages/database",
     "db:migrate:status": "npm run migrate:status --workspace=packages/database",
     "dev": "npm run dev --workspace=apps/api",

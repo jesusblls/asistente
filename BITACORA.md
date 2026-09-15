@@ -34,6 +34,74 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-15] feat(db): mover el throttle de lecturas de auditoría a Redis
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Resuelve el pendiente de "Auditoría" de `TODO.md`. El throttle que evita
+llenar `AuditLog` de ruido (el panel consulta mensajes cada 2 s y citas cada
+3.5 s) vivía en un `Map` en memoria del proceso: con varias instancias de la
+API detrás de un balanceador, cada una tendría su propia ventana de
+`AUDIT_READ_THROTTLE_MS`, así que el mismo acceso podría registrarse una vez
+por instancia en vez de una sola vez.
+
+Se agregó `ioredis` a `@asistente/database` (que ahora también depende de
+`@asistente/observability` para loguear degradaciones — se reordenó el
+build raíz para que `observability` compile antes que `database`, y los dos
+pasos de `ci.yml` que construían `database` sueltos antes del build raíz).
+Con `REDIS_URL` configurada, la marca de "ya se registró" usa
+`SET clave valor PX <ttl> NX`: atómico, así que dos instancias nunca deciden
+"no está" para la misma clave a la vez — a diferencia del `Map` original,
+que sí tenía una ventana de carrera entre el chequeo y la escritura (el
+`await` de la inserción a la tabla quedaba en medio). Sin `REDIS_URL` — el
+caso por defecto en desarrollo y con una sola instancia — cae exactamente al
+`Map` en memoria de antes, mismo comportamiento.
+
+Dos decisiones de resiliencia:
+- Si Redis falla al momento de chequear (red, servicio caído), se trata como
+  "sí registrar": es preferible una fila de más que un acceso real sin
+  rastro, coherente con el resto de `recordAudit()`.
+- Si la inserción a `AuditLog` falla *después* de marcar la clave en Redis
+  (o en el `Map`), se revierte la marca antes de propagar el error — sin
+  esto, un solo error transitorio de base de datos podría dejar hasta
+  `AUDIT_READ_THROTTLE_MS` sin auditar un acceso real.
+
+`lazyConnect: true` evita que los scripts de una sola corrida (seed,
+create-admin, rotate-credentials — ninguno llama `recordAudit()` hoy) se
+queden esperando una conexión a Redis que nunca necesitan.
+
+**Bug encontrado y corregido durante la propia verificación**: simular el
+job de CI con `REDIS_URL` de verdad (no solo con scripts propios que
+terminaban con `process.exit()`, que lo disimulaban) colgó
+`npm run test` indefinidamente — la primera versión abría el socket a
+Redis en el primer `recordAudit()` de tipo LIST/READ y nunca lo cerraba;
+como ninguna suite llama `process.exit()` en el camino feliz (solo en
+fallo), Node nunca vaciaba el *event loop* y el proceso quedaba colgado
+para siempre. Se agregó un temporizador de inactividad
+(`REDIS_IDLE_DISCONNECT_MS`, 3 s): cada uso de Redis lo reinicia: un
+servidor de API vivo casi nunca lo deja vencer (el panel consulta cada
+2-4 s), y un script de una sola corrida cierra el socket solo 3 s después
+de su último uso y termina limpio sin necesitar `process.exit()`.
+
+### Archivos tocados
+- `packages/database/src/audit.ts` — throttle vía Redis con `SET NX` atómico, respaldo en memoria, reversión de la marca si la inserción falla
+- `packages/database/package.json` — dependencias `ioredis` y `@asistente/observability`
+- `package.json` (raíz) — `observability` compila antes que `database` en el build
+- `.github/workflows/ci.yml` — servicio `redis:7`, `REDIS_URL` en el job de pruebas, orden de build corregido en ambos pasos que construían `database` suelto
+- `.env.example` — documenta `REDIS_URL` como opcional
+- `TODO.md` — se retira el pendiente resuelto
+
+### Verificación
+- Probado con un script propio contra Redis real (`brew install redis`): 3 llamadas seguidas a `recordAudit` con la misma clave generan 1 sola fila, igual que antes con el `Map`.
+- **Compartido entre instancias, verificado de verdad**: dos procesos Node completamente separados (PIDs distintos, cada uno con su propio `Map` vacío) apuntando al mismo Redis — el primero registra la fila, el segundo la omite porque lee el estado compartido en Redis, no su memoria local.
+- **Degradación**: con `REDIS_URL` apuntando a un puerto sin nada escuchando, la fila se registra igual (fail-open) y el script termina limpio, sin quedarse colgado esperando reconexión.
+- `npm run build --workspaces --if-present` — 6/6 workspaces, orden de build correcto.
+- `npm run test` (todas las suites, todos los workspaces) — sin `REDIS_URL`: 100% igual que antes. Con `REDIS_URL` apuntando a Redis real (mismo servicio que ahora define `ci.yml`): 100% también.
+
+---
+
 ## [2026-09-14] docs(seguridad): cerrar el pendiente de auditar escrituras del paciente
 
 **Autor:** Claude Sonnet 5 · **Commit:** `3b01b45`

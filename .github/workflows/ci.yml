@@ -58,6 +58,7 @@ jobs:
 
       - name: Build packages (Prisma & Workspaces)
         run: |
+          npm run build --workspace=packages/observability
           npm run build --workspace=@asistente/database
           npm run build
 
@@ -83,9 +84,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        # El throttle de lecturas de auditoría es opcional sin REDIS_URL, pero
+        # el CI la define a propósito para ejercitar la ruta compartida entre
+        # instancias en cada corrida, no solo el respaldo en memoria.
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://asistente:asistente@localhost:5432/asistente_test
+      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-test-secret-with-at-least-32-characters
       CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
     steps:
@@ -103,6 +117,7 @@ jobs:
 
       - name: Build Database & Packages
         run: |
+          npm run build --workspace=packages/observability
           npm run build --workspace=@asistente/database
           npm run build
 

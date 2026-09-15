@@ -1,5 +1,9 @@
 import type { Prisma } from '@prisma/client';
+import { Redis } from 'ioredis';
+import { createLogger } from '@asistente/observability';
 import { db } from './client.js';
+
+const logger = createLogger('audit');
 
 /**
  * Bitácora de auditoría de accesos y cambios a datos clínicos.
@@ -75,8 +79,15 @@ const INTERNAL_FIELDS = new Set(['slotKey', 'updatedAt']);
  * sin aportar nada: basta una fila por usuario y expediente dentro de la
  * ventana para saber quién accedió y cuándo. Solo aplica a READ y LIST; los
  * cambios se registran siempre.
+ *
+ * Con `REDIS_URL` configurada, la ventana se comparte entre todas las
+ * instancias de la API vía `SET key val PX <ttl> NX` (atómico: dos instancias
+ * nunca deciden "no está" para la misma clave a la vez). Sin `REDIS_URL` —
+ * el caso por defecto en desarrollo y en una sola instancia — cae a este Map
+ * en memoria del proceso, idéntico al comportamiento anterior.
  */
 const recentReads = new Map<string, number>();
+const REDIS_KEY_PREFIX = 'audit:read-throttle:';
 
 function readThrottleMs(): number {
   const raw = process.env.AUDIT_READ_THROTTLE_MS;
@@ -96,12 +107,59 @@ function readThrottleKey(entry: AuditEntry): string | null {
   ].join('|');
 }
 
-function isThrottled(key: string, now: number): boolean {
+// `undefined` = todavía no se intentó conectar; `null` = REDIS_URL no está
+// configurada (o falló de forma irrecuperable), así que se usa el Map local.
+let redisClient: Redis | null | undefined;
+let redisIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Cuánto espera sin uso antes de cerrar la conexión a Redis. Un servidor de
+ * API vivo la vuelve a abrir en la siguiente lectura (costo despreciable);
+ * lo que importa es que un script de una sola corrida (una suite de pruebas,
+ * un comando manual) que sí llegó a usar Redis no se quede colgado para
+ * siempre con el socket abierto esperando que alguien lo cierre.
+ */
+const REDIS_IDLE_DISCONNECT_MS = 3_000;
+
+function touchRedisIdleTimer(client: Redis): void {
+  if (redisIdleTimer) clearTimeout(redisIdleTimer);
+  redisIdleTimer = setTimeout(() => {
+    redisIdleTimer = null;
+    redisClient = undefined;
+    client.quit().catch(() => client.disconnect());
+  }, REDIS_IDLE_DISCONNECT_MS);
+  redisIdleTimer.unref?.();
+}
+
+function getRedisClient(): Redis | null {
+  if (redisClient !== undefined) return redisClient;
+
+  const url = process.env.REDIS_URL;
+  if (!url) {
+    redisClient = null;
+    return null;
+  }
+
+  // `lazyConnect` evita abrir el socket hasta el primer uso real: los
+  // scripts de una sola corrida (seed, create-admin, rotate-credentials) que
+  // nunca llaman recordAudit() no se quedan colgados esperando una conexión
+  // que no necesitan.
+  const client = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1 });
+  client.on('error', (error) => {
+    logger.warn('Redis no disponible para el throttle de lecturas de auditoría', {
+      error: error instanceof Error ? error.message : error,
+    });
+  });
+  redisClient = client;
+  return client;
+}
+
+function isThrottledInMemory(key: string, now: number): boolean {
   const last = recentReads.get(key);
   return last !== undefined && now - last < readThrottleMs();
 }
 
-function markRead(key: string, now: number): void {
+function markReadInMemory(key: string, now: number): void {
   if (recentReads.size >= MAX_TRACKED_READS) {
     const windowMs = readThrottleMs();
     for (const [trackedKey, seenAt] of recentReads) {
@@ -110,6 +168,52 @@ function markRead(key: string, now: number): void {
     if (recentReads.size >= MAX_TRACKED_READS) recentReads.clear();
   }
   recentReads.set(key, now);
+}
+
+/**
+ * `true` si la lectura debe registrarse (no hay una fila reciente para la
+ * misma clave); `false` si debe omitirse. Si Redis está configurada pero
+ * falla en el momento (red, servicio caído), se trata como "sí registrar":
+ * es preferible una fila de más que un acceso real sin rastro.
+ */
+async function shouldRecordRead(key: string): Promise<boolean> {
+  const client = getRedisClient();
+  const now = Date.now();
+
+  if (!client) {
+    if (isThrottledInMemory(key, now)) return false;
+    markReadInMemory(key, now);
+    return true;
+  }
+
+  try {
+    const result = await client.set(REDIS_KEY_PREFIX + key, '1', 'PX', readThrottleMs(), 'NX');
+    return result === 'OK';
+  } catch (error) {
+    logger.warn('Fallo el throttle de auditoría vía Redis; se registra sin omitir', {
+      error: error instanceof Error ? error.message : error,
+    });
+    return true;
+  } finally {
+    touchRedisIdleTimer(client);
+  }
+}
+
+/**
+ * Revierte la marca de "ya se registró" cuando la inserción que la motivó
+ * falló: sin esto, un solo error transitorio de base de datos podría dejar
+ * hasta `AUDIT_READ_THROTTLE_MS` sin auditar un acceso real. Es un mejor
+ * esfuerzo (no se espera ni se propaga su error) porque la prioridad es que
+ * el error original de la inserción llegue a quien llamó.
+ */
+function clearThrottle(key: string): void {
+  const client = redisClient;
+  if (client) {
+    client.del(REDIS_KEY_PREFIX + key).catch(() => {});
+    touchRedisIdleTimer(client);
+  } else {
+    recentReads.delete(key);
+  }
 }
 
 function serialize(value: unknown): unknown {
@@ -151,27 +255,29 @@ export function diffChanges(
  */
 export async function recordAudit(entry: AuditEntry, writer: AuditWriter = db): Promise<void> {
   const throttleKey = readThrottleKey(entry);
-  const now = Date.now();
-  if (throttleKey && isThrottled(throttleKey, now)) return;
+  if (throttleKey && !(await shouldRecordRead(throttleKey))) return;
 
-  await writer.auditLog.create({
-    data: {
-      tenantId: entry.tenantId,
-      actorType: entry.actor.type,
-      actorId: entry.actor.id ?? null,
-      actorEmail: entry.actor.email ?? null,
-      actorRole: entry.actor.role ?? null,
-      action: entry.action,
-      entityType: entry.entityType,
-      entityId: entry.entityId ?? null,
-      patientId: entry.patientId ?? null,
-      changes: entry.changes ? JSON.stringify(entry.changes) : null,
-      metadata: entry.metadata ? JSON.stringify(entry.metadata) : null,
-      ipAddress: entry.actor.ipAddress ?? null,
-      userAgent: entry.actor.userAgent?.slice(0, MAX_USER_AGENT) ?? null,
-      requestId: entry.actor.requestId ?? null,
-    },
-  });
-
-  if (throttleKey) markRead(throttleKey, now);
+  try {
+    await writer.auditLog.create({
+      data: {
+        tenantId: entry.tenantId,
+        actorType: entry.actor.type,
+        actorId: entry.actor.id ?? null,
+        actorEmail: entry.actor.email ?? null,
+        actorRole: entry.actor.role ?? null,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId ?? null,
+        patientId: entry.patientId ?? null,
+        changes: entry.changes ? JSON.stringify(entry.changes) : null,
+        metadata: entry.metadata ? JSON.stringify(entry.metadata) : null,
+        ipAddress: entry.actor.ipAddress ?? null,
+        userAgent: entry.actor.userAgent?.slice(0, MAX_USER_AGENT) ?? null,
+        requestId: entry.actor.requestId ?? null,
+      },
+    });
+  } catch (error) {
+    if (throttleKey) clearThrottle(throttleKey);
+    throw error;
+  }
 }

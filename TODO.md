@@ -17,14 +17,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ## Media
 
-### Auditoría
-
-- [ ] **El límite de lecturas de auditoría vive en memoria.** Con varias
-  instancias de la API habría una fila por instancia en cada ventana de 10
-  minutos. Moverlo a un almacén compartido (Redis / KV) cuando se escale a
-  múltiples instancias horizontales.
-  `packages/database/src/audit.ts` · origen: `052a205`
-
 ### Calidad de código
 
 - [ ] **Partir los archivos-dios restantes en frontend:**
