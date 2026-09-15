@@ -102,7 +102,7 @@ tipo de fallo (`required`, `minLength`, `maxLength`, `minimum`, `maximum`,
 
 ## [2026-09-14] fix(ci): dar base de datos a los tests y subir a node 22
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `c6f53a2`
 
 ### Qué se hizo
 El workflow `ci.yml` introducido en `ace29838` corre `npm run test` (que
