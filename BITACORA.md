@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-15] docs(deploy): usar git clone ahora que el repo ya existe en GitHub
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `b487250`
 
 ### Qué se hizo
 `deploy/README.md` documentaba transferir el código con `git archive | ssh
