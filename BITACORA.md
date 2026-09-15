@@ -105,7 +105,7 @@ no teórico — justo lo que bloqueaba producción.
 
 ## [2026-09-14] ci(db): usar PostgreSQL en CI y sembrar antes de las pruebas
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `b80578c`
 
 ### Qué se hizo
 
