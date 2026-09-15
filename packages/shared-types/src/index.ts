@@ -2,7 +2,9 @@
  * Tipos compartidos para la plataforma SaaS Asistente Omnicanal
  */
 
-export type ChannelType = 
+export * from './auditSensitivity.js';
+
+export type ChannelType =
   | 'WHATSAPP'
   | 'INSTAGRAM'
   | 'MESSENGER'

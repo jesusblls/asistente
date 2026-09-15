@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES, db, recordAudit } from '@asistente/database';
+import { auditSensitivityOf, type DoctorScheduleContext } from '@asistente/shared-types';
 import { actorFromRequest } from '../../lib/audit.js';
 import { parseLimit, requireEnum, requireRole, requireString } from '../../lib/http.js';
 import { parseDate, parseJsonField } from './common.js';
@@ -7,116 +8,11 @@ import { auditQuerySchema } from './schemas.js';
 
 type AuditRow = Awaited<ReturnType<typeof db.auditLog.findMany>>[number];
 
-interface DoctorWithRules {
-  id: string;
-  availabilityRules: string | null;
-  isActive: boolean;
-}
-
-interface ParsedShift {
-  start: number;
-  end: number;
-}
-
-function parseTimeToMinutes(timeStr: string): number | null {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
-  if (!match) return null;
-  return Number(match[1]) * 60 + Number(match[2]);
-}
-
-function parseDoctorRules(rules: unknown): Record<number, ParsedShift[]> | null {
-  if (!rules) return null;
-  let obj: Record<string, unknown> | null = null;
-  if (typeof rules === 'string') {
-    try {
-      obj = JSON.parse(rules) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  } else if (typeof rules === 'object' && rules !== null) {
-    obj = rules as Record<string, unknown>;
-  }
-  if (!obj || typeof obj !== 'object' || !obj.days || typeof obj.days !== 'object') {
-    return null;
-  }
-  const result: Record<number, ParsedShift[]> = {};
-  for (const [dayKey, shifts] of Object.entries(obj.days as Record<string, unknown>)) {
-    const dayNum = Number(dayKey);
-    if (Number.isNaN(dayNum) || !Array.isArray(shifts)) continue;
-    const parsedShifts: ParsedShift[] = [];
-    for (const shift of shifts) {
-      if (
-        shift &&
-        typeof shift === 'object' &&
-        typeof (shift as Record<string, unknown>).start === 'string' &&
-        typeof (shift as Record<string, unknown>).end === 'string'
-      ) {
-        const start = parseTimeToMinutes((shift as Record<string, string>).start);
-        const end = parseTimeToMinutes((shift as Record<string, string>).end);
-        if (start !== null && end !== null && end > start) {
-          parsedShifts.push({ start, end });
-        }
-      }
-    }
-    if (parsedShifts.length > 0) {
-      result[dayNum] = parsedShifts;
-    }
-  }
-  return Object.keys(result).length > 0 ? result : null;
-}
-
-function isOutsideHours(
-  createdAt: Date,
-  doctors: DoctorWithRules[],
-  targetDoctorId?: string | null
-): boolean {
-  const cdmxMs = createdAt.getTime() - 6 * 60 * 60 * 1000;
-  const cdmxDate = new Date(cdmxMs);
-  const dayOfWeek = cdmxDate.getUTCDay();
-  const hour = cdmxDate.getUTCHours();
-  const minutesOfDay = hour * 60 + cdmxDate.getUTCMinutes();
-  const tolerance = 30;
-
-  if (doctors.length > 0) {
-    if (targetDoctorId) {
-      const doc = doctors.find((d) => d.id === targetDoctorId);
-      if (doc) {
-        const rules = parseDoctorRules(doc.availabilityRules);
-        if (rules) {
-          const shifts = rules[dayOfWeek];
-          if (!shifts || shifts.length === 0) return true;
-          const inShift = shifts.some(
-            (s) => minutesOfDay >= s.start - tolerance && minutesOfDay <= s.end + tolerance
-          );
-          return !inShift;
-        }
-      }
-    }
-
-    let hadAnyValidRules = false;
-    let anyWorking = false;
-    for (const doc of doctors) {
-      if (doc.isActive === false) continue;
-      const rules = parseDoctorRules(doc.availabilityRules);
-      if (!rules) continue;
-      hadAnyValidRules = true;
-      const shifts = rules[dayOfWeek];
-      if (
-        shifts &&
-        shifts.some((s) => minutesOfDay >= s.start - tolerance && minutesOfDay <= s.end + tolerance)
-      ) {
-        anyWorking = true;
-        break;
-      }
-    }
-    if (hadAnyValidRules) {
-      return !anyWorking;
-    }
-  }
-
-  return hour < 7 || hour >= 21;
-}
-
+/**
+ * Clasificación de sensibilidad de una fila: delega en
+ * `@asistente/shared-types` (la misma regla que pinta los badges del panel)
+ * para que "qué evento es sensible" no se decida dos veces de forma distinta.
+ */
 export function isRowSensitive(
   row: {
     action: string;
@@ -128,26 +24,23 @@ export function isRowSensitive(
     metadata: unknown;
     createdAt: Date;
   },
-  doctors: DoctorWithRules[]
+  doctors: DoctorScheduleContext[]
 ): boolean {
-  if (row.action === 'LOGIN_FAILED') return true;
-  if (row.action === 'DELETE') return true;
-  if (row.action === 'EXPORT') return true;
-  if (row.action === 'UPDATE' && row.actorType === 'USER') {
-    const changes = row.changes as Record<string, unknown> | null;
-    if (changes && typeof changes === 'object' && 'paymentStatus' in changes) return true;
-  }
-  const reviewingAudit = row.action === 'LIST' && row.entityType === 'AUDIT_LOG';
-  if (row.actorType === 'USER' && !reviewingAudit) {
-    const metadata = row.metadata as Record<string, unknown> | null;
-    const doctorId =
-      (metadata?.doctorId as string | undefined) ||
-      (row.actorRole === 'DOCTOR' ? (row.actorId ?? undefined) : undefined);
-    if (isOutsideHours(row.createdAt, doctors, doctorId)) {
-      return true;
-    }
-  }
-  return false;
+  return (
+    auditSensitivityOf(
+      {
+        action: row.action,
+        entityType: row.entityType,
+        actorType: row.actorType,
+        actorRole: row.actorRole,
+        actorId: row.actorId,
+        changes: row.changes as Record<string, unknown> | null,
+        metadata: row.metadata as Record<string, unknown> | null,
+        createdAt: row.createdAt,
+      },
+      { doctors }
+    ) !== null
+  );
 }
 
 /** Filtros de la bitácora, compartidos por la consulta y la exportación. */

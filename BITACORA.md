@@ -133,6 +133,45 @@ ambos jobs a 22.
 
 ---
 
+## [2026-09-14] refactor(web,api): unificar reglas de sensibilidad de auditoria
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`isRowSensitive` en `apps/api/src/routes/admin/audit.ts` y `sensitivityOf`
+en `apps/web/src/lib/audit.ts` eran dos copias independientes de la misma
+regla de negocio ("qué evento merece la atención del director"): mismo
+horario de oficina, misma tolerancia de 30 minutos, misma excepción para
+`LIST AUDIT_LOG`. Al vivir en dos paquetes que no comparten runtime (backend
+Node vs. frontend Next.js), cualquier cambio futuro a la regla (agregar un
+motivo de sensibilidad, ajustar la tolerancia) tenía que hacerse dos veces, y
+nada avisaba si se olvidaba una.
+
+Se extrajo la lógica completa (horario CDMX vía `Intl`, parseo de horario de
+doctores, `isOutsideBusinessHours`, `auditSensitivityOf`) a
+`packages/shared-types/src/auditSensitivity.ts`, el único paquete que ya
+importan tanto `apps/api` como `apps/web`. Ambos lados ahora delegan ahí; los
+nombres exportados desde `apps/web/src/lib/audit.ts` (`sensitivityOf`,
+`isOutsideBusinessHours`, `Sensitivity`, `AuditScheduleContext`,
+`DoctorScheduleContext`) se mantienen como re-exports para no tocar
+`apps/web/src/app/dashboard/audit/page.tsx`, su único consumidor.
+
+Este commit solo mueve código: el comportamiento de las rutas de auditoría
+(incluido el filtro `onlySensitive`, con su bug de "filtra después de
+recortar") se mantiene idéntico al de antes; se corrige por separado.
+
+### Archivos tocados
+- `packages/shared-types/src/auditSensitivity.ts` — nueva fuente única de la clasificación de sensibilidad
+- `packages/shared-types/src/index.ts` — re-exporta el nuevo módulo
+- `apps/api/src/routes/admin/audit.ts` — `isRowSensitive` delega en `auditSensitivityOf`
+- `apps/web/src/lib/audit.ts` — `sensitivityOf`/`isOutsideBusinessHours` delegan en el paquete compartido
+
+### Verificación
+- `npm run build --workspace=packages/shared-types && npm run build --workspace=@asistente/database && npm run build --workspace=@asistente/api && npm run build --workspace=apps/web` — sin errores de tipos.
+- `npm run test --workspace=@asistente/api` — 9/9 suites (incluida `audit-test-suite.ts` completa, 40/40).
+
+---
+
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`
