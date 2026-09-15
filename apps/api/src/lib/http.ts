@@ -1,4 +1,4 @@
-import { FastifyError, FastifyInstance, FastifyRequest } from 'fastify';
+import { FastifyError, FastifyInstance, FastifyRequest, FastifySchemaValidationError } from 'fastify';
 import { Prisma } from '@asistente/database';
 import { normalizeMexicanPhone } from '@asistente/ai-agent';
 import { AuthUser } from './auth.js';
@@ -122,6 +122,50 @@ export function requireMexicanPhone(value: unknown, field = 'Teléfono'): string
   return normalized;
 }
 
+/** Último tramo de un instancePath de Ajv ("/phoneE164" -> "phoneE164"), o el campo faltante en `required`. */
+function validationFieldName(item: FastifySchemaValidationError): string {
+  const missing = item.params?.missingProperty;
+  if (typeof missing === 'string') return missing;
+  const extra = item.params?.additionalProperty;
+  if (typeof extra === 'string') return extra;
+  const last = item.instancePath.replace(/^\//, '').split('/').pop();
+  return last || 'body';
+}
+
+/**
+ * Traduce el primer error de validación de Ajv a un mensaje en español apto
+ * para mostrarse al personal de la clínica. Fastify/Ajv devuelven mensajes en
+ * inglés ("must NOT have fewer than 10 characters") que no son aptos para UI.
+ */
+function translateValidationError(validation: FastifySchemaValidationError[] | undefined): string {
+  const first = validation?.[0];
+  if (!first) return 'Datos de entrada inválidos';
+
+  const field = validationFieldName(first);
+  const limit = first.params?.limit;
+
+  switch (first.keyword) {
+    case 'required':
+      return `El campo "${field}" es obligatorio`;
+    case 'minLength':
+      return `El campo "${field}" debe tener al menos ${limit} caracteres`;
+    case 'maxLength':
+      return `El campo "${field}" excede la longitud máxima permitida (${limit} caracteres)`;
+    case 'minimum':
+      return `El campo "${field}" debe ser mayor o igual a ${limit}`;
+    case 'maximum':
+      return `El campo "${field}" debe ser menor o igual a ${limit}`;
+    case 'enum':
+      return `El campo "${field}" tiene un valor no permitido`;
+    case 'type':
+      return `El campo "${field}" tiene un formato inválido`;
+    case 'additionalProperties':
+      return `Se recibió un campo no permitido: "${field}"`;
+    default:
+      return 'Datos de entrada inválidos';
+  }
+}
+
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof HttpError) {
@@ -142,8 +186,9 @@ export function registerErrorHandler(app: FastifyInstance): void {
       return reply.status(500).send({ error: 'Error interno del servidor' });
     }
 
-    if ((error as { validation?: unknown }).validation) {
-      return reply.status(400).send({ error: error.message || 'Datos de entrada inválidos' });
+    const validation = (error as { validation?: FastifySchemaValidationError[] }).validation;
+    if (validation) {
+      return reply.status(400).send({ error: translateValidationError(validation) });
     }
 
     const statusCode =

@@ -68,6 +68,38 @@ NDJSON en vez de `[object Object]`.
 
 ---
 
+## [2026-09-14] fix(api): traducir mensajes de validacion de ajv al espanol
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Las rutas administrativas usan esquemas JSON de Fastify/Ajv desde el commit
+`5eb30f1c`, pero el manejador de errores devolvía `error.message` de Ajv tal
+cual: mensajes en inglés como `"body/phoneE164 must NOT have fewer than 10
+characters"`. El frontend (equipo, calendario, login) muestra ese texto
+directo al personal de recepción vía `data.error`/`errorData.error`, así que
+un dato mal capturado producía un mensaje en inglés e ilegible en vez de la
+respuesta clara que ya daban los validadores manuales (`requireString`,
+`requireMexicanPhone`, etc.) que estas rutas usaban antes de tener esquema.
+
+Se agregó `translateValidationError()`, que toma el primer error de Ajv
+(`keyword`, `instancePath`, `params`) y arma un mensaje en español según el
+tipo de fallo (`required`, `minLength`, `maxLength`, `minimum`, `maximum`,
+`enum`, `type`, `additionalProperties`), nombrando el campo afectado.
+
+### Archivos tocados
+- `apps/api/src/lib/http.ts` — `translateValidationError()` y su uso en `registerErrorHandler`
+
+### Verificación
+- Script ad-hoc contra `createTenantSchema`/`createDoctorSchema` con `fastify.inject`: teléfono corto, campo obligatorio faltante y campo no permitido devuelven mensajes en español (p. ej. `El campo "phoneE164" debe tener al menos 10 caracteres`).
+- `npm run build --workspaces --if-present` — 6/6 workspaces.
+- `npm run test --workspace=@asistente/api` — 9/9 suites (los tests de esquema existentes no validan el texto exacto del mensaje).
+
+### Pendientes derivados
+- Ningún test cubre hoy el texto del mensaje de validación; agregar un caso explícito en `apps/api/src/*-test-suite.ts` evitaría una regresión silenciosa del texto en español.
+
+---
+
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`
