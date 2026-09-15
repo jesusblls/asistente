@@ -210,6 +210,39 @@ el primero. Se verificó manualmente que la prueba falla si se revierte
 
 ---
 
+## [2026-09-14] docs(api): restaurar comentarios perdidos en el refactor de rutas admin
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Al dividir `apps/api/src/routes/admin.ts` en `apps/api/src/routes/admin/*.ts`
+(commit `ace2983`) se perdieron varios comentarios que explicaban decisiones
+no evidentes desde el código — justo lo que CLAUDE.md § 7.2 pide conservar.
+Se restauraron, sin tocar lógica:
+
+- En `audit.ts`: por qué el filtro `action` acepta varias acciones separadas
+  por coma, por qué `GET /api/audit`/`export` llevan doc-comment explicando
+  que consultar y exportar la bitácora también quedan auditados, por qué
+  `csvCell` neutraliza celdas que empiezan con `=+-@` (inyección de fórmulas
+  en Excel vía el nombre de un paciente o un correo de login fallido), y por
+  qué la exportación lleva BOM (para que Excel respete los acentos).
+- En `tenants.ts`: por qué `DELETE /api/tenants/:id/reset` exige el mismo
+  privilegio que borrar un doctor o servicio, y por qué el borrado en sí
+  queda auditado con sus conteos sin tocar la bitácora existente.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/audit.ts` — comentarios de filtro de acciones, doc-comments de las rutas, inyección de fórmulas CSV y BOM
+- `apps/api/src/routes/admin/tenants.ts` — comentarios del borrado masivo
+
+### Verificación
+- `npm run build --workspaces --if-present` — 6/6 workspaces.
+- `npm run test --workspace=@asistente/api` — 9/9 suites.
+- `npm run test:stress --workspace=@asistente/ai-agent` — 40/40 pruebas.
+- `npm run lint --workspace=apps/web` — 0 errores.
+- Cambio de solo comentarios: sin diferencia de comportamiento respecto al commit anterior.
+
+---
+
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`

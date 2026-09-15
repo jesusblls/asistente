@@ -53,6 +53,8 @@ function auditWhere(tenantId: string, query: Record<string, string | undefined>)
     where.entityType = requireEnum(query.entityType, AUDIT_ENTITY_TYPES, 'entityType');
   }
   if (query.action) {
+    // Acepta varias separadas por coma: el panel agrupa por categorías
+    // (accesos, cambios, sesiones) y la exportación debe coincidir con eso.
     const actions = query.action
       .split(',')
       .map((action) => requireEnum(action.trim(), AUDIT_ACTIONS, 'action'));
@@ -223,6 +225,10 @@ const cdmxTimestamp = new Intl.DateTimeFormat('sv-SE', {
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   let text = typeof value === 'string' ? value : JSON.stringify(value);
+  // Una celda que empieza con = + - @ se ejecuta como fórmula al abrirla en
+  // Excel. El nombre de WhatsApp de un paciente o el correo de un login
+  // fallido los escribe un tercero: sin esto, exportar la bitácora le daría
+  // a un atacante una fórmula en la computadora del director.
   if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 }
@@ -230,6 +236,10 @@ function csvCell(value: unknown): string {
 export async function auditRoutes(fastify: FastifyInstance) {
   /**
    * Bitácora de auditoría de la clínica (solo ADMIN).
+   *
+   * Responde "quién vio o modificó el expediente de este paciente": filtra por
+   * `patientId`, entidad, actor, acción o rango de fechas. Consultarla también
+   * queda registrado, porque la propia bitácora contiene datos sensibles.
    */
   fastify.get(
     '/api/audit',
@@ -258,7 +268,8 @@ export async function auditRoutes(fastify: FastifyInstance) {
 
   /**
    * Exporta en CSV exactamente lo filtrado (solo ADMIN). Se genera en el
-   * servidor para que la exportación quede auditada.
+   * servidor para que la exportación quede auditada: sacar la bitácora del
+   * sistema es un acceso tan sensible como consultarla, y nunca se agrupa.
    */
   fastify.get(
     '/api/audit/export',
@@ -316,6 +327,7 @@ export async function auditRoutes(fastify: FastifyInstance) {
 
       reply.header('Content-Type', 'text/csv; charset=utf-8');
       reply.header('Content-Disposition', `attachment; filename="bitacora-${dateKey}.csv"`);
+      // El BOM hace que Excel abra el archivo como UTF-8 y respete los acentos.
       return reply.send(`﻿${lines.join('\r\n')}\r\n`);
     }
   );

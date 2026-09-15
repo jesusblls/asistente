@@ -308,9 +308,13 @@ export async function tenantRoutes(fastify: FastifyInstance) {
    */
   fastify.delete('/api/tenants/:id/reset', async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
+    // Borra el historial clínico completo de la clínica: mismo nivel de
+    // privilegio que eliminar un doctor o un servicio.
     requireRole(request, ['ADMIN']);
     const tenantId = resolveTenantId(request, id);
 
+    // El borrado queda registrado con sus conteos. La bitácora de auditoría
+    // no se toca: es justo el rastro de que este borrado ocurrió.
     await db.$transaction(async (tx) => {
       const messages = await tx.message.deleteMany({ where: { tenantId } });
       const conversations = await tx.conversation.deleteMany({ where: { tenantId } });
