@@ -43,24 +43,24 @@ export function ConversationList({
       } w-full md:w-80 bg-white border-r border-slate-200 flex-col shrink-0`}
     >
       <div className="p-4 border-b border-slate-200">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-slate-900">Bandeja Omnicanal</h1>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-lg font-bold text-slate-900 truncate">Bandeja Omnicanal</h1>
             {mode === 'demo' ? (
-              <span className="inline-flex items-center gap-1 text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-bold">
+              <span className="inline-flex items-center gap-1 text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap">
                 🟣 Showcase
               </span>
             ) : isLiveConnected ? (
               <span
                 aria-live="polite"
-                className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold"
+                className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap"
               >
                 <span aria-hidden="true" className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                 En vivo
               </span>
             ) : null}
           </div>
-          <span className="text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-semibold">
+          <span className="text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-semibold shrink-0 whitespace-nowrap">
             {conversations.length} {conversations.length === 1 ? 'chat' : 'chats'}
           </span>
         </div>

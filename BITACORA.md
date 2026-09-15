@@ -34,6 +34,38 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-15] fix(web): el badge "En vivo" de la bandeja ya no se parte en dos líneas
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+El usuario reportó (señalando el elemento en el navegador) que el badge
+"En vivo" del encabezado de la Bandeja Omnicanal se veía partido en dos
+líneas ("En" / "vivo") dentro de la propia píldora. La causa: el `<h1>`
+"Bandeja Omnicanal" y el badge comparten un contenedor `flex` sin
+`min-w-0`, así que al no caber los dos junto con "4 chats" en el ancho fijo
+de la columna (320px), el navegador encoge el badge en vez del título —
+y como el badge no tenía `whitespace-nowrap`, su propio texto se parte.
+Bug preexistente (ya estaba en el `inbox/page.tsx` original de 1255
+líneas); pasó inadvertido hasta ahora porque nadie había mirado esa esquina
+de cerca.
+
+Se agregó `min-w-0` al contenedor del título+badge y `truncate` al `<h1>`
+para que sea el título el que ceda espacio con puntos suspensivos, y
+`shrink-0 whitespace-nowrap` a los tres badges (Demo, En vivo, contador de
+chats) para que ninguno vuelva a partirse sin importar el ancho disponible.
+
+### Archivos tocados
+- `apps/web/src/components/dashboard/inbox/ConversationList.tsx` — `min-w-0`/`truncate` en el título, `shrink-0 whitespace-nowrap` en los tres badges
+
+### Verificación
+- `npx tsc --noEmit -p apps/web/tsconfig.json` — sin errores.
+- `npm run lint --workspace=apps/web` — 0 errores, 0 advertencias.
+- Probado en el navegador contra `apps/web` en vivo: "Bandeja Omnic…" se trunca y "En vivo" / "4 chats" quedan cada uno en una sola línea.
+
+---
+
 ## [2026-09-15] refactor(web): modularizar inbox/page.tsx
 
 **Autor:** Claude Sonnet 5 · **Commit:** `6300088`
