@@ -212,7 +212,7 @@ el primero. Se verificó manualmente que la prueba falla si se revierte
 
 ## [2026-09-14] docs(api): restaurar comentarios perdidos en el refactor de rutas admin
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `be6a341`
 
 ### Qué se hizo
 Al dividir `apps/api/src/routes/admin.ts` en `apps/api/src/routes/admin/*.ts`
