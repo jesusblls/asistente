@@ -100,6 +100,39 @@ tipo de fallo (`required`, `minLength`, `maxLength`, `minimum`, `maximum`,
 
 ---
 
+## [2026-09-14] fix(ci): dar base de datos a los tests y subir a node 22
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El workflow `ci.yml` introducido en `ace29838` corre `npm run test` (que
+termina ejecutando Prisma Client contra SQLite) sin `DATABASE_URL` y sin
+aplicar las migraciones: tanto `.env` como `*.db` están en `.gitignore`, así
+que un checkout limpio del runner no tiene ni la variable ni el archivo de
+base de datos. Cualquier suite que toque `db` (la mayoría) habría fallado en
+el primer PR real que corriera el CI. Además usaba Node 20 cuando CLAUDE.md
+exige Node v22+.
+
+Se agregó `DATABASE_URL=file:./dev.db` al entorno del job `test`, un paso
+"Set up test database" que crea el archivo vacío en
+`packages/database/prisma/dev.db` (SQLite exige que exista antes de migrar,
+según `packages/database/prisma/migrations/README.md`) y corre
+`npm run db:migrate` (`prisma migrate deploy`), y se subió `node-version` de
+ambos jobs a 22.
+
+### Archivos tocados
+- `.github/workflows/ci.yml` — base de datos de prueba, `DATABASE_URL` y Node 22
+
+### Verificación
+- Simulación local del paso en un directorio descartable: `touch packages/database/prisma/dev.db && DATABASE_URL="file:./dev.db" npx prisma migrate deploy` aplicó las 3 migraciones (`0001_baseline`, `0002_appointment_slot_key`, `0003_audit_log`) contra un archivo SQLite nuevo, igual que documenta el README de migraciones.
+- El YAML resultante se valida con `js-yaml` sin errores.
+- No se pudo correr el workflow en GitHub Actions porque el repositorio no tiene remoto configurado en este entorno.
+
+### Pendientes derivados
+- Verificar el primer run real en GitHub Actions en cuanto el repo tenga remoto: la simulación local cubre la lógica de Prisma, pero no runners, caché de npm ni el orden de pasos real de Actions.
+
+---
+
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`

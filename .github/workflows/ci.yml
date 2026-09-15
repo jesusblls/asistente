@@ -50,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -68,6 +68,11 @@ jobs:
     name: Test Suites
     needs: [lint-and-typecheck]
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      DATABASE_URL: file:./dev.db
+      JWT_SECRET: ci-test-secret-with-at-least-32-characters
+      CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,7 +80,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -86,9 +91,12 @@ jobs:
           npm run build --workspace=@asistente/database
           npm run build
 
+      # SQLite exige que el archivo exista antes de `prisma migrate deploy`
+      # (ver packages/database/prisma/migrations/README.md).
+      - name: Set up test database
+        run: |
+          touch packages/database/prisma/dev.db
+          npm run db:migrate
+
       - name: Run Test Suites
         run: npm run test
-        env:
-          NODE_ENV: test
-          JWT_SECRET: ci-test-secret-with-at-least-32-characters
-          CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
