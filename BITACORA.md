@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] fix(observability): no perder el error real en logger.error
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `ff82ef4`
 
 ### Qué se hizo
 En el commit `5eb30f1c` se migraron varios `console.error`/`console.warn` a
