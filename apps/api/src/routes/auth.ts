@@ -4,13 +4,29 @@ import { HttpError, requireString } from '../lib/http.js';
 import { actorFromRequest } from '../lib/audit.js';
 import { AUTH_COOKIE_NAME, getAuthCookieOptions, type AuthUser } from '../lib/auth.js';
 
+const loginSchema = {
+  body: {
+    type: 'object',
+    required: ['email', 'password'],
+    properties: {
+      email: { type: 'string', minLength: 1, maxLength: 200 },
+      password: { type: 'string', minLength: 1, maxLength: 200 },
+      tenantSlug: { type: 'string', maxLength: 100 },
+    },
+    additionalProperties: false,
+  },
+};
+
 export async function authRoutes(fastify: FastifyInstance) {
   /**
    * Inicio de sesión del personal de la clínica.
    */
   fastify.post(
     '/auth/login',
-    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    {
+      schema: loginSchema,
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = (request.body ?? {}) as Record<string, unknown>;
       const email = requireString(body.email, 'Email', 200).toLowerCase();

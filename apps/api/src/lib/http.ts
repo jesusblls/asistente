@@ -143,7 +143,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
     }
 
     if ((error as { validation?: unknown }).validation) {
-      return reply.status(400).send({ error: 'Datos de entrada inválidos' });
+      return reply.status(400).send({ error: error.message || 'Datos de entrada inválidos' });
     }
 
     const statusCode =

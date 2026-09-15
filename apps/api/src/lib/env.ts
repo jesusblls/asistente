@@ -1,3 +1,7 @@
+import { createLogger } from '@asistente/observability';
+
+const logger = createLogger('env');
+
 export interface EnvValidationResult {
   isValid: boolean;
   missingProductionVars: string[];
@@ -121,7 +125,7 @@ export function assertProductionEnv(env: NodeJS.ProcessEnv = process.env): void 
   const result = validateEnvironment(env);
 
   for (const warn of result.warnings) {
-    console.warn(`⚠️ [ENV] ${warn}`);
+    logger.warn(warn);
   }
 
   if (!result.isValid) {

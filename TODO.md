@@ -47,10 +47,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   puede saltarse el estándar.
   `.github/workflows/ci.yml` · origen: `ea471f6`
 
-- [ ] **Validar entradas con esquemas** (JSON Schema de Fastify o Zod) en lugar
-  de los `requireString` / `requireNumber` repetidos en cada handler.
-  `apps/api/src/routes/` · origen: `402dfc4`
-
 ### Calidad de código
 
 - [ ] **Partir los archivos-dios:**
@@ -60,10 +56,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   - `apps/web/src/app/dashboard/inbox/page.tsx` (1191)
   - `apps/web/src/app/dashboard/calendar/page.tsx` (1003)
 
-  origen: `402dfc4`
-
-- [ ] **30 usos de `any` y 51 `console.*`** fuera del logger estructurado de
-  `@asistente/observability`, sin contar las suites de prueba.
   origen: `402dfc4`
 
 ## Baja

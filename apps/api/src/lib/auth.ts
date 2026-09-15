@@ -3,6 +3,9 @@ import fastifyJwt from '@fastify/jwt';
 import fastifyCookie from '@fastify/cookie';
 import { randomBytes } from 'node:crypto';
 import { db } from '@asistente/database';
+import { createLogger } from '@asistente/observability';
+
+const logger = createLogger('auth');
 
 export const AUTH_COOKIE_NAME = 'asistente_session';
 
@@ -52,8 +55,8 @@ export function resolveJwtSecret(): string {
     throw new Error('JWT_SECRET es obligatorio en producción y debe tener al menos 32 caracteres');
   }
 
-  console.warn(
-    '⚠️ JWT_SECRET no configurado (o menor a 32 caracteres). Se generó un secreto efímero: las sesiones se invalidarán al reiniciar el servidor.'
+  logger.warn(
+    'JWT_SECRET no configurado (o menor a 32 caracteres). Se generó un secreto efímero: las sesiones se invalidarán al reiniciar el servidor.'
   );
   return randomBytes(32).toString('hex');
 }

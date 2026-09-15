@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createLogger } from '@asistente/observability';
 import { HttpError } from './http.js';
+
+const logger = createLogger('webhooks');
 
 function safeEqual(a: string, b: string): boolean {
   const bufferA = Buffer.from(a, 'utf8');
@@ -20,7 +23,7 @@ function devSkipEnabled(): boolean {
 
 function missingSecret(message: string): void {
   if (devSkipEnabled()) {
-    console.warn(`⚠️ ${message} (verificación omitida por WEBHOOK_ALLOW_UNVERIFIED=true, solo desarrollo)`);
+    logger.warn(`${message} (verificación omitida por WEBHOOK_ALLOW_UNVERIFIED=true, solo desarrollo)`);
     return;
   }
   throw new HttpError(503, message);

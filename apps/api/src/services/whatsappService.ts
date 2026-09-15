@@ -1,4 +1,7 @@
+import { createLogger } from '@asistente/observability';
 import { maskPhone } from '../lib/webhookSecurity.js';
+
+const logger = createLogger('whatsapp');
 
 /**
  * Servicio para envío de mensajes y botones interactivos mediante WhatsApp Cloud API (Meta).
@@ -10,6 +13,28 @@ export interface SendWhatsAppParams {
   toPhoneE164: string;
   text: string;
   interactiveButtons?: { id: string; title: string }[];
+}
+
+export interface AppointmentConfirmationDetails {
+  id: string;
+  startTime: Date | string;
+  patient: {
+    fullName: string;
+    phoneE164: string;
+  };
+  doctor: {
+    name: string;
+    specialty: string;
+  };
+  service: {
+    name: string;
+    requiredDepositMxn: number;
+  };
+  tenant: {
+    name: string;
+    address?: string | null;
+    timezone?: string | null;
+  };
 }
 
 const MAX_SEND_ATTEMPTS = Math.max(1, Number(process.env.WHATSAPP_SEND_ATTEMPTS || 3));
@@ -33,12 +58,11 @@ export class WhatsAppService {
     const activePhoneId = phoneNumberId || process.env.META_PHONE_NUMBER_ID;
 
     if (!activeToken || !activePhoneId) {
-      console.log(`\n💬 [SIMULACIÓN WHATSAPP] Enviando a: ${maskPhone(toPhoneE164)}`);
-      console.log(`Contenido:\n${text}`);
-      if (interactiveButtons && interactiveButtons.length > 0) {
-        console.log(`Botones interactivos:`, interactiveButtons.map((b) => `[${b.title}]`).join(' '));
-      }
-      console.log(`----------------------------------------------------\n`);
+      logger.info('Simulación WhatsApp: mensaje enviado', {
+        to: maskPhone(toPhoneE164),
+        text,
+        buttons: interactiveButtons?.map((b) => b.title),
+      });
       return true;
     }
 
@@ -89,19 +113,20 @@ export class WhatsAppService {
         if (response.ok) return true;
 
         const errorText = await response.text();
-        console.error(
-          `[WhatsApp] Intento ${attempt}/${MAX_SEND_ATTEMPTS} falló (HTTP ${response.status}) para ${maskPhone(
-            toPhoneE164
-          )}:`,
-          errorText.slice(0, 300)
-        );
+        logger.error('Intento fallido al enviar mensaje por WhatsApp', {
+          attempt,
+          maxAttempts: MAX_SEND_ATTEMPTS,
+          status: response.status,
+          to: maskPhone(toPhoneE164),
+          error: errorText.slice(0, 300),
+        });
       } catch (error) {
-        console.error(
-          `[WhatsApp] Intento ${attempt}/${MAX_SEND_ATTEMPTS} con error de red para ${maskPhone(
-            toPhoneE164
-          )}:`,
-          error instanceof Error ? error.message : error
-        );
+        logger.error('Error de red al enviar mensaje por WhatsApp', {
+          attempt,
+          maxAttempts: MAX_SEND_ATTEMPTS,
+          to: maskPhone(toPhoneE164),
+          error: error instanceof Error ? error.message : error,
+        });
       }
 
       if (attempt < MAX_SEND_ATTEMPTS) {
@@ -115,7 +140,9 @@ export class WhatsAppService {
   /**
    * Envía confirmación formal de cita por WhatsApp con ubicación y detalles.
    */
-  static async sendAppointmentConfirmation(appointment: any): Promise<boolean> {
+  static async sendAppointmentConfirmation(
+    appointment: AppointmentConfirmationDetails
+  ): Promise<boolean> {
     const { patient, doctor, service, tenant, startTime } = appointment;
     const dateFormatted = new Date(startTime).toLocaleString('es-MX', {
       timeZone: tenant?.timezone || 'America/Mexico_City',
@@ -130,7 +157,7 @@ Hola *${patient.fullName}*, tu cita ha quedado agendada con éxito:
 👨‍⚕️ *Especialista:* ${doctor.name} (${doctor.specialty})
 📋 *Tratamiento:* ${service.name}
 🗓 *Fecha y Hora:* ${dateFormatted}
-📍 *Dirección:* ${tenant.address}
+📍 *Dirección:* ${tenant.address || 'Consultorio'}
 ${service.requiredDepositMxn > 0 ? `💳 *Anticipo:* $${service.requiredDepositMxn} MXN` : ''}
 
 Te esperamos con 10 minutos de anticipación. Si requieres reagendar o tienes dudas, puedes responder a este mensaje en cualquier momento.`;

@@ -37,7 +37,7 @@ export type JobHandler<TPayload = unknown> = (
   context: JobContext
 ) => Promise<void>;
 
-export type JobHandlerMap = Partial<Record<JobType, JobHandler<any>>>;
+export type JobHandlerMap = Partial<Record<JobType, JobHandler<never>>>;
 
 /**
  * Error que NO debe reintentarse: el payload ya no es válido (la entidad
@@ -278,7 +278,7 @@ export class JobQueue {
     const startedAt = process.hrtime.bigint();
 
     try {
-      await handler(parsePayload(job.payload), context);
+      await (handler as JobHandler<unknown>)(parsePayload(job.payload), context);
       await db.job.update({
         where: { id: job.id },
         data: {

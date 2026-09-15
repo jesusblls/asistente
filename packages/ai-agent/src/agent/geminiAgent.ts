@@ -1,14 +1,21 @@
-import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
+import { GoogleGenAI, Type, FunctionDeclaration, type Content, type Part } from '@google/genai';
 import {
   db,
   diffChanges,
   recordAudit,
   type AuditActor,
   type AuditEntry,
+  type Doctor,
+  type Service,
+  type Tenant,
+  type Appointment,
 } from '@asistente/database';
+import { createLogger } from '@asistente/observability';
 import { SchedulerService } from '../calendar/scheduler.js';
-import { evaluateTriage } from '../triage/triageEngine.js';
+import { evaluateTriage, type TriageResult } from '../triage/triageEngine.js';
 import { normalizeMexicanPhone } from '../utils/phone.js';
+
+const logger = createLogger('ai-agent');
 
 /**
  * Actor de auditoría para lo que el agente hace por su cuenta: agendar,
@@ -37,6 +44,19 @@ function auditAgentAction(
   );
 }
 
+export interface AgentTenant extends Tenant {
+  doctors: Doctor[];
+  services: Service[];
+}
+
+interface FunctionCallPart {
+  functionCall?: {
+    name: string;
+    args?: Record<string, unknown>;
+  };
+  text?: string;
+}
+
 export interface AgentContext {
   tenantId: string;
   patientPhone: string;
@@ -47,8 +67,8 @@ export interface AgentContext {
 
 export interface AgentResponse {
   replyText: string;
-  appointmentBooked?: any;
-  triageAlert?: any;
+  appointmentBooked?: Appointment | null;
+  triageAlert?: TriageResult | null;
   paymentLinkGenerated?: string;
   requiresHumanHandover?: boolean;
 }
@@ -315,17 +335,17 @@ Fecha y hora actual: ${new Date().toISOString()}.
 `.trim();
 
     try {
-      const contents = [
+      const contents: Content[] = [
         ...conversationHistory,
         {
-          role: 'user' as const,
+          role: 'user',
           parts: [{ text: incomingText }],
         },
       ];
 
       let turns = 0;
       let lastResponseText = '';
-      let bookedAppointment: any = null;
+      let bookedAppointment: Appointment | null = null;
       let requiresHandover = false;
 
       // Bucle de resolución de Tool Calling (hasta 5 iteraciones)
@@ -347,26 +367,28 @@ Fecha y hora actual: ${new Date().toISOString()}.
           break;
         }
 
-        const functionCalls = candidate.content.parts?.filter((p: any) => p.functionCall) || [];
+        const candidateParts = candidate.content.parts as FunctionCallPart[] | undefined;
+        const functionCalls = candidateParts?.filter((p) => p.functionCall) || [];
 
         if (functionCalls.length === 0) {
           // No hubo llamadas a herramientas, respuesta de texto final
-          lastResponseText = candidate.content.parts?.map((p: any) => p.text || '').join('') || '';
+          lastResponseText = candidateParts?.map((p) => p.text || '').join('') || '';
           break;
         }
 
         // Ejecutar las herramientas solicitadas por Gemini
         contents.push({
-          role: 'model' as const,
-          parts: candidate.content.parts as any,
+          role: 'model',
+          parts: candidate.content.parts,
         });
 
-        const toolResponsesParts: any[] = [];
+        const toolResponsesParts: Part[] = [];
 
         for (const part of functionCalls) {
-          const call = (part as any).functionCall;
-          const { name, args } = call;
-          let toolResult: any;
+          const call = part.functionCall!;
+          const { name } = call;
+          const args = (call.args || {}) as Record<string, any>;
+          let toolResult: unknown;
 
           if (name === 'consultar_disponibilidad') {
             toolResult = await SchedulerService.getAvailableSlots({
@@ -518,7 +540,7 @@ Fecha y hora actual: ${new Date().toISOString()}.
         }
 
         contents.push({
-          role: 'user' as const,
+          role: 'user',
           parts: toolResponsesParts,
         });
       }
@@ -529,8 +551,8 @@ Fecha y hora actual: ${new Date().toISOString()}.
         triageAlert: triage,
         requiresHumanHandover: requiresHandover,
       };
-    } catch (err: any) {
-      console.error('Error invocando Gemini 2.5 Flash:', err);
+    } catch (err: unknown) {
+      logger.error('Error invocando Gemini 2.5 Flash', { err });
       // En caso de error de red o cuota, degradación elegante con motor local
       return this.handleFallbackProcessing(incomingText, context, tenant, triage, conversationHistory);
     }
@@ -542,8 +564,8 @@ Fecha y hora actual: ${new Date().toISOString()}.
   private async handleFallbackProcessing(
     incomingText: string,
     context: AgentContext,
-    tenant: any,
-    triage: any,
+    tenant: AgentTenant,
+    triage: TriageResult,
     conversationHistory: { role: 'user' | 'model'; parts: { text: string }[] }[] = []
   ): Promise<AgentResponse> {
     const textLower = incomingText.trim().toLowerCase();
@@ -633,7 +655,7 @@ Fecha y hora actual: ${new Date().toISOString()}.
     // =========================================================================
     if (triage.level === 'URGENT_DENTAL') {
       const specialist =
-        tenant.doctors?.find((d: any) =>
+        tenant.doctors?.find((d: Doctor) =>
           d.specialty.toLowerCase().includes('cirug') ||
           d.specialty.toLowerCase().includes('endo') ||
           d.specialty.toLowerCase().includes('maxilo')
@@ -926,8 +948,8 @@ Fecha y hora actual: ${new Date().toISOString()}.
     if (isSlotSelection) {
       const dateStr = cdmxDateStr(1);
       const inferredService =
-        tenant.services.find((s: any) => lastModelMessage.includes(s.name.toLowerCase())) ||
-        tenant.services.find((s: any) => textLower.includes(s.name.toLowerCase()));
+        tenant.services.find((s: Service) => lastModelMessage.includes(s.name.toLowerCase())) ||
+        tenant.services.find((s: Service) => textLower.includes(s.name.toLowerCase()));
       const slots = await SchedulerService.getAvailableSlots({
         tenantId: context.tenantId,
         targetDateStr: dateStr,
@@ -950,10 +972,10 @@ Fecha y hora actual: ${new Date().toISOString()}.
       if (chosenSlot) {
         const service =
           inferredService ||
-          tenant.services.find((s: any) => s.name.toLowerCase().includes('limpieza')) ||
+          tenant.services.find((s: Service) => s.name.toLowerCase().includes('limpieza')) ||
           tenant.services[0];
         const doctor =
-          tenant.doctors.find((d: any) => d.id === chosenSlot.doctorId) || tenant.doctors[0];
+          tenant.doctors.find((d: Doctor) => d.id === chosenSlot.doctorId) || tenant.doctors[0];
 
         if (!service || !doctor) {
           return {
@@ -1040,7 +1062,7 @@ Fecha y hora actual: ${new Date().toISOString()}.
     // INTENCIÓN 8: DETECCIÓN DE TRATAMIENTO ESPECÍFICO (Limpieza, Resina, etc.)
     // =========================================================================
     const matchingService = tenant.services.find(
-      (s: any) =>
+      (s: Service) =>
         textLower.includes(s.name.toLowerCase()) ||
         (s.name.toLowerCase().includes('limpieza') && textLower.includes('limpieza')) ||
         (s.name.toLowerCase().includes('blanqueamiento') && textLower.includes('blanqueamiento')) ||
@@ -1106,7 +1128,7 @@ Fecha y hora actual: ${new Date().toISOString()}.
       textLower.includes('servicios')
     ) {
       const servicesList = tenant.services
-        .map((s: any) => `• *${s.name}*: $${s.priceMxn} MXN (${s.durationMinutes} min)`)
+        .map((s: Service) => `• *${s.name}*: $${s.priceMxn} MXN (${s.durationMinutes} min)`)
         .join('\n');
       return {
         replyText: `¡Con gusto! Aquí tienes los costos de nuestros tratamientos principales en Pesos Mexicanos (MXN):\n\n${servicesList}\n\n¿Te interesa conocer detalles o disponibilidad para alguno de ellos en específico?`,

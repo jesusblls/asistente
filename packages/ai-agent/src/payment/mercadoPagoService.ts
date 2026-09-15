@@ -1,5 +1,8 @@
 import { db, diffChanges, recordAudit, type AuditActor } from '@asistente/database';
+import { createLogger } from '@asistente/observability';
 import { roundMxn } from '../utils/money.js';
+
+const logger = createLogger('payment');
 
 /** Actor por defecto: la acreditación del anticipo solo la dispara el webhook. */
 const MERCADOPAGO_WEBHOOK_ACTOR: AuditActor = { type: 'WEBHOOK', id: 'mercadopago' };
@@ -105,7 +108,7 @@ export class MercadoPagoService {
 
       if (!response.ok) {
         const detail = await response.text();
-        console.error('[MercadoPago] Error creando preferencia:', response.status, detail.slice(0, 300));
+        logger.error('Error creando preferencia de Mercado Pago', { status: response.status, detail: detail.slice(0, 300) });
         throw new Error('Mercado Pago rechazó la creación de la preferencia de pago');
       }
 
@@ -122,8 +125,8 @@ export class MercadoPagoService {
       preferenceId = `mp_pref_sim_${appt.id.slice(-8)}_${timestamp}`;
       initPoint = `https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=${preferenceId}`;
       sandboxInitPoint = `https://sandbox.mercadopago.com.mx/checkout/v1/redirect?pref_id=${preferenceId}`;
-      console.warn(
-        '[MercadoPago] MERCADOPAGO_ACCESS_TOKEN no configurado: se generó un link SIMULADO de desarrollo'
+      logger.warn(
+        'MERCADOPAGO_ACCESS_TOKEN no configurado: se generó un link simulado de desarrollo'
       );
     }
 

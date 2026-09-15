@@ -79,6 +79,184 @@ function requirePlatformAdmin(request: FastifyRequest): void {
   }
 }
 
+const createTenantSchema = {
+  body: {
+    type: 'object',
+    required: ['name', 'phoneE164'],
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      phoneE164: { type: 'string', minLength: 10, maxLength: 30 },
+      address: { type: 'string', maxLength: 300 },
+      city: { type: 'string', maxLength: 120 },
+      doctorName: { type: 'string', maxLength: 200 },
+      doctorSpecialty: { type: 'string', maxLength: 200 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const updateTenantSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      phoneE164: { type: 'string', minLength: 10, maxLength: 30 },
+      address: { type: 'string', maxLength: 300 },
+      welcomeMessage: { type: 'string', maxLength: 1000 },
+      emergencyInstructions: { type: 'string', maxLength: 1000 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const createDoctorSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['name', 'specialty'],
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      specialty: { type: 'string', minLength: 1, maxLength: 200 },
+      phone: { type: 'string', maxLength: 30 },
+      email: { type: 'string', maxLength: 200 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const createServiceSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['name', 'priceMxn'],
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      priceMxn: { type: 'number', minimum: 0, maximum: 10_000_000 },
+      durationMinutes: { type: 'number', minimum: 5, maximum: 600 },
+      requiredDepositMxn: { type: 'number', minimum: 0 },
+      description: { type: 'string', maxLength: 1000 },
+      category: { type: 'string', maxLength: 120 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const availabilitySchema = {
+  querystring: {
+    type: 'object',
+    required: ['date'],
+    properties: {
+      date: { type: 'string', minLength: 1, maxLength: 20 },
+      tenantId: { type: 'string' },
+      doctorId: { type: 'string' },
+      serviceId: { type: 'string' },
+    },
+  },
+};
+
+const createAppointmentSchema = {
+  body: {
+    type: 'object',
+    required: ['patientName', 'patientPhone', 'doctorId', 'serviceId', 'startTimeIso'],
+    properties: {
+      patientName: { type: 'string', minLength: 1, maxLength: 200 },
+      patientPhone: { type: 'string', minLength: 10, maxLength: 30 },
+      doctorId: { type: 'string', minLength: 1, maxLength: 100 },
+      serviceId: { type: 'string', minLength: 1, maxLength: 100 },
+      startTimeIso: { type: 'string', minLength: 1 },
+      symptoms: { type: 'string', maxLength: 1000 },
+      channelOrigin: {
+        type: 'string',
+        enum: ['WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'PHONE_CALL', 'WEBCHAT'],
+      },
+      tenantId: { type: 'string' },
+    },
+    additionalProperties: false,
+  },
+};
+
+const updateAppointmentSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: APPOINTMENT_STATUSES as unknown as string[] },
+      paymentStatus: { type: 'string', enum: PAYMENT_STATUSES as unknown as string[] },
+      notes: { type: 'string', maxLength: 2000 },
+      startTime: { type: 'string' },
+      endTime: { type: 'string' },
+      startTimeIso: { type: 'string' },
+      doctorId: { type: 'string', maxLength: 100 },
+      depositAmountMxn: { type: 'number', minimum: 0 },
+      depositPaymentUrl: { type: 'string', maxLength: 1000 },
+      paymentReferenceId: { type: 'string', maxLength: 200 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const takeoverSchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['isHandedOver'],
+    properties: {
+      isHandedOver: { type: 'boolean' },
+    },
+    additionalProperties: false,
+  },
+};
+
+const replySchema = {
+  params: {
+    type: 'object',
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['text'],
+    properties: {
+      text: { type: 'string', minLength: 1, maxLength: 4000 },
+      staffName: { type: 'string', maxLength: 200 },
+    },
+    additionalProperties: false,
+  },
+};
+
 export async function adminRoutes(fastify: FastifyInstance) {
   // Todo el panel administrativo exige sesión válida.
   fastify.addHook('onRequest', fastify.authenticate);
@@ -117,7 +295,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Onboarding de una nueva clínica (solo administrador de plataforma).
    */
-  fastify.post('/api/tenants', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post(
+    '/api/tenants',
+    { schema: createTenantSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     requirePlatformAdmin(request);
 
     const body = (request.body ?? {}) as Record<string, unknown>;
@@ -411,7 +592,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Actualiza la configuración de la clínica activa.
    */
-  fastify.patch('/api/tenants/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.patch(
+    '/api/tenants/:id',
+    { schema: updateTenantSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     requireRole(request, ['ADMIN']);
     const tenantId = resolveTenantId(request, id);
@@ -464,7 +648,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Agrega un doctor a la clínica activa.
    */
-  fastify.post('/api/tenants/:id/doctors', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post(
+    '/api/tenants/:id/doctors',
+    { schema: createDoctorSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     requireRole(request, ['ADMIN']);
     const tenantId = resolveTenantId(request, id);
@@ -537,7 +724,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Agrega un servicio a la clínica activa.
    */
-  fastify.post('/api/tenants/:id/services', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post(
+    '/api/tenants/:id/services',
+    { schema: createServiceSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     requireRole(request, ['ADMIN']);
     const tenantId = resolveTenantId(request, id);
@@ -620,7 +810,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Disponibilidad de horarios de la clínica activa.
    */
-  fastify.get('/api/availability', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get(
+    '/api/availability',
+    { schema: availabilitySchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as Record<string, string | undefined>;
     const tenantId = resolveTenantId(request, query.tenantId);
     const date = requireString(query.date, 'Fecha', 20);
@@ -678,7 +871,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Agenda manual desde recepción.
    */
-  fastify.post('/api/appointments', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post(
+    '/api/appointments',
+    { schema: createAppointmentSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const tenantId = resolveTenantId(request, body.tenantId as string | undefined);
 
@@ -710,7 +906,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Actualiza estado, notas o reprograma una cita validando colisiones.
    */
-  fastify.patch('/api/appointments/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.patch(
+    '/api/appointments/:id',
+    { schema: updateAppointmentSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     const user = requireAuthUser(request);
     const body = (request.body ?? {}) as Record<string, unknown>;
@@ -752,9 +951,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
       data.paymentReferenceId = optionalString(body.paymentReferenceId, 'Referencia de pago', 200);
     }
 
-    if (body.startTime !== undefined || body.endTime !== undefined) {
-      const startTime = body.startTime
-        ? parseDate(body.startTime, 'Fecha de inicio')
+    const rawStartTime = body.startTime ?? body.startTimeIso;
+    if (rawStartTime !== undefined || body.endTime !== undefined) {
+      const startTime = rawStartTime
+        ? parseDate(rawStartTime, 'Fecha de inicio')
         : existing.startTime;
       const endTime = body.endTime
         ? parseDate(body.endTime, 'Fecha de fin')
@@ -1010,6 +1210,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
    */
   fastify.post(
     '/api/conversations/:id/takeover',
+    { schema: takeoverSchema },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { id } = request.params as { id: string };
       const user = requireAuthUser(request);
@@ -1050,7 +1251,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
   /**
    * Respuesta manual del recepcionista.
    */
-  fastify.post('/api/conversations/:id/reply', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post(
+    '/api/conversations/:id/reply',
+    { schema: replySchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     const user = requireAuthUser(request);
     const body = (request.body ?? {}) as Record<string, unknown>;

@@ -75,6 +75,13 @@ interface TenantService {
   requiredDepositMxn: number;
 }
 
+interface TenantCatalogItem {
+  id: string;
+  name: string;
+  doctors?: TenantDoctor[];
+  services?: TenantService[];
+}
+
 import { useTenant } from '../../../context/TenantContext';
 import { API_BASE_URL, apiFetch } from '../../../lib/api';
 
@@ -263,17 +270,19 @@ export default function CalendarPage() {
       try {
         const res = await apiFetch(`${API_BASE_URL}/api/tenants`);
         if (active && res.ok) {
-          const data = await res.json();
+          const data: TenantCatalogItem[] = await res.json();
           if (data && data.length > 0) {
-            const current = data.find((t: any) => t.id === activeTenantId) || data[0];
+            const current = data.find((t: TenantCatalogItem) => t.id === activeTenantId) || data[0];
             setTenantId(current.id);
-            setDoctors(current.doctors || []);
-            setServices(current.services || []);
-            if (current.doctors?.length > 0) {
-              setNewDoctorId((prev) => prev || current.doctors[0].id);
+            const docs = current.doctors || [];
+            const svcs = current.services || [];
+            setDoctors(docs);
+            setServices(svcs);
+            if (docs.length > 0) {
+              setNewDoctorId((prev) => prev || docs[0].id);
             }
-            if (current.services?.length > 0) {
-              setNewServiceId((prev) => prev || current.services[0].id);
+            if (svcs.length > 0) {
+              setNewServiceId((prev) => prev || svcs[0].id);
             }
           }
         }
@@ -398,8 +407,8 @@ export default function CalendarPage() {
         const errorData = await res.json();
         setSubmitError(errorData.error || 'No se pudo agendar la cita. Verifica el horario.');
       }
-    } catch (err: any) {
-      setSubmitError(err.message || 'Error de conexión con el servidor.');
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : 'Error de conexión con el servidor.');
     } finally {
       setIsSubmitting(false);
     }

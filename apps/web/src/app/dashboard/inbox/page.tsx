@@ -63,6 +63,36 @@ interface MessageItem {
   audioDuration?: string;
 }
 
+interface ApiConversationResponse {
+  id: string;
+  channel: 'WHATSAPP' | 'INSTAGRAM' | 'PHONE_CALL' | 'MESSENGER';
+  externalChannelId?: string;
+  isHandedOverToHuman: boolean;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  messages?: Array<{ content: string }>;
+  patient?: {
+    fullName?: string;
+    phoneE164?: string;
+    appointments?: Array<{
+      startTime: string;
+      status: string;
+      depositAmountMxn?: number | null;
+      paymentStatus?: string;
+      symptoms?: string | null;
+      service?: { name: string };
+      doctor?: { name: string };
+    }>;
+  } | null;
+}
+
+interface ApiMessageResponse {
+  id: string;
+  senderRole: 'PATIENT' | 'AI_AGENT' | 'HUMAN_STAFF';
+  content: string;
+  createdAt: string;
+}
+
 const DEMO_CONVERSATIONS: ConversationItem[] = [
   {
     id: 'demo-conv-1',
@@ -327,7 +357,7 @@ export default function OmnichannelInboxPage() {
       const data = await res.json();
       if (Array.isArray(data)) {
         setIsLiveConnected(true);
-        const mappedConvs: ConversationItem[] = data.map((c: any) => {
+        const mappedConvs: ConversationItem[] = (data as ApiConversationResponse[]).map((c) => {
           const lastMsg = c.messages?.[0]?.content || 'Sin mensajes';
           const lastDate = c.lastMessageAt ? new Date(c.lastMessageAt) : new Date(c.createdAt);
           const timeStr = formatMexicoCityTime(lastDate);
@@ -359,7 +389,7 @@ export default function OmnichannelInboxPage() {
             id: c.id,
             patientName: c.patient?.fullName || 'Paciente WhatsApp',
             phone: c.patient?.phoneE164 || c.externalChannelId || '',
-            channel: (c.channel as any) || 'WHATSAPP',
+            channel: c.channel || 'WHATSAPP',
             lastMessage: lastMsg,
             lastTime: timeStr,
             unreadCount: 0,
@@ -401,7 +431,7 @@ export default function OmnichannelInboxPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data)) {
-        const mappedMsgs: MessageItem[] = data.map((m: any) => {
+        const mappedMsgs: MessageItem[] = (data as ApiMessageResponse[]).map((m) => {
           const timeStr = new Date(m.createdAt).toLocaleTimeString('es-MX', {
             hour: '2-digit',
             minute: '2-digit',

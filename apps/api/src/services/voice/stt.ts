@@ -35,7 +35,7 @@ export interface WebSocketLike {
   send(data: unknown): void;
   close(code?: number, reason?: string): void;
   terminate?(): void;
-  on(event: 'open' | 'message' | 'error' | 'close', listener: (...args: any[]) => void): unknown;
+  on(event: 'open' | 'message' | 'error' | 'close', listener: (...args: unknown[]) => void): unknown;
 }
 
 export type WebSocketFactory = (

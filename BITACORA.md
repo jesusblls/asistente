@@ -34,6 +34,77 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(api): validar esquemas en rutas y limpiar any y observabilidad
+
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `PENDING`
+
+### Qué se hizo
+
+Se resolvieron dos ítems prioritarios de calidad, robustez y observabilidad de `TODO.md`:
+1. **Validación formal de entradas con esquemas JSON de Fastify en rutas:**
+   - En `apps/api/src/routes/auth.ts`: se implementó `loginSchema` (validación estricta de `email`, `password` y `tenantSlug`).
+   - En `apps/api/src/routes/admin.ts`: se crearon esquemas JSON estructurados (`body`, `params`, `querystring`) para todas las operaciones críticas:
+     - `createTenantSchema` (nombre y teléfono E.164 requeridos, direcciones opcionales).
+     - `updateTenantSchema` (parámetro `:id`, campos de clínica opcionales validados).
+     - `createDoctorSchema` (`:id`, `name`, `specialty`, `phone`, `email`).
+     - `createServiceSchema` (`:id`, `name`, `priceMxn`, `durationMinutes`, `requiredDepositMxn`).
+     - `availabilitySchema` (`date` requerida en querystring).
+     - `createAppointmentSchema` (`patientName`, `patientPhone`, `doctorId`, `serviceId`, `startTimeIso`).
+     - `updateAppointmentSchema` (`status`, `paymentStatus`, `notes`, `startTime`, `endTime`, `startTimeIso`).
+     - `takeoverSchema` (`isHandedOver` booleano requerido).
+     - `replySchema` (`text` requerido hasta 4000 caracteres, `staffName`).
+   - En `apps/api/src/lib/http.ts`: se enriqueció el manejador global de errores (`registerErrorHandler`) para devolver `error: error.message` cuando Fastify reporta fallos de validación con código 400.
+
+2. **Limpieza completa de tipos `any` y migración a `@asistente/observability`:**
+   - En `@asistente/ai-agent`:
+     - `geminiAgent.ts`: se tipó `AgentTenant`, `FunctionCallPart`, `Appointment`, `TriageResult`, `Service` y `Doctor`. Se integró `createLogger('ai-agent')` reemplazando `console.error`.
+     - `mercadoPagoService.ts`: se integró `createLogger('payment')` reemplazando `console.error` y `console.warn`.
+     - `scheduler.ts`: se integró `createLogger('calendar')` reemplazando `console.warn`.
+   - En `@asistente/api`:
+     - `services/whatsappService.ts`: se tipó la interfaz `AppointmentConfirmationDetails`, eliminando `appointment: any`, y se reemplazaron `console.log` y `console.error` por `createLogger('whatsapp')`.
+     - `services/queue/queue.ts`: se tipó `JobHandlerMap` sin `any` (`JobHandler<never>`).
+     - `services/voice/stt.ts`: se tipó el listener de `WebSocketLike` con `(...args: unknown[]) => void`.
+     - `lib/auth.ts`, `lib/env.ts`, `lib/webhookSecurity.ts`: se migraron todos los `console.warn` a loggers estructurados (`createLogger('auth')`, `createLogger('env')`, `createLogger('webhooks')`).
+   - En `apps/web`:
+     - `calendar/page.tsx`: se tipó `TenantCatalogItem`, eliminando `t: any`, y se tiparon los bloques `catch (err: unknown)`.
+     - `team/page.tsx`: se tiparon los bloques `catch (err: unknown)`.
+     - `inbox/page.tsx`: se crearon las interfaces `ApiConversationResponse` y `ApiMessageResponse`, eliminando los castings y mapeos sobre `any`.
+
+3. **Actualización de `TODO.md`:**
+   - Se retiraron ambos ítems completados.
+
+### Archivos tocados
+- `TODO.md` — eliminación de los dos ítems resueltos
+- `apps/api/src/lib/http.ts` — propagación de mensajes de error de validación Fastify
+- `apps/api/src/lib/auth.ts` — logger estructurado
+- `apps/api/src/lib/env.ts` — logger estructurado
+- `apps/api/src/lib/webhookSecurity.ts` — logger estructurado
+- `apps/api/src/routes/auth.ts` — schema JSON en login
+- `apps/api/src/routes/admin.ts` — schemas JSON en rutas administrativas
+- `apps/api/src/services/whatsappService.ts` — interfaz AppointmentConfirmationDetails y logger
+- `apps/api/src/services/queue/queue.ts` — eliminación de any en JobHandlerMap
+- `apps/api/src/services/voice/stt.ts` — tipado estricto en WebSocketLike
+- `packages/ai-agent/src/agent/geminiAgent.ts` — eliminación de any y logger estructurado
+- `packages/ai-agent/src/calendar/scheduler.ts` — logger estructurado
+- `packages/ai-agent/src/payment/mercadoPagoService.ts` — logger estructurado
+- `apps/web/src/app/dashboard/calendar/page.tsx` — eliminación de any y tipado de catálogo
+- `apps/web/src/app/dashboard/team/page.tsx` — eliminación de any en catch blocks
+- `apps/web/src/app/dashboard/inbox/page.tsx` — interfaces de respuesta y eliminación de any
+- `BITACORA.md` — esta entrada
+
+### Verificación
+- `npm run build` monorepo completo: 6/6 workspaces compilados exitosamente (database, shared-types, observability, ai-agent, api, web con Next.js 16.3 Turbopack).
+- `npm run test --workspace=@asistente/ai-agent`: 20/20 pruebas pasaron (100%).
+- `npm run test --workspace=@asistente/api`: 9/9 suites pasaron (234 pruebas exitosas, 0 fallidas).
+- `npm run test:e2e --workspace=@asistente/web`: 3/3 pruebas de Playwright pasaron (100%).
+- `npm run lint --workspace=apps/web`: 0 errores, 0 warnings.
+- `npm run test` a nivel raíz: todas las suites de todos los workspaces pasaron sin errores.
+
+### Pendientes derivados
+Ninguno directo de este cambio.
+
+---
+
 ## [2026-09-14] feat(api): blindar auditoria clinica y horario dinamico
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `39c1bab`

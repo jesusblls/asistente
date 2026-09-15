@@ -479,9 +479,9 @@ export default function TeamAndServicesPage() {
         setIsDoctorModalOpen(false);
         resetDoctorForm();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creando especialista:', err);
-      setDoctorError(err.message || 'No se pudo guardar el especialista');
+      setDoctorError(err instanceof Error ? err.message : 'No se pudo guardar el especialista');
     } finally {
       setIsSubmittingDoctor(false);
     }
@@ -564,9 +564,9 @@ export default function TeamAndServicesPage() {
         setIsServiceModalOpen(false);
         resetServiceForm();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creando tratamiento:', err);
-      setServiceError(err.message || 'No se pudo registrar el tratamiento');
+      setServiceError(err instanceof Error ? err.message : 'No se pudo registrar el tratamiento');
     } finally {
       setIsSubmittingService(false);
     }
@@ -613,9 +613,9 @@ export default function TeamAndServicesPage() {
         );
         setItemToDelete(null);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error al eliminar:', err);
-      setDeleteError(err.message || 'Error al procesar la eliminación');
+      setDeleteError(err instanceof Error ? err.message : 'Error al procesar la eliminación');
     } finally {
       setIsDeleting(false);
     }

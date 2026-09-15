@@ -1,8 +1,11 @@
 import { db, appointmentSlotKey, recordAudit, type AuditActor } from '@asistente/database';
+import { createLogger } from '@asistente/observability';
 import { addMinutes } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { normalizeMexicanPhone } from '../utils/phone.js';
 import { roundMxn } from '../utils/money.js';
+
+const logger = createLogger('calendar');
 
 export interface AvailableSlot {
   doctorId: string;
@@ -52,9 +55,9 @@ function resolveRules(rawRules: string | null | undefined, durationMinutes: numb
     }
     return parsed;
   } catch (error) {
-    console.warn(
-      '[Scheduler] availabilityRules inválidas; se usará el horario por defecto:',
-      error instanceof Error ? error.message : error
+    logger.warn(
+      'availabilityRules inválidas; se usará el horario por defecto',
+      { error: error instanceof Error ? error.message : error }
     );
     return defaultRules(durationMinutes);
   }
