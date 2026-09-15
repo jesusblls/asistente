@@ -347,22 +347,56 @@ export class SchedulerService {
         );
       }
 
-      const patient = await tx.patient.upsert({
+      const existingPatient = await tx.patient.findUnique({
         where: {
           tenantId_phoneE164: {
             tenantId,
             phoneE164: patientPhoneE164,
           },
         },
-        update: {
-          fullName: patientFullName,
-        },
-        create: {
-          tenantId,
-          fullName: patientFullName,
-          phoneE164: patientPhoneE164,
-        },
       });
+
+      let patient;
+      if (existingPatient) {
+        if (existingPatient.fullName !== patientFullName) {
+          patient = await tx.patient.update({
+            where: { id: existingPatient.id },
+            data: { fullName: patientFullName },
+          });
+
+          await recordAudit(
+            {
+              tenantId,
+              actor: auditActor,
+              action: 'UPDATE',
+              entityType: 'PATIENT',
+              entityId: existingPatient.id,
+              patientId: existingPatient.id,
+              changes: {
+                fullName: {
+                  before: existingPatient.fullName,
+                  after: patientFullName,
+                },
+              },
+              metadata: {
+                ...auditMetadata,
+                reason: 'bookAppointment_rename',
+              },
+            },
+            tx
+          );
+        } else {
+          patient = existingPatient;
+        }
+      } else {
+        patient = await tx.patient.create({
+          data: {
+            tenantId,
+            fullName: patientFullName,
+            phoneE164: patientPhoneE164,
+          },
+        });
+      }
 
       try {
         const appointment = await tx.appointment.create({

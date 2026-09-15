@@ -29,24 +29,10 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ### Auditoría
 
-- [ ] **`bookAppointment` sobrescribe `Patient.fullName` sin dejar el cambio en
-  la auditoría.** Queda registrada la cita, pero no que el nombre del paciente
-  cambió.
-  `packages/ai-agent/src/calendar/scheduler.ts` · origen: `052a205`
-
-- [ ] **El link de anticipo se audita fuera de la transacción.** El update lo
-  hace `MercadoPagoService.createDepositPreference`, así que el cambio y su
-  rastro no se confirman juntos. Pasarle el actor y registrar dentro.
-  `packages/ai-agent/src/payment/mercadoPagoService.ts`, `apps/api/src/routes/admin.ts` · origen: `052a205`
-
 - [ ] **El límite de lecturas de auditoría vive en memoria.** Con varias
   instancias de la API habría una fila por instancia en cada ventana de 10
   minutos. Moverlo a un almacén compartido cuando se escale.
   `packages/database/src/audit.ts` · origen: `052a205`
-
-- [ ] **"Fuera de horario" usa un horario fijo de 7:00 a 21:00.** Debería leer
-  el horario real de la clínica y de cada doctor (`Doctor.availabilityRules`).
-  `apps/web/src/lib/audit.ts` · origen: `da9e937`
 
 - [ ] **Decidir con asesoría legal si se auditan las escrituras que origina el
   paciente o el canal**: mensaje entrante, alta de paciente por WhatsApp o por

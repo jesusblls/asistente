@@ -44,6 +44,7 @@ import {
   type AuditEvent,
   type AuditPatientRef,
   type AuditPeriod,
+  type AuditScheduleContext,
 } from '../../../lib/audit';
 import { buildDemoAuditEvents, filterDemoEvents } from './demo';
 
@@ -280,11 +281,19 @@ function AuditScreen() {
     );
   }, [directory.actors]);
 
-  const visibleEvents = useMemo(
-    () => (onlySensitive ? events.filter((event) => sensitivityOf(event)) : events),
-    [events, onlySensitive]
+  const scheduleContext = useMemo<AuditScheduleContext>(
+    () => ({ doctors: activeTenant?.doctors }),
+    [activeTenant?.doctors]
   );
-  const sensitiveCount = useMemo(() => events.filter((event) => sensitivityOf(event)).length, [events]);
+
+  const visibleEvents = useMemo(
+    () => (onlySensitive ? events.filter((event) => sensitivityOf(event, scheduleContext)) : events),
+    [events, onlySensitive, scheduleContext]
+  );
+  const sensitiveCount = useMemo(
+    () => events.filter((event) => sensitivityOf(event, scheduleContext)).length,
+    [events, scheduleContext]
+  );
   const groups = useMemo(() => groupByDay(visibleEvents), [visibleEvents]);
 
   // --- Acciones ---------------------------------------------------------
@@ -643,6 +652,7 @@ function AuditScreen() {
                         <EventRow
                           key={event.id}
                           event={event}
+                          scheduleContext={scheduleContext}
                           expanded={expanded.has(event.id)}
                           onToggle={() => toggleExpanded(event.id)}
                           focusedPatientId={patientId}
@@ -877,6 +887,7 @@ function PivotHeader({
 
 function EventRow({
   event,
+  scheduleContext,
   expanded,
   onToggle,
   focusedPatientId,
@@ -885,6 +896,7 @@ function EventRow({
   onPivotActor,
 }: {
   event: AuditEvent;
+  scheduleContext?: AuditScheduleContext;
   expanded: boolean;
   onToggle: () => void;
   focusedPatientId: string | null;
@@ -894,7 +906,7 @@ function EventRow({
 }) {
   const actor = actorInfo(event);
   const sentenceParts = describeEvent(event);
-  const sensitivity = sensitivityOf(event);
+  const sensitivity = sensitivityOf(event, scheduleContext);
   const changes = changeRows(event);
   const trace = traceItems(event);
   const hasDetail = changes.length > 0 || trace.length > 0;

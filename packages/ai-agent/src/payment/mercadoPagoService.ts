@@ -12,6 +12,7 @@ export interface CreateDepositPreferenceParams {
   patientName?: string;
   patientEmail?: string;
   patientPhone?: string;
+  auditActor?: AuditActor;
 }
 
 export interface DepositPreferenceResult {
@@ -55,7 +56,7 @@ export class MercadoPagoService {
   static async createDepositPreference(
     params: CreateDepositPreferenceParams
   ): Promise<DepositPreferenceResult> {
-    const { appointmentId, tenantId, serviceName, patientName, patientEmail } = params;
+    const { appointmentId, tenantId, serviceName, patientName, patientEmail, auditActor } = params;
     const amountMxn = roundMxn(params.amountMxn);
 
     if (amountMxn <= 0) {
@@ -126,18 +127,40 @@ export class MercadoPagoService {
       );
     }
 
-    await db.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        paymentStatus: 'DEPOSIT_PENDING',
-        depositAmountMxn: amountMxn,
-        depositPaymentUrl: initPoint,
-        paymentReferenceId: preferenceId,
-        notes: (
-          (appt.notes || '') +
-          ` | Anticipo No-Show generado: $${amountMxn} MXN (${effectiveServiceName} para ${effectivePatient})`
-        ).trim(),
-      },
+    await db.$transaction(async (tx) => {
+      await tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          paymentStatus: 'DEPOSIT_PENDING',
+          depositAmountMxn: amountMxn,
+          depositPaymentUrl: initPoint,
+          paymentReferenceId: preferenceId,
+          notes: (
+            (appt.notes || '') +
+            ` | Anticipo No-Show generado: $${amountMxn} MXN (${effectiveServiceName} para ${effectivePatient})`
+          ).trim(),
+        },
+      });
+
+      if (auditActor) {
+        await recordAudit(
+          {
+            tenantId: appt.tenantId,
+            actor: auditActor,
+            action: 'UPDATE',
+            entityType: 'APPOINTMENT',
+            entityId: appt.id,
+            patientId: appt.patientId,
+            changes: diffChanges(appt, {
+              paymentStatus: 'DEPOSIT_PENDING',
+              depositAmountMxn: amountMxn,
+              depositPaymentUrl: initPoint,
+            }),
+            metadata: { event: 'DEPOSIT_LINK_CREATED' },
+          },
+          tx
+        );
+      }
     });
 
     return {

@@ -34,6 +34,51 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(api): blindar auditoria clinica y horario dinamico
+
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `PENDING`
+
+### Qué se hizo
+
+Se resolvieron los 3 pendientes de auditoría e integridad clínica identificados en `TODO.md`:
+1. **Auditoría de cambio de nombre del paciente en citas:**
+   - En `SchedulerService.bookAppointment` (`packages/ai-agent/src/calendar/scheduler.ts`), se sustituyó el upsert ciego por una verificación previa de existencia.
+   - Si un paciente ya existe para ese número telefónico y clínica, y la cita se agenda con un nombre diferente (`existingPatient.fullName !== patientFullName`), se actualiza el registro y se inserta atómicamente en `AuditLog` una fila con `action: 'UPDATE'`, `entityType: 'PATIENT'`, registrando el cambio `fullName` con su valor anterior y nuevo (`changes.fullName: { before, after }`) y metadato `{ reason: 'bookAppointment_rename' }`.
+
+2. **Transaccionar la auditoría de links de anticipo:**
+   - En `MercadoPagoService.createDepositPreference` (`packages/ai-agent/src/payment/mercadoPagoService.ts`), se agregó el parámetro `auditActor?: AuditActor`.
+   - La actualización de la cita (`tx.appointment.update`) y la inserción en `AuditLog` (`recordAudit`) ahora se ejecutan de forma indivisible dentro de una misma transacción `db.$transaction(async (tx) => { ... })`.
+   - En `apps/api/src/routes/admin.ts`, se pasa `auditActor: actorFromRequest(request)` directamente al servicio y se retiró la llamada externa y desfasada a `recordAudit`.
+
+3. **Cálculo dinámico de "Fuera de horario" contra disponibilidad de especialistas:**
+   - En `apps/web/src/lib/audit.ts`, se implementó `isOutsideBusinessHours(iso, context, targetDoctorId)` con soporte para reglas de disponibilidad (`DoctorAvailabilityRules`):
+     - Si el evento está ligado a un especialista (o el actor es un doctor), evalúa sus turnos de atención para ese día de la semana.
+     - Si es un evento general del personal (recepcionista o administrador), verifica si al menos un médico de la clínica tiene turno de consulta activo en ese momento (con 30 minutos de tolerancia).
+     - Si la clínica no abre en ese día (p. ej. domingo) o el acceso se realiza fuera de los turnos de atención, el evento se clasifica con advertencia `"Fuera de horario"`.
+     - Si no se proveen reglas de doctores, mantiene fallback seguro al rango estándar 07:00–21:00 CDMX.
+   - En `apps/web/src/app/dashboard/audit/page.tsx`, se propaga `scheduleContext` con los doctores de la clínica activa tanto al filtrado de eventos sensibles como a la renderización de cada fila `EventRow`.
+
+### Archivos tocados
+- `TODO.md` — eliminados los 3 pendientes de auditoría resueltos.
+- `packages/ai-agent/src/calendar/scheduler.ts` — verificación de nombre y auditoría de paciente en `bookAppointment`.
+- `packages/ai-agent/src/payment/mercadoPagoService.ts` — parámetro `auditActor` y actualización transaccionada con `recordAudit`.
+- `apps/api/src/routes/admin.ts` — pase de `auditActor` en generación de preferencia de anticipo.
+- `apps/api/src/audit-test-suite.ts` — pruebas automatizadas de cambio de nombre y link de anticipo (40/40 en verde).
+- `apps/web/src/lib/audit.ts` — funciones `isOutsideBusinessHours` y `sensitivityOf` con contexto de horarios.
+- `apps/web/src/app/dashboard/audit/page.tsx` — integración de `scheduleContext` en panel de auditoría.
+
+### Verificación
+- `npx tsx apps/api/src/audit-test-suite.ts`: 40/40 pruebas aprobadas (100% en verde).
+- `npm run test --workspace=@asistente/api`: 9/9 suites aprobadas.
+- `npm run test:e2e --workspace=@asistente/web`: 3/3 pruebas Playwright aprobadas.
+- `npm run lint --workspace=apps/web`: 0 errores, 0 avisos.
+- `npm run build`: Compilación limpia en todos los paquetes y aplicaciones.
+
+### Pendientes derivados
+- Ninguno.
+
+---
+
 ## [2026-09-14] feat(api): validar variables de produccion y limpiar eslint en web
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `64bdeaa`

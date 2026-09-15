@@ -866,20 +866,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
         amountMxn,
         serviceName: appointment.service.name,
         patientName: appointment.patient.fullName,
-      });
-
-      await recordAudit({
-        tenantId: user.tenantId,
-        actor: actorFromRequest(request),
-        action: 'UPDATE',
-        entityType: 'APPOINTMENT',
-        entityId: id,
-        patientId: appointment.patientId,
-        changes: diffChanges(appointment, {
-          paymentStatus: 'DEPOSIT_PENDING',
-          depositAmountMxn: amountMxn,
-        }),
-        metadata: { event: 'DEPOSIT_LINK_CREATED' },
+        auditActor: actorFromRequest(request),
       });
 
       return reply.send(preference);

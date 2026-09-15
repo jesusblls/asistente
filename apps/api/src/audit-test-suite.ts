@@ -40,7 +40,7 @@ async function createTenant(suffix: string, phone: string) {
         ],
       },
       services: {
-        create: [{ name: `Servicio ${suffix}`, durationMinutes: 30, priceMxn: 500 }],
+        create: [{ name: `Servicio ${suffix}`, durationMinutes: 30, priceMxn: 500, requiredDepositMxn: 200 }],
       },
     },
     include: { doctors: true, services: true },
@@ -202,6 +202,77 @@ async function runAuditTests() {
     assert(
       createRow?.actorId === adminA.id && createRow.patientId === appointment.patientId,
       'La creación de la cita registra quién agendó y a qué paciente'
+    );
+
+    const prefRes = await app.inject({
+      method: 'POST',
+      url: `/api/appointments/${appointment.id}/deposit-preference`,
+      headers: authAdminA,
+    });
+    assert(prefRes.statusCode === 200, 'Generación de link de anticipo responde 200');
+    const depositAudit = await db.auditLog.findFirst({
+      where: {
+        tenantId: tenantA.id,
+        action: 'UPDATE',
+        entityType: 'APPOINTMENT',
+        entityId: appointment.id,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const depositChanges = parse(depositAudit?.changes ?? null);
+    assert(
+      depositChanges?.depositPaymentUrl?.after === prefRes.json()?.initPoint,
+      'El link de anticipo queda auditado con la URL generada'
+    );
+    assert(
+      parse(depositAudit?.metadata ?? null)?.event === 'DEPOSIT_LINK_CREATED',
+      'La auditoría del link de anticipo contiene el metadato DEPOSIT_LINK_CREATED'
+    );
+
+    const slotB1 = await findFreeSlot(tenantB.id, tenantB.services[0].id);
+    const bookingB1 = await app.inject({
+      method: 'POST',
+      url: '/api/appointments',
+      headers: authAdminB,
+      payload: {
+        patientName: 'Paciente Inicial',
+        patientPhone: '+529900004177',
+        doctorId: slotB1.doctorId,
+        serviceId: tenantB.services[0].id,
+        startTimeIso: slotB1.startTimeIso,
+      },
+    });
+    assert(bookingB1.statusCode === 201, 'Recepción de clínica B agenda primera cita');
+    const apptB1 = bookingB1.json() as { id: string; patientId: string };
+
+    const slotB2 = await findFreeSlot(tenantB.id, tenantB.services[0].id);
+    const bookingB2 = await app.inject({
+      method: 'POST',
+      url: '/api/appointments',
+      headers: authAdminB,
+      payload: {
+        patientName: 'Paciente Renombrado',
+        patientPhone: '+529900004177',
+        doctorId: slotB2.doctorId,
+        serviceId: tenantB.services[0].id,
+        startTimeIso: slotB2.startTimeIso,
+      },
+    });
+    assert(bookingB2.statusCode === 201, 'Recepción de clínica B agenda con nuevo nombre para el mismo teléfono');
+    const patientRenameRow = await db.auditLog.findFirst({
+      where: {
+        tenantId: tenantB.id,
+        action: 'UPDATE',
+        entityType: 'PATIENT',
+        entityId: apptB1.patientId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const renameChanges = parse(patientRenameRow?.changes ?? null);
+    assert(
+      renameChanges?.fullName?.before === 'Paciente Inicial' &&
+        renameChanges?.fullName?.after === 'Paciente Renombrado',
+      'El cambio de nombre del paciente queda auditado con valor anterior y nuevo'
     );
 
     const patch = await app.inject({

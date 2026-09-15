@@ -451,11 +451,170 @@ export interface Sensitivity {
   label: string;
 }
 
-/** Horario en que un acceso del personal se considera normal (hora de CDMX). */
+export interface DoctorScheduleContext {
+  id?: string;
+  name?: string;
+  availabilityRules?: string | null | Record<string, unknown>;
+  isActive?: boolean;
+}
+
+export interface AuditScheduleContext {
+  doctors?: DoctorScheduleContext[] | null;
+  toleranceMinutes?: number;
+}
+
+/** Horario en que un acceso del personal se considera normal por defecto (hora de CDMX). */
 const OFFICE_OPENS_HOUR = 7;
 const OFFICE_CLOSES_HOUR = 21;
 
-export function sensitivityOf(event: AuditEvent): Sensitivity | null {
+interface CdmxMoment {
+  dayOfWeek: number;
+  hour: number;
+  minutesOfDay: number;
+}
+
+function cdmxMoment(iso: string): CdmxMoment {
+  const date = new Date(iso);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: MEXICO_CITY_TIMEZONE,
+    weekday: 'short',
+    hour: 'numeric',
+    minute: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  let weekday = 'Sun';
+  let hour = 0;
+  let minute = 0;
+  for (const part of parts) {
+    if (part.type === 'weekday') weekday = part.value;
+    if (part.type === 'hour') hour = Number(part.value);
+    if (part.type === 'minute') minute = Number(part.value);
+  }
+
+  const daysMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  return {
+    dayOfWeek: daysMap[weekday] ?? 0,
+    hour,
+    minutesOfDay: hour * 60 + minute,
+  };
+}
+
+function parseTimeToMinutes(timeStr: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+interface ParsedShift {
+  start: number;
+  end: number;
+}
+
+function parseDoctorRules(rules: unknown): Record<number, ParsedShift[]> | null {
+  if (!rules) return null;
+  let obj: Record<string, unknown> | null = null;
+  if (typeof rules === 'string') {
+    try {
+      obj = JSON.parse(rules) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  } else if (typeof rules === 'object' && rules !== null) {
+    obj = rules as Record<string, unknown>;
+  }
+  if (!obj || typeof obj !== 'object' || !obj.days || typeof obj.days !== 'object') {
+    return null;
+  }
+  const result: Record<number, ParsedShift[]> = {};
+  for (const [dayKey, shifts] of Object.entries(obj.days as Record<string, unknown>)) {
+    const dayNum = Number(dayKey);
+    if (Number.isNaN(dayNum) || !Array.isArray(shifts)) continue;
+    const parsedShifts: ParsedShift[] = [];
+    for (const shift of shifts) {
+      if (
+        shift &&
+        typeof shift === 'object' &&
+        typeof (shift as Record<string, unknown>).start === 'string' &&
+        typeof (shift as Record<string, unknown>).end === 'string'
+      ) {
+        const start = parseTimeToMinutes((shift as Record<string, string>).start);
+        const end = parseTimeToMinutes((shift as Record<string, string>).end);
+        if (start !== null && end !== null && end > start) {
+          parsedShifts.push({ start, end });
+        }
+      }
+    }
+    if (parsedShifts.length > 0) {
+      result[dayNum] = parsedShifts;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+export function isOutsideBusinessHours(
+  iso: string,
+  context?: AuditScheduleContext,
+  targetDoctorId?: string | null
+): boolean {
+  const moment = cdmxMoment(iso);
+  const tolerance = context?.toleranceMinutes ?? 30;
+
+  const doctors = context?.doctors;
+  if (doctors && doctors.length > 0) {
+    if (targetDoctorId) {
+      const doc = doctors.find((d) => d.id === targetDoctorId);
+      if (doc) {
+        const rules = parseDoctorRules(doc.availabilityRules);
+        if (rules) {
+          const shifts = rules[moment.dayOfWeek];
+          if (!shifts || shifts.length === 0) return true;
+          const inAnyShift = shifts.some(
+            (shift) => moment.minutesOfDay >= shift.start - tolerance && moment.minutesOfDay <= shift.end + tolerance
+          );
+          return !inAnyShift;
+        }
+      }
+    }
+
+    let hadAnyValidRules = false;
+    let anyDoctorWorking = false;
+
+    for (const doc of doctors) {
+      if (doc.isActive === false) continue;
+      const rules = parseDoctorRules(doc.availabilityRules);
+      if (!rules) continue;
+      hadAnyValidRules = true;
+      const shifts = rules[moment.dayOfWeek];
+      if (
+        shifts &&
+        shifts.some(
+          (shift) => moment.minutesOfDay >= shift.start - tolerance && moment.minutesOfDay <= shift.end + tolerance
+        )
+      ) {
+        anyDoctorWorking = true;
+        break;
+      }
+    }
+
+    if (hadAnyValidRules) {
+      return !anyDoctorWorking;
+    }
+  }
+
+  return moment.hour < OFFICE_OPENS_HOUR || moment.hour >= OFFICE_CLOSES_HOUR;
+}
+
+export function sensitivityOf(event: AuditEvent, context?: AuditScheduleContext): Sensitivity | null {
   if (event.action === 'LOGIN_FAILED') return { level: 'critical', label: 'Inicio de sesión fallido' };
   if (event.action === 'DELETE') {
     return { level: 'critical', label: event.entityType === 'TENANT' ? 'Historial borrado' : 'Borrado' };
@@ -468,8 +627,11 @@ export function sensitivityOf(event: AuditEvent): Sensitivity | null {
   // horario solo haría que la dirección se alarmara con sus propias visitas.
   const reviewingAudit = event.action === 'LIST' && event.entityType === 'AUDIT_LOG';
   if (event.actorType === 'USER' && !reviewingAudit) {
-    const hour = cdmxHour(event.createdAt);
-    if (hour < OFFICE_OPENS_HOUR || hour >= OFFICE_CLOSES_HOUR) {
+    const doctorId =
+      (event.metadata?.doctorId as string | undefined) ||
+      (event.actorRole === 'DOCTOR' ? (event.actorId ?? undefined) : undefined);
+
+    if (isOutsideBusinessHours(event.createdAt, context, doctorId)) {
       return { level: 'warning', label: 'Fuera de horario' };
     }
   }
