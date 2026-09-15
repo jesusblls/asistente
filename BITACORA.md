@@ -34,6 +34,50 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-15] refactor(web): modularizar inbox/page.tsx
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Cierra el pendiente de "Calidad de código" de `TODO.md`: era el último
+archivo-dios del frontend (los otros tres — `admin.ts`, `team/page.tsx`,
+`calendar/page.tsx` — ya se habían modularizado). `inbox/page.tsx` tenía
+1255 líneas con tipos, datos de demo, la lista de conversaciones (~200
+líneas), el encabezado del chat con sus banners (~180 líneas) y el
+reproductor de la grabación de llamada (~145 líneas) dentro del mismo
+componente. Se extrajo cada pieza autocontenida:
+
+- `inbox/types.ts` — `ConversationItem`, `MessageItem`, `ApiConversationResponse`, `ApiMessageResponse`.
+- `inbox/demo.ts` — `DEMO_CONVERSATIONS`, `DEMO_MESSAGES`.
+- `components/dashboard/inbox/ConversationList.tsx` — columna izquierda: buscador, estado de conexión, lista de chats.
+- `components/dashboard/inbox/ChatHeader.tsx` — identidad del paciente, botón de takeover, resumen colapsable de la cita y los banners de urgencia/copiloto humano.
+- `components/dashboard/inbox/CallRecordingPlayer.tsx` — el reproductor simulado de la grabación Twilio con waveform interactivo (`WAVEFORM_BARS` vive aquí: es presentación pura del reproductor, no dato de demo).
+- `components/dashboard/inbox/PatientSidebar.tsx` — columna derecha: ficha del paciente, cita activa, notas de triaje.
+
+`page.tsx` queda como orquestador: estado, `fetch`/polling de conversaciones
+y mensajes, handlers de takeover/envío/sembrado, y compone los módulos
+anteriores junto con el hilo de mensajes y la barra de entrada (que se
+quedaron inline por ser compactos). Cambio de solo estructura, sin tocar
+lógica, estilos ni textos.
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/inbox/page.tsx` — de 1255 a 531 líneas
+- `apps/web/src/app/dashboard/inbox/types.ts` — nuevo
+- `apps/web/src/app/dashboard/inbox/demo.ts` — nuevo
+- `apps/web/src/components/dashboard/inbox/ConversationList.tsx` — nuevo
+- `apps/web/src/components/dashboard/inbox/ChatHeader.tsx` — nuevo
+- `apps/web/src/components/dashboard/inbox/CallRecordingPlayer.tsx` — nuevo
+- `apps/web/src/components/dashboard/inbox/PatientSidebar.tsx` — nuevo
+- `TODO.md` — se retira el pendiente resuelto (ya no quedan archivos-dios pendientes)
+
+### Verificación
+- `npx tsc --noEmit -p apps/web/tsconfig.json` — sin errores.
+- `npm run lint --workspace=apps/web` — 0 errores, 0 advertencias.
+- Probado en el navegador contra `apps/web` en vivo: lista de conversaciones, envío de mensaje, takeover (con su banner y reversión), y en modo Demo el reproductor de la grabación (play/pause, avance del progreso, salto de 10s) — todo idéntico al comportamiento anterior.
+
+---
+
 ## [2026-09-15] refactor(web): modularizar calendar/page.tsx
 
 **Autor:** Claude Sonnet 5 · **Commit:** `df07d45`

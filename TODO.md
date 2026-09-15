@@ -15,14 +15,7 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ---
 
-## Media
-
-### Calidad de código
-
-- [ ] **Partir el archivo-dios restante en frontend:**
-  - `apps/web/src/app/dashboard/inbox/page.tsx` (1255 líneas)
-
-  *Nota:* `apps/api/src/routes/admin.ts`, `apps/web/src/app/dashboard/team/page.tsx`
-  y `apps/web/src/app/dashboard/calendar/page.tsx` (1032 → 591 líneas) ya fueron
-  modularizados en submódulos y componentes dedicados.
-  origen: `402dfc4`
+Sin pendientes abiertos por ahora. El último — modularizar los archivos-dios
+del frontend (`admin.ts`, `team/page.tsx`, `calendar/page.tsx`,
+`inbox/page.tsx`) — se cerró el 2026-09-15; ver `BITACORA.md` para el
+detalle de cada uno.
