@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-15] build(deploy): añadir despliegue Docker Compose para VPS (OVH, sin dominio)
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `c79195d`
 
 ### Qué se hizo
 El usuario tiene un VPS en OVH, sin dominio todavía (entra por IP), y eligió
@@ -119,7 +119,7 @@ hubiera detectado). Stack de prueba desmontado (`down -v`) al terminar.
 
 ## [2026-09-15] fix(auth): permitir desactivar la cookie Secure para despliegues sin TLS aún
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `2908259`
 
 ### Qué se hizo
 `getAuthCookieOptions()` fijaba `secure: process.env.NODE_ENV === 'production'`,
