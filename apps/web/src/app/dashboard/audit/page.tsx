@@ -359,9 +359,10 @@ function AuditScreen() {
     try {
       let blob: Blob;
       if (isDemo) {
-        blob = new Blob([auditEventsToCsv(events)], { type: 'text/csv;charset=utf-8' });
+        blob = new Blob([auditEventsToCsv(visibleEvents)], { type: 'text/csv;charset=utf-8' });
       } else {
-        const response = await apiFetch(`${API_BASE_URL}/api/audit/export?${buildQuery()}`);
+        const queryParams = buildQuery(onlySensitive ? { onlySensitive: 'true' } : {});
+        const response = await apiFetch(`${API_BASE_URL}/api/audit/export?${queryParams}`);
         if (!response.ok) {
           throw new Error(
             response.status === 403
@@ -632,7 +633,9 @@ function AuditScreen() {
                       Actualizando…
                     </p>
                   ) : (
-                    onlySensitive && <p>La exportación incluye todo el filtro, no solo los sensibles.</p>
+                    onlySensitive && (
+                      <p>La exportación incluirá únicamente los eventos marcados como sensibles.</p>
+                    )
                   )}
                 </div>
 

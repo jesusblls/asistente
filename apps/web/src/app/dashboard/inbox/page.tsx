@@ -514,7 +514,11 @@ export default function OmnichannelInboxPage() {
             ? {
                 ...c,
                 isHandedOverToHuman: nextState,
-                status: nextState ? 'Modo Humano Activo' : 'Atendido por IA',
+                status: nextState
+                  ? 'Modo Humano Activo'
+                  : c.appointment
+                  ? 'Cita Confirmada'
+                  : 'Atendido por IA',
               }
             : c
         )
@@ -524,7 +528,17 @@ export default function OmnichannelInboxPage() {
 
     setLiveConversations((prev) =>
       prev.map((c) =>
-        c.id === activeConvId ? { ...c, isHandedOverToHuman: nextState } : c
+        c.id === activeConvId
+          ? {
+              ...c,
+              isHandedOverToHuman: nextState,
+              status: nextState
+                ? 'Modo Humano Activo'
+                : c.appointment
+                ? 'Cita Confirmada'
+                : 'Atendido por IA',
+            }
+          : c
       )
     );
 

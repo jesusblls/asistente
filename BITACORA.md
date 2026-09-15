@@ -34,6 +34,86 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
+
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `PENDIENTE`
+
+### Qué se hizo
+
+Se completaron todos los pendientes operativos, de arquitectura, diseño y DevOps de `TODO.md`:
+
+1. **Modularización de Archivos-Dios (`apps/api/src/routes/admin.ts` y `apps/web/src/app/dashboard/team/page.tsx`):**
+   - Se dividió `apps/api/src/routes/admin.ts` (1,525 líneas) en un paquete de sub-módulos desacoplados en `apps/api/src/routes/admin/`:
+     - `schemas.ts`: Centralización de esquemas JSON Schema de Fastify para validación de requests.
+     - `common.ts`: Helpers comunes de fechas, platform admin y parsing JSON.
+     - `tenants.ts`: Endpoints CRUD de clínicas, onboarding, seed y reset.
+     - `doctors.ts`: Alta y eliminación de especialistas.
+     - `services.ts`: Alta y eliminación de procedimientos en catálogo.
+     - `appointments.ts`: Consulta de disponibilidad, listado, agenda, actualización y links de anticipo.
+     - `conversations.ts`: Listado de conversaciones, mensajes, toma de control (takeover) y respuesta manual.
+     - `audit.ts`: Consulta de bitácora y exportación en CSV con soporte para filtrado de eventos sensibles en servidor.
+     - `index.ts`: Plugin `adminPlugin` y re-exportación de componentes.
+     - `admin.ts`: Punto de entrada simplificado manteniendo 100% de compatibilidad hacia atrás con imports y suites de prueba.
+   - En `apps/web/src/app/dashboard/team/page.tsx` (1,507 líneas), se extrajeron los modales en componentes dedicados en `apps/web/src/components/dashboard/team/`:
+     - `AddDoctorModal.tsx`
+     - `AddServiceModal.tsx`
+     - `DeleteConfirmModal.tsx`
+
+2. **Pulido de UI/UX en Bandeja y Auditoría:**
+   - En `apps/web/src/app/dashboard/inbox/page.tsx`: se corrigió `toggleTakeover` para actualizar de forma optimista tanto `isHandedOverToHuman` como `status`, eliminando el retraso de hasta 3 segundos (un ciclo de polling) en la etiqueta "Estado:".
+   - En `apps/web/src/app/dashboard/audit/demo.ts`: se implementó `getTodayTimes(now)` con distribución horaria dinámica relativa a `now` cuando la demostración se abre antes de las 13:45 CDMX, garantizando que el grupo "Hoy" nunca quede vacío y conserve orden cronológico realista.
+
+3. **Filtrado de Eventos Sensibles en Exportación de Auditoría:**
+   - En `apps/api/src/routes/admin/audit.ts`: se agregó el query param `onlySensitive=true` en `GET /api/audit/export` (y `/api/audit`), evaluando sensibilidad según reglas de negocio (`LOGIN_FAILED`, `DELETE`, `EXPORT`, pagos manuales y accesos de usuarios fuera de horario laboral de los doctores).
+   - En `apps/web/src/app/dashboard/audit/page.tsx`: se envía `onlySensitive=true` en la URL de exportación si el toggle está activo, y en modo demo se exporta `visibleEvents`. Se actualizó el mensaje informativo en la UI.
+
+4. **CI / DevOps y Aislamiento de Base de Datos:**
+   - Se creó `.github/workflows/ci.yml` ejecutando validación de Conventional Commits (según `.githooks/commit-msg`), verificación de tipos, compilación de paquetes Prisma, linter de web y ejecución de suites de prueba automatizadas.
+   - Se documentó en `CLAUDE.md` y `AGENTS.md` el comportamiento de concurrencia y la recomendación de correr tests con worker de API detenido o base aislada.
+
+5. **Sistema de Diseño Clínico Impeccable y Documentación Canónica:**
+   - Se creó `DESIGN.md` con la especificación completa del sistema visual: tokens de color (Primary Slate, Medical Teal, Semánticos), tipografía nativa, elevaciones, espaciados y componentes clave (DashboardShell, MetricCard, Inbox, Modales) con cumplimiento estricto de accesibilidad WCAG AA y NOM-024.
+   - Se actualizaron `CLAUDE.md` y `AGENTS.md` reflejando Next.js 16.3, `@asistente/observability`, la cola durable de webhooks y el pipeline de voz ultra-rápido.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/schemas.ts` — nuevos esquemas JSON Fastify
+- `apps/api/src/routes/admin/common.ts` — utilidades compartidas
+- `apps/api/src/routes/admin/tenants.ts` — rutas de clínicas y seed
+- `apps/api/src/routes/admin/doctors.ts` — rutas de doctores
+- `apps/api/src/routes/admin/services.ts` — rutas de servicios
+- `apps/api/src/routes/admin/appointments.ts` — rutas de agenda y citas
+- `apps/api/src/routes/admin/conversations.ts` — rutas de mensajería y takeover
+- `apps/api/src/routes/admin/audit.ts` — rutas de auditoría y exportación con `onlySensitive`
+- `apps/api/src/routes/admin/index.ts` — plugin y re-exports
+- `apps/api/src/routes/admin.ts` — agregador modular
+- `apps/web/src/components/dashboard/team/AddDoctorModal.tsx` — modal extraído
+- `apps/web/src/components/dashboard/team/AddServiceModal.tsx` — modal extraído
+- `apps/web/src/components/dashboard/team/DeleteConfirmModal.tsx` — modal extraído
+- `apps/web/src/app/dashboard/team/page.tsx` — reducción y consumo de modales
+- `apps/web/src/app/dashboard/inbox/page.tsx` — status optimista instantáneo
+- `apps/web/src/app/dashboard/audit/demo.ts` — horas dinámicas para eventos de Hoy
+- `apps/web/src/app/dashboard/audit/page.tsx` — exportación filtrada por sensibilidad
+- `.github/workflows/ci.yml` — workflow de CI en GitHub Actions
+- `DESIGN.md` — guía del sistema de diseño clínico
+- `CLAUDE.md` — sincronización de arquitectura y stack
+- `AGENTS.md` — sincronización canónica
+- `TODO.md` — eliminación de pendientes completados
+
+### Verificación
+- `npm run build` pasó exitosamente en los 6 workspaces (Next.js 16.3 Turbopack generó 11 páginas estáticas).
+- `npm run lint --workspace=apps/web` pasó con 0 errores y 0 advertencias.
+- `npm run test --workspace=@asistente/api` pasó al 100% (9 de 9 suites).
+- `npm run test:stress --workspace=@asistente/ai-agent` pasó al 100% (40 de 40 pruebas).
+- `npx playwright test` pasó al 100% (3 de 3 pruebas E2E de login y cookies).
+- Prueba unitaria con Node/tsx verificó 14 eventos generados en "Hoy" a las 7:00 AM CDMX en `demo.ts`.
+
+### Pendientes derivados
+- Migración de SQLite a PostgreSQL y reescritura de triggers PL/pgSQL de `AuditLog` para producción.
+- Traslado del límite de lecturas de auditoría a Redis al escalar a múltiples instancias horizontales.
+- Modularización de `inbox/page.tsx` y `calendar/page.tsx` en el frontend.
+
+---
+
 ## [2026-09-14] feat(api): validar esquemas en rutas y limpiar any y observabilidad
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `5eb30f1`

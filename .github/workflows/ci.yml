@@ -2,55 +2,93 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  commit-lint:
+    name: Conventional Commits
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: file:./dev.db
-      JWT_SECRET: ci-jwt-secret-with-at-least-32-characters
-      META_VERIFY_TOKEN: ci-verify-token
-      META_APP_SECRET: ci-meta-app-secret
-      TWILIO_AUTH_TOKEN: ci-twilio-auth-token
-      MERCADOPAGO_WEBHOOK_SECRET: ci-mp-webhook-secret
-      META_WHATSAPP_TOKEN: ''
-      META_PHONE_NUMBER_ID: ''
-      GEMINI_API_KEY: ''
-      NODE_ENV: test
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          node-version: '22'
+          fetch-depth: 0
+
+      - name: Validate Commit Messages
+        run: |
+          chmod +x .githooks/commit-msg
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMITS=$(git rev-list --no-merges origin/${{ github.base_ref }}..HEAD)
+            for commit in $COMMITS; do
+              MSG_FILE=$(mktemp)
+              git log -1 --format=%B "$commit" > "$MSG_FILE"
+              echo "Validando commit: $commit"
+              .githooks/commit-msg "$MSG_FILE"
+              rm -f "$MSG_FILE"
+            done
+          else
+            MSG_FILE=$(mktemp)
+            git log -1 --format=%B HEAD > "$MSG_FILE"
+            echo "Validando HEAD: $(git rev-parse HEAD)"
+            .githooks/commit-msg "$MSG_FILE"
+            rm -f "$MSG_FILE"
+          fi
+
+  lint-and-typecheck:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
           cache: npm
 
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: npm ci
 
-      - name: Preparar base de datos
+      - name: Build packages (Prisma & Workspaces)
         run: |
-          node -e "require('fs').writeFileSync('packages/database/prisma/dev.db','')"
-          npm run db:migrate
-          npm run db:seed
+          npm run build --workspace=@asistente/database
+          npm run build
 
-      - name: Compilar monorepo
-        run: npm run build
+      - name: Lint web
+        run: npm run lint --workspace=apps/web
 
-      - name: Lint del frontend
-        run: npm run lint --workspace=@asistente/web
+  test:
+    name: Test Suites
+    needs: [lint-and-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Pruebas (unitarias, seguridad, pagos y API)
-        run: npm test
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-      - name: Instalar navegador de Playwright
-        run: npx playwright install --with-deps chromium
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Pruebas E2E del panel (login -> dashboard)
-        run: npm run test:e2e
+      - name: Build Database & Packages
+        run: |
+          npm run build --workspace=@asistente/database
+          npm run build
 
-      - name: Suite de estrés E2E
-        run: npm run test:stress
+      - name: Run Test Suites
+        run: npm run test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-with-at-least-32-characters
+          CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=

@@ -68,19 +68,31 @@ El proyecto está estructurado con **npm workspaces**:
 asistente/
 ├── AGENTS.md                     # Especificación canónica exhaustiva para agentes de IA
 ├── CLAUDE.md                     # Fuente de verdad de reglas de negocio y arquitectura (este archivo)
+├── DESIGN.md                     # Especificación del sistema de diseño clínico Impeccable
 ├── README.md                     # Guía de inducción y primeros pasos
+├── TODO.md                       # Registro vivo de pendientes técnicos y mejoras
 ├── dev.db                        # Base de datos SQLite local
 ├── package.json                  # Definición de workspaces (@asistente/*)
 ├── tsconfig.base.json            # Configuración base estricta de TypeScript
+├── .github/
+│   └── workflows/
+│       └── ci.yml                # CI: Conventional Commits, Lint, Build y Tests
+├── .githooks/
+│   └── commit-msg                # Hook git local para Conventional Commits
 │
 ├── packages/
 │   ├── shared-types/             # Tipos e interfaces comunes compartidos
 │   │   └── src/index.ts          # Tenant, Doctor, Service, Patient, Appointment, Conversation
-│   ├── database/                 # Capa de persistencia con Prisma ORM
-│   │   ├── prisma/schema.prisma  # Esquema multi-tenant con SQLite
+│   ├── database/                 # Capa de persistencia con Prisma ORM y Auditoría
+│   │   ├── prisma/schema.prisma  # Esquema multi-tenant con SQLite (migrable a PostgreSQL)
 │   │   └── src/
-│   │       ├── index.ts          # Cliente Prisma singleton exportado (`db`)
+│   │       ├── index.ts          # Cliente Prisma singleton (`db`), helpers de contraseñas y credenciales
+│   │       ├── audit.ts          # Registro inmutable de auditoría (NOM-024 / LFPDPPP)
 │   │       └── seed.ts           # Seeder inicial con clínica modelo de Polanco (CDMX)
+│   ├── observability/            # Logger estructurado y observabilidad clínica
+│   │   └── src/
+│   │       ├── logger.ts         # Logger estructurado NDJSON con enmascaramiento NOM-024
+│   │       └── index.ts          # createLogger('modulo')
 │   └── ai-agent/                 # Motor de Inteligencia Artificial y Reglas de Negocio
 │       └── src/
 │           ├── agent/            # OmnichannelAgent (Gemini 2.5 Flash con Tool Calling)
@@ -95,29 +107,38 @@ asistente/
     ├── api/                      # Servidor Fastify Backend (REST, WebSockets y Webhooks)
     │   └── src/
     │       ├── index.ts          # Entrypoint Fastify en puerto 3000
+    │       ├── server.ts         # Construcción del servidor, autenticación y plugins
     │       ├── routes/
-    │       │   ├── admin.ts      # CRUD de tenants, doctores, servicios, citas y bandeja
-    │       │   ├── webhooks.ts   # Webhook Meta (WhatsApp Cloud API) y Twilio Voice
+    │       │   ├── auth.ts       # Autenticación segura basada en JWT y cookies HttpOnly
+    │       │   ├── admin.ts      # Agregador de rutas administrativas bajo /api
+    │       │   ├── admin/        # Módulos desacoplados: tenants, doctors, services, appointments, conversations, audit
+    │       │   ├── webhooks.ts   # Webhooks de Meta (WhatsApp), Twilio Voice y Mercado Pago
     │       │   └── voice.ts      # WebSocket /voice/stream para streaming de llamadas
     │       ├── services/
-    │       │   ├── whatsappService.ts   # Envío de mensajes y plantillas interactivas
-    │       │   └── voiceStreamService.ts # Procesamiento de audio bidireccional
+    │       │   ├── queue/        # Cola durable de webhooks/outbox con reintentos e idempotencia
+    │       │   ├── voice/        # Pipeline de voz: Deepgram STT, Cartesia TTS, VAD y barge-in
+    │       │   ├── whatsappService.ts # Envío de mensajes y plantillas interactivas
+    │       │   └── voiceStreamService.ts # Procesamiento de audio bidireccional Twilio
     │       └── test-api.ts       # Pruebas de integración HTTP in-memory
     │
-    └── web/                      # Frontend Next.js 15 (App Router) en puerto 3001
+    └── web/                      # Frontend Next.js 16.3 (App Router) en puerto 3001
         └── src/
             ├── app/
             │   ├── page.tsx                  # Landing page comercial con Simulador Interactivo
+            │   ├── login/page.tsx            # Pantalla de acceso para el personal
             │   └── dashboard/
             │       ├── layout.tsx            # Envoltorio con TenantProvider y DashboardShell
             │       ├── page.tsx              # Resumen general con métricas dinámicas
             │       ├── inbox/page.tsx        # Bandeja omnicanal en tiempo real con modo copiloto
             │       ├── calendar/page.tsx     # Calendario interactivo por doctor y filtros
             │       ├── team/page.tsx         # Gestión de doctores y servicios en MXN
+            │       ├── audit/page.tsx        # Bitácora inmutable de accesos clínicos (NOM-024)
             │       └── settings/page.tsx     # Configuración de clínica, teléfonos y tono de IA
             ├── components/
             │   ├── landing/                  # Hero, Simulador, ROI Calculator, Testimonios, Pricing
-            │   └── dashboard/DashboardShell.tsx # Selector de clínicas, toggle Demo/Live, Sandbox tools
+            │   └── dashboard/
+            │       ├── DashboardShell.tsx    # Selector de clínicas, toggle Demo/Live, Sandbox tools
+            │       └── team/                 # Modales modulares: AddDoctorModal, AddServiceModal, DeleteConfirmModal
             └── context/TenantContext.tsx     # Estado global reactivo de modo y clínica activa
 ```
 
@@ -129,15 +150,18 @@ asistente/
 | :--- | :--- | :--- | :--- |
 | **Runtime** | Node.js | v22+ | Ejecución en backend |
 | **Lenguaje** | TypeScript | v5.7+ | Tipado estricto en todo el monorepo |
-| **Backend Framework** | Fastify | v5.2+ | API REST ultrarrápida con WebSockets |
-| **ORM & DB** | Prisma + SQLite | v6.19+ | Esquema relacional tipado (fácil migración a PostgreSQL) |
-| **Frontend Framework** | Next.js (App Router) | v15.1+ | Renderizado híbrido SSR y Client Components |
-| **Librería UI** | React | v19.0 | Componentes reactivos |
-| **Estilos** | Tailwind CSS | v3.4+ | Sistema de diseño de alta velocidad |
+| **Backend Framework** | Fastify | v5.2+ | API REST ultrarrápida con validación JSON Schema y WebSockets |
+| **ORM & DB** | Prisma + SQLite | v6.19+ | Esquema relacional tipado (migrable a PostgreSQL) |
+| **Frontend Framework** | Next.js (App Router) | v16.3+ | Renderizado híbrido SSR y Client Components |
+| **Librería UI** | React | v19.0 | Componentes reactivos y Server Actions |
+| **Estilos** | Tailwind CSS | v3.4+ | Sistema de diseño de alta velocidad (estándar Impeccable) |
 | **Iconografía** | Lucide React | v0.475+ | Iconos vectoriales coherentes |
 | **Modelo de IA (LLM)** | Google Gemini 2.5 Flash | SDK `@google/genai` | Agente conversacional con Tool Calling |
 | **Telefonía & Voz** | Twilio Voice (+52) | TwiML + WebSockets | Audio streaming bidireccional, Polly.Mia-Neural |
+| **Pipeline de Voz Ultra-Rápido** | Deepgram + Cartesia | G.711 mu-law | STT y TTS en tiempo real (<600 ms) con detección de interrupción (barge-in) |
 | **Mensajería** | Meta Cloud API | Graph API v22.0 | WhatsApp Business oficial (botones interactivos) |
+| **Cola de Trabajos** | Cola durable en DB | SQLite/PostgreSQL | Procesamiento asíncrono e idempotente de webhooks |
+| **Observabilidad** | `@asistente/observability` | NDJSON estructurado | Registro y enmascaramiento automático de PII (NOM-024) |
 | **Pasarela de Pago** | Mercado Pago SDK | REST API | Cobro de anticipos en MXN y No-Show Shield |
 
 ---

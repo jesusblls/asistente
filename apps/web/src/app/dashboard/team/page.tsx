@@ -26,6 +26,9 @@ import { useTenant } from '@/context/TenantContext';
 import { cn } from '@/lib/utils';
 import { API_BASE_URL, apiFetch } from '@/lib/api';
 import { formatMexicanPhone } from '@/lib/format';
+import { AddDoctorModal } from '@/components/dashboard/team/AddDoctorModal';
+import { AddServiceModal } from '@/components/dashboard/team/AddServiceModal';
+import { DeleteConfirmModal } from '@/components/dashboard/team/DeleteConfirmModal';
 
 export interface ScheduleChip {
   days: string;
@@ -1073,434 +1076,64 @@ export default function TeamAndServicesPage() {
       </div>
 
       {/* Modal: Registrar Nuevo Especialista */}
-      {isDoctorModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-                  <Stethoscope className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    Registrar Nuevo Especialista
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    {mode === 'demo'
-                      ? 'Se agregará a la demostración interactiva'
-                      : `Se asociará a la clínica: ${activeTenant?.name || 'Activa'}`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsDoctorModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateDoctor}>
-              <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-                {doctorError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                    <span>{doctorError}</span>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Nombre completo del médico o especialista *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={docName}
-                    onChange={(e) => setDocName(e.target.value)}
-                    placeholder="Ej. Dra. Mariana Valdez"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Especialidad médica o dental *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={docSpecialty}
-                    onChange={(e) => setDocSpecialty(e.target.value)}
-                    placeholder="Ej. Ortodoncia y Ortopedia Maxilofacial"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Teléfono WhatsApp
-                    </label>
-                    <input
-                      type="text"
-                      value={docPhone}
-                      onChange={(e) => setDocPhone(e.target.value)}
-                      placeholder="+52 55 1234 5678"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Correo electrónico
-                    </label>
-                    <input
-                      type="email"
-                      value={docEmail}
-                      onChange={(e) => setDocEmail(e.target.value)}
-                      placeholder="dra.mariana@clinica.mx"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Horario de consulta / Disponibilidad
-                  </label>
-                  <input
-                    type="text"
-                    value={docSchedule}
-                    onChange={(e) => setDocSchedule(e.target.value)}
-                    placeholder="Lunes a Viernes: 9:00 - 18:00"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Duración base por cita
-                  </label>
-                  <select
-                    value={docSlotDuration}
-                    onChange={(e) => setDocSlotDuration(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  >
-                    <option value="30 minutos">30 minutos</option>
-                    <option value="45 minutos">45 minutos</option>
-                    <option value="60 minutos">60 minutos</option>
-                    <option value="90 minutos">90 minutos</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsDoctorModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingDoctor}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-                >
-                  {isSubmittingDoctor ? 'Guardando...' : 'Guardar Especialista'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AddDoctorModal
+        isOpen={isDoctorModalOpen}
+        onClose={() => setIsDoctorModalOpen(false)}
+        onSubmit={handleCreateDoctor}
+        mode={mode}
+        tenantName={activeTenant?.name}
+        name={docName}
+        setName={setDocName}
+        specialty={docSpecialty}
+        setSpecialty={setDocSpecialty}
+        phone={docPhone}
+        setPhone={setDocPhone}
+        email={docEmail}
+        setEmail={setDocEmail}
+        schedule={docSchedule}
+        setSchedule={setDocSchedule}
+        slotDuration={docSlotDuration}
+        setSlotDuration={setDocSlotDuration}
+        error={doctorError}
+        isSubmitting={isSubmittingDoctor}
+      />
 
       {/* Modal: Registrar Nuevo Tratamiento */}
-      {isServiceModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                  <DollarSign className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    Registrar Nuevo Tratamiento
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    {mode === 'demo'
-                      ? 'Se agregará a la demostración interactiva'
-                      : `Se asociará a la clínica: ${activeTenant?.name || 'Activa'}`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsServiceModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateService}>
-              <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-                {serviceError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                    <span>{serviceError}</span>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Nombre del tratamiento o procedimiento *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={svcName}
-                    onChange={(e) => setSvcName(e.target.value)}
-                    placeholder="Ej. Ortodoncia con Brackets de Zafiro"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Categoría
-                  </label>
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {PRESET_CATEGORIES.map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setSvcCategory(cat)}
-                        className={cn(
-                          'px-2.5 py-1 rounded-md text-xs font-medium border transition-colors',
-                          svcCategory === cat
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                        )}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="text"
-                    value={svcCategory}
-                    onChange={(e) => setSvcCategory(e.target.value)}
-                    placeholder="O escribe una categoría personalizada"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Duración del procedimiento
-                  </label>
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {PRESET_DURATIONS.map((dur) => (
-                      <button
-                        key={dur}
-                        type="button"
-                        onClick={() => setSvcDurationMinutes(dur)}
-                        className={cn(
-                          'px-2.5 py-1 rounded-md text-xs font-medium border transition-colors',
-                          svcDurationMinutes === dur
-                            ? 'bg-teal-600 text-white border-teal-600'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                        )}
-                      >
-                        {dur} min
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="5"
-                      step="5"
-                      value={svcDurationMinutes}
-                      onChange={(e) => setSvcDurationMinutes(Number(e.target.value))}
-                      className="w-32 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                    />
-                    <span className="text-xs text-slate-500">minutos reservados en agenda</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Precio Oficial (MXN) *
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-slate-400 text-sm">$</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="50"
-                        required
-                        value={svcPriceMxn}
-                        onChange={(e) =>
-                          setSvcPriceMxn(e.target.value === '' ? '' : Number(e.target.value))
-                        }
-                        placeholder="450"
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-7 pr-12 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                      />
-                      <span className="absolute right-3 top-2 text-slate-400 text-xs">MXN</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Anticipo Requerido (MXN) *
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-slate-400 text-sm">$</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="50"
-                        required
-                        value={svcRequiredDepositMxn}
-                        onChange={(e) =>
-                          setSvcRequiredDepositMxn(
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="0"
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-7 pr-12 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                      />
-                      <span className="absolute right-3 top-2 text-slate-400 text-xs">MXN</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Accesos rápidos de porcentaje para el anticipo */}
-                {typeof svcPriceMxn === 'number' && svcPriceMxn > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <span className="text-[11px] text-slate-400">Atajos de anticipo:</span>
-                    <button
-                      type="button"
-                      onClick={() => setSvcRequiredDepositMxn(0)}
-                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium"
-                    >
-                      Sin anticipo ($0)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSvcRequiredDepositMxn(Math.round(svcPriceMxn * 0.2))
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium"
-                    >
-                      20% (${Math.round(svcPriceMxn * 0.2)})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSvcRequiredDepositMxn(Math.round(svcPriceMxn * 0.5))
-                      }
-                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium"
-                    >
-                      50% (${Math.round(svcPriceMxn * 0.5)})
-                    </button>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Descripción breve (para el Asistente IA)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={svcDescription}
-                    onChange={(e) => setSvcDescription(e.target.value)}
-                    placeholder="Detalles clave que la IA puede explicarle al paciente por WhatsApp o llamada..."
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsServiceModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingService}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-                >
-                  {isSubmittingService ? 'Guardando...' : 'Guardar Tratamiento'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AddServiceModal
+        isOpen={isServiceModalOpen}
+        onClose={() => setIsServiceModalOpen(false)}
+        onSubmit={handleCreateService}
+        mode={mode}
+        tenantName={activeTenant?.name}
+        name={svcName}
+        setName={setSvcName}
+        category={svcCategory}
+        setCategory={setSvcCategory}
+        presetCategories={PRESET_CATEGORIES}
+        durationMinutes={svcDurationMinutes}
+        setDurationMinutes={setSvcDurationMinutes}
+        presetDurations={PRESET_DURATIONS}
+        priceMxn={svcPriceMxn}
+        setPriceMxn={setSvcPriceMxn}
+        requiredDepositMxn={svcRequiredDepositMxn}
+        setRequiredDepositMxn={setSvcRequiredDepositMxn}
+        description={svcDescription}
+        setDescription={setSvcDescription}
+        error={serviceError}
+        isSubmitting={isSubmittingService}
+      />
 
       {/* Modal: Confirmación de Eliminación */}
-      {itemToDelete && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6 space-y-4">
-              <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-
-              <div className="text-center space-y-1">
-                <h3 className="text-base font-bold text-slate-900">
-                  ¿Eliminar{' '}
-                  {itemToDelete.type === 'doctor' ? 'especialista' : 'tratamiento'}?
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Estás a punto de eliminar a{' '}
-                  <strong className="text-slate-800 font-semibold">
-                    &quot;{itemToDelete.name}&quot;
-                  </strong>
-                  . Esta acción removerá el registro de la disponibilidad del Asistente IA.
-                </p>
-              </div>
-
-              {deleteError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                  <span>{deleteError}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setItemToDelete(null);
-                  setDeleteError(null);
-                }}
-                disabled={isDeleting}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-              >
-                {isDeleting ? 'Eliminando...' : 'Sí, eliminar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmModal
+        target={itemToDelete}
+        onClose={() => {
+          setItemToDelete(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        isDeleting={isDeleting}
+        error={deleteError}
+      />
     </div>
   );
 }

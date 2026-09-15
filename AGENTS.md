@@ -29,7 +29,7 @@ Este documento es la **fuente de verdad canónica e integral** para cualquier ag
    - [6.1 Catálogo de Endpoints REST](#61-catálogo-de-endpoints-rest)
    - [6.2 Webhooks (Meta WhatsApp & Twilio Voice)](#62-webhooks-meta-whatsapp--twilio-voice)
    - [6.3 WebSocket Twilio Media Streams (Audio Bidireccional)](#63-websocket-twilio-media-streams-audio-bidireccional)
-7. [Frontend Web Next.js 15 (`apps/web`)](#7-frontend-web-nextjs-15-appsweb)
+7. [Frontend Web Next.js 16.3 (`apps/web`)](#7-frontend-web-nextjs-163-appsweb)
    - [7.1 Rutas y Estructura del App Router](#71-rutas-y-estructura-del-app-router)
    - [7.2 Estado Global Dual: Sandbox en Vivo vs. Showcase Demo](#72-estado-global-dual-sandbox-en-vivo-vs-showcase-demo)
    - [7.3 Sistema de Diseño Clínico (Principios Impeccable)](#73-sistema-de-diseño-clínico-principios-impeccable)
@@ -103,13 +103,21 @@ asistente/
 │   │   ├── tsconfig.json
 │   │   └── src/index.ts       # Tenant, Doctor, Service, Appointment, ChannelType, etc.
 │   │
-│   ├── database/              # @asistente/database: Capa de persistencia con Prisma
+│   ├── database/              # @asistente/database: Capa de persistencia con Prisma y Auditoría
 │   │   ├── package.json
 │   │   ├── tsconfig.json
-│   │   ├── prisma/schema.prisma # Esquema relacional con 10 modelos
+│   │   ├── prisma/schema.prisma # Esquema relacional con 11 modelos (incluye Job y AuditLog)
 │   │   └── src/
-│   │       ├── index.ts       # Singleton exportado: db
+│   │       ├── index.ts       # Singleton db, helpers de contraseñas y credenciales
+│   │       ├── audit.ts       # Registro inmutable de auditoría (NOM-024 / LFPDPPP)
 │   │       └── seed.ts        # Datos iniciales (Clínica Dental Sonrisas Polanco)
+│   │
+│   ├── observability/         # @asistente/observability: Logger estructurado JSON NDJSON
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── logger.ts      # Logger con enmascaramiento automático de PII
+│   │       └── index.ts       # createLogger('modulo')
 │   │
 │   └── ai-agent/              # @asistente/ai-agent: Motor conversacional e inteligencia clínica
 │       ├── package.json
@@ -135,16 +143,21 @@ asistente/
     │   ├── tsconfig.json
     │   └── src/
     │       ├── index.ts       # Entrypoint Fastify, CORS, FormBody, WebSockets
+    │       ├── server.ts      # Configuración de Fastify, JWT auth y registro de rutas
     │       ├── routes/
-    │       │   ├── admin.ts   # CRUD tenants, doctores, servicios, citas, conversaciones
+    │       │   ├── auth.ts    # Autenticación con cookies HttpOnly seguras
+    │       │   ├── admin.ts   # Agregador de rutas administrativas bajo /api
+    │       │   ├── admin/     # Sub-módulos desacoplados: tenants, doctors, services, appointments, conversations, audit
     │       │   ├── webhooks.ts# Webhooks de Meta (WhatsApp), Twilio Voice y Mercado Pago
     │       │   └── voice.ts   # WebSocket /voice/stream para streaming de audio
     │       ├── services/
+    │       │   ├── queue/     # Cola durable de webhooks/outbox con reintentos exponenciales
+    │       │   ├── voice/     # Pipeline de voz: Deepgram STT, Cartesia TTS, VAD y barge-in
     │       │   ├── whatsappService.ts    # Meta Cloud API (mensajes de texto y botones)
     │       │   └── voiceStreamService.ts # Twilio Voice Sessions, barge-in y post-llamada
     │       └── test-api.ts    # Pruebas de integración in-memory para Fastify
     │
-    └── web/                   # @asistente/web: Frontend Next.js 15 App Router (Puerto 3001)
+    └── web/                   # @asistente/web: Frontend Next.js 16.3 App Router (Puerto 3001)
         ├── package.json
         ├── tsconfig.json
         ├── tailwind.config.ts
@@ -154,17 +167,20 @@ asistente/
             │   └── TenantContext.tsx # Estado global de modo (Live vs Demo) y clínica activa
             ├── components/
             │   ├── dashboard/
-            │   │   └── DashboardShell.tsx # Shell con selector de clínica y toggles
+            │   │   ├── DashboardShell.tsx # Shell con selector de clínica y toggles
+            │   │   └── team/              # Modales modulares: AddDoctorModal, AddServiceModal, DeleteConfirmModal
             │   └── landing/          # Hero, Simulador, ROI, Testimonios, Pricing, FAQ
             └── app/
                 ├── layout.tsx        # Root layout HTML/Body
                 ├── page.tsx          # Landing page comercial con Simulador Interactivo
+                ├── login/page.tsx    # Inicio de sesión seguro para el personal
                 └── dashboard/
                     ├── layout.tsx    # Layout envuelto con TenantProvider y DashboardShell
                     ├── page.tsx      # Métricas, KPIs, citas de hoy, reproductor de audio
                     ├── inbox/page.tsx# Bandeja omnicanal en tiempo real con botón Takeover
                     ├── calendar/page.tsx # Vista de agenda por doctor y filtros
                     ├── team/page.tsx # Catálogo de médicos y servicios con precios MXN
+                    ├── audit/page.tsx# Bitácora inmutable de accesos clínicos (NOM-024)
                     └── settings/page.tsx # Parámetros de clínica, E.164 y prompt de IA
 ```
 
@@ -382,9 +398,9 @@ Servidor Node.js de alto rendimiento con TypeScript, Fastify v5.2, WebSockets y 
 
 ---
 
-## 7. Frontend Web Next.js 15 (`apps/web`)
+## 7. Frontend Web Next.js 16.3 (`apps/web`)
 
-Construido sobre Next.js 15 (App Router), React 19, Tailwind CSS y Lucide React.
+Construido sobre Next.js 16.3 (App Router), React 19, Tailwind CSS (estándar Impeccable) y Lucide React.
 
 ### 7.1 Rutas y Estructura del App Router
 

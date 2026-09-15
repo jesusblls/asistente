@@ -145,8 +145,46 @@ function toEvent(draft: DraftEvent, index: number, at: (daysAgo: number, time: s
   };
 }
 
+function getTodayTimes(now: Date): string[] {
+  const canonical = [
+    '13:42',
+    '13:15',
+    '12:58',
+    '12:33',
+    '12:31',
+    '11:47',
+    '11:20',
+    '10:52',
+    '10:05',
+    '09:12',
+    '09:03',
+  ];
+
+  // CDMX offset es -06:00 constante (sin horario de verano)
+  const cdmxMs = now.getTime() - 6 * 60 * 60 * 1000;
+  const cdmxDate = new Date(cdmxMs);
+  const nowMinutes = cdmxDate.getUTCHours() * 60 + cdmxDate.getUTCMinutes();
+
+  // Si ya pasaron las 13:45 en CDMX, usamos las horas canónicas completas.
+  if (nowMinutes >= 13 * 60 + 45) {
+    return canonical;
+  }
+
+  // Si es temprano en CDMX, anclamos los eventos hacia atrás antes de "now"
+  // para que el grupo "Hoy" nunca quede vacío y conserve el orden cronológico.
+  const latestMinute = Math.max(nowMinutes - 3, 2);
+  const span = Math.min(latestMinute - 1, 240);
+  return canonical.map((_, i) => {
+    const minuteOfDay = Math.max(1, Math.round(latestMinute - (i / (canonical.length - 1)) * span));
+    const h = Math.floor(minuteOfDay / 60);
+    const m = minuteOfDay % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  });
+}
+
 export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
   const today = toMexicoCityDateKey(now);
+  const todayTimes = getTodayTimes(now);
   const at = (daysAgo: number, time: string) => cdmxLocalToIso(addDaysToDateKey(today, -daysAgo), time);
   const { direccion, recepcion, silva, morales } = STAFF;
   const { mariana, roberto, laura, fernando } = PATIENTS;
@@ -162,9 +200,9 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
 
   const drafts: DraftEvent[] = [
     // Hoy
-    { at: [0, '13:42'], actor: silva, action: 'READ', entityType: 'CONVERSATION', entityId: 'demo-conv-mariana', patient: mariana },
+    { at: [0, todayTimes[0]], actor: silva, action: 'READ', entityType: 'CONVERSATION', entityId: 'demo-conv-mariana', patient: mariana },
     {
-      at: [0, '13:15'],
+      at: [0, todayTimes[1]],
       actor: 'ai',
       action: 'UPDATE',
       entityType: 'APPOINTMENT',
@@ -173,7 +211,7 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
       metadata: { tool: 'confirmar_asistencia_cita', channel: 'WHATSAPP', conversationId: 'demo-conv-mariana' },
     },
     {
-      at: [0, '12:58'],
+      at: [0, todayTimes[2]],
       actor: 'ai',
       action: 'READ',
       entityType: 'APPOINTMENT',
@@ -181,7 +219,7 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
       metadata: { tool: 'consultar_citas_paciente', channel: 'PHONE_CALL', conversationId: 'demo-call-fernando' },
     },
     {
-      at: [0, '12:33'],
+      at: [0, todayTimes[3]],
       actor: recepcion,
       action: 'CREATE',
       entityType: 'MESSAGE',
@@ -190,7 +228,7 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
       metadata: { conversationId: 'demo-conv-roberto', channel: 'WHATSAPP' },
     },
     {
-      at: [0, '12:31'],
+      at: [0, todayTimes[4]],
       actor: recepcion,
       action: 'UPDATE',
       entityType: 'CONVERSATION',
@@ -199,7 +237,7 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
       changes: { isHandedOverToHuman: { before: false, after: true } },
     },
     {
-      at: [0, '11:47'],
+      at: [0, todayTimes[5]],
       actor: recepcion,
       action: 'UPDATE',
       entityType: 'APPOINTMENT',
@@ -210,7 +248,7 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
       },
     },
     {
-      at: [0, '11:20'],
+      at: [0, todayTimes[6]],
       actor: 'mercadopago',
       action: 'UPDATE',
       entityType: 'APPOINTMENT',
@@ -218,7 +256,7 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
       changes: { paymentStatus: { before: 'DEPOSIT_PENDING', after: 'DEPOSIT_PAID' } },
     },
     {
-      at: [0, '10:52'],
+      at: [0, todayTimes[7]],
       actor: 'ai',
       action: 'CREATE',
       entityType: 'APPOINTMENT',
@@ -231,9 +269,9 @@ export function buildDemoAuditEvents(now = new Date()): AuditEvent[] {
         conversationId: 'demo-call-roberto',
       },
     },
-    { at: [0, '10:05'], actor: morales, action: 'READ', entityType: 'CONVERSATION', entityId: 'demo-conv-fernando', patient: fernando },
-    { at: [0, '09:12'], actor: recepcion, action: 'LIST', entityType: 'APPOINTMENT', metadata: { count: 8 } },
-    { at: [0, '09:03'], actor: recepcion, action: 'LOGIN', entityType: 'SESSION' },
+    { at: [0, todayTimes[8]], actor: morales, action: 'READ', entityType: 'CONVERSATION', entityId: 'demo-conv-fernando', patient: fernando },
+    { at: [0, todayTimes[9]], actor: recepcion, action: 'LIST', entityType: 'APPOINTMENT', metadata: { count: 8 } },
+    { at: [0, todayTimes[10]], actor: recepcion, action: 'LOGIN', entityType: 'SESSION' },
 
     // Ayer
     {
