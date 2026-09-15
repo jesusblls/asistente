@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] feat(api): validar esquemas en rutas y limpiar any y observabilidad
 
-**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `PENDING`
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `5eb30f1`
 
 ### Qué se hizo
 
