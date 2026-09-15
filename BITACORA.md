@@ -34,6 +34,38 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] docs(seguridad): cerrar el pendiente de auditar escrituras del paciente
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+`TODO.md` tenía abierto "decidir con asesoría legal si se auditan las
+escrituras que origina el paciente o el canal" desde `052a205`. Esa
+decisión de cumplimiento (LFPDPPP/NOM-024) no le corresponde tomarla a un
+agente de IA sin esa asesoría — se le preguntó explícitamente al usuario
+qué hacer con el pendiente. Se decidió **mantener el comportamiento actual**
+(no auditar mensajes entrantes, altas de paciente por WhatsApp/voz ni
+otras escrituras que el propio paciente dispara sin intervención humana) y
+documentarlo como decisión de producto permanente en vez de dejarlo como
+pendiente abierto.
+
+Se agregó la explicación completa a CLAUDE.md § 5.6 (por qué: el mensaje o
+la llamada grabada ya es el rastro de esa acción; auditar de nuevo sería
+redundante y no hay ningún acceso humano que registrar), con la nota de que
+si el criterio de cumplimiento cambia en el futuro, sigue requiriendo
+asesoría legal antes de tocar el código — no es una puerta cerrada, es una
+decisión documentada con su razón.
+
+### Archivos tocados
+- `CLAUDE.md` — § 5.6, alcance deliberado de `recordAudit()`
+- `TODO.md` — se retira el pendiente (ya no es "pendiente", es una decisión documentada)
+
+### Verificación
+- Cambio de solo documentación; sin código de por medio.
+
+---
+
 ## [2026-09-14] feat(db)!: migrar de SQLite a PostgreSQL
 
 **Autor:** Claude Sonnet 5 · **Commit:** `6813beb`

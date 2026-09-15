@@ -25,12 +25,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   múltiples instancias horizontales.
   `packages/database/src/audit.ts` · origen: `052a205`
 
-- [ ] **Decidir con asesoría legal si se auditan las escrituras que origina el
-  paciente o el canal**: mensaje entrante, alta de paciente por WhatsApp o por
-  voz. Hoy no se auditan por decisión, porque el propio registro es el rastro y
-  no interviene ningún humano.
-  origen: `052a205`
-
 ### Calidad de código
 
 - [ ] **Partir los archivos-dios restantes en frontend:**

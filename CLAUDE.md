@@ -200,6 +200,7 @@ asistente/
    * Todo acceso al expediente de un paciente concreto y toda modificación de citas, conversaciones, mensajes, pacientes, doctores, servicios o clínicas se registra con `recordAudit()` de `@asistente/database`.
    * En escrituras se pasa el cliente de la transacción (`recordAudit(entry, tx)`) para que el cambio y su rastro se confirmen juntos.
    * `AuditLog` es de solo inserción: triggers de base de datos rechazan cualquier `UPDATE` y el `DELETE` de filas con menos de 5 años. La consulta es `GET /api/audit` (solo ADMIN).
+   * **Alcance deliberado — no se audita lo que origina el propio paciente o canal:** un mensaje entrante de WhatsApp, un alta de paciente por WhatsApp o por voz, o cualquier otra escritura que dispare el propio paciente sin que intervenga personal humano, no genera fila en `AuditLog`. La razón es que el mensaje o la llamada grabada **ya es el rastro** de esa acción — auditar de nuevo el mismo evento sería redundante, y no hay un humano cuyo acceso deba quedar registrado. `recordAudit()` se reserva para acciones de un actor (`USER`, `AI_AGENT` actuando por instrucción del paciente, `WEBHOOK`, `SYSTEM`) sobre el expediente de alguien más. Esta es una decisión de producto documentada, no un pendiente: si cambia el criterio de cumplimiento, requiere asesoría legal antes de tocar el código.
 
 ---
 
