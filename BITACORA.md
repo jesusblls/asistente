@@ -10,6 +10,66 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-15] build(deploy): soportar VPS compartido con reverse proxy propio
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El despliegue Docker original asumía un VPS dedicado, con el Caddy incluido
+tomando los puertos 80/443 para sí solo. Al probarlo contra el VPS real del
+usuario resultó que ya corre varios proyectos (`panel`, `tickets-elina`,
+`syk`) detrás de su propio Caddy en una red Docker externa llamada `proxy`,
+que enruta por nombre de host a cada contenedor — el 80/443 ya estaban
+tomados y un `docker compose up` directo hubiera chocado con ellos (o peor,
+si Docker hubiera fallado a medias, arriesgado tumbar los otros proyectos).
+
+Se le puso `profiles: ["standalone"]` al servicio `caddy` del compose base:
+por defecto ya no se levanta, así que el mismo `docker-compose.yml` sirve
+para ambos casos sin bifurcar el archivo entero:
+
+- **VPS dedicado** (caso original): `--profile standalone` sigue trayendo el
+  Caddy propio, sin cambios de comportamiento para quien ya lo usa así.
+- **VPS compartido** (caso real de este despliegue): un override nuevo,
+  `deploy/docker-compose.proxy-externo.yml`, conecta `api`/`web` a la red
+  externa del proxy existente (`PROXY_NETWORK_NAME`, configurable) en vez de
+  levantar Caddy propio; ese proxy le hace `reverse_proxy` por nombre de
+  contenedor, igual que a los demás proyectos del VPS.
+
+También cambia la recomendación de `COOKIE_SECURE`: en el caso compartido el
+proxy existente del usuario ya sirve HTTPS real (Let's Encrypt vía subdominio
+sslip.io, mismo patrón que sus otros proyectos), así que no hace falta forzar
+`COOKIE_SECURE=false` como en el caso de VPS dedicado sin dominio todavía —
+el default de producción (`true`) ya es correcto ahí.
+
+Postgres y Redis se quedan como contenedores propios y aislados de
+AsistentePro en ambos casos (no se conectan al Postgres compartido que ya
+corre en ese VPS para otros proyectos): con 6.1GB de RAM libres en el VPS
+del usuario, el costo de aislarlos es marginal (~150MB) frente al riesgo de
+acoplar el ciclo de vida de AsistentePro — una migración, un upgrade de
+versión, o quedarse sin espacio — con sus otros proyectos. Decisión
+confirmada con el usuario, no asumida.
+
+También se resolvió que el repo nunca tuvo un remoto de git configurado (sin
+GitHub ni similar): `deploy/README.md` documenta transferir el código al VPS
+con `git archive | ssh ... tar -x` en vez de `git clone`, para no depender de
+un repo remoto que no existe todavía.
+
+### Archivos tocados
+- `docker-compose.yml` — `profiles: ["standalone"]` en el servicio `caddy`; comentario de uso actualizado con ambas opciones.
+- `deploy/docker-compose.proxy-externo.yml` (nuevo) — override que conecta `api`/`web` a la red externa del proxy existente.
+- `deploy/.env.production.example` — documenta `PROXY_NETWORK_NAME` y aclara cuándo aplica cada variable según la opción elegida.
+- `deploy/README.md` — reescrito con las dos rutas de despliegue (A: VPS dedicado, B: VPS compartido), incluyendo el bloque de Caddyfile de ejemplo para la opción B y el `git archive` en vez de `git clone`.
+
+### Verificación
+`docker compose -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml config` (con variables de prueba) confirma que en la Opción B no se incluye el servicio `caddy` y que `api`/`web` quedan en las redes `default` + `proxy` (red externa, nombre `proxy`); `docker compose -f docker-compose.yml --profile standalone config --services` confirma que la Opción A sigue trayendo los 5 servicios de siempre. Inspección real y de solo lectura del VPS del usuario por SSH (`docker ps`, `docker compose ls`, `ss -tlnp`, Caddyfile existente) para confirmar el patrón de red externa + enrutamiento por hostname antes de diseñar el override, en vez de asumirlo.
+
+### Pendientes derivados
+- Falta el despliegue real en el VPS del usuario (siguiente paso de esta
+  misma tarea): transferir el código, levantar el stack con la Opción B,
+  agregar el bloque al Caddyfile existente y verificar en navegador.
+
+---
+
 ## Formato de una entrada
 
 ```markdown

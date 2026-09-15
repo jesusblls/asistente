@@ -1,0 +1,31 @@
+# Override para un VPS que ya tiene un reverse proxy propio administrando los
+# puertos 80/443 (Caddy, Traefik, nginx...) para otros proyectos. En vez de
+# traer un Caddy propio (que chocaría por esos puertos), conecta api/web a la
+# red Docker externa donde vive ese proxy, para que le haga reverse_proxy por
+# nombre de contenedor igual que a tus otros proyectos.
+#
+# Uso (junto con el docker-compose.yml base, SIN --profile standalone para
+# que no se levante el Caddy embebido):
+#   docker compose --env-file deploy/.env.production \
+#     -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml \
+#     up -d --build
+#
+# PROXY_NETWORK_NAME es el nombre de la red Docker externa de tu proxy (en
+# muchos setups se llama "proxy"; ajústalo a como se llame en el tuyo — hay
+# que verlo con `docker network ls`).
+
+services:
+  api:
+    networks:
+      - default
+      - proxy
+
+  web:
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK_NAME:-proxy}

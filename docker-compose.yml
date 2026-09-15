@@ -1,10 +1,17 @@
 ## Despliegue de un solo VPS: Postgres y Redis corren como contenedores junto
-## a la API y el panel, con Caddy como entrada única en el puerto 80 (y 443
-## en cuanto haya un dominio apuntando aquí — ver deploy/README.md).
+## a la API y el panel.
 ##
-## Uso:
-##   cp .env.example .env.production   # y ajusta los valores reales
-##   docker compose --env-file .env.production up -d --build
+## VPS dedicado (Caddy propio incluido aquí, entrada única en 80/443):
+##   cp deploy/.env.production.example deploy/.env.production   # y ajusta los valores reales
+##   docker compose --env-file deploy/.env.production --profile standalone up -d --build
+##
+## VPS compartido con un reverse proxy que ya administras (Caddy/Traefik/etc.
+## ya tiene el 80/443 tomado por otros proyectos): usa el override que no
+## trae Caddy propio y conecta api/web a tu red externa —
+## ver deploy/docker-compose.proxy-externo.yml y deploy/README.md.
+##   docker compose --env-file deploy/.env.production \
+##     -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml \
+##     up -d --build
 
 services:
   postgres:
@@ -99,6 +106,11 @@ services:
       - "3001"
 
   caddy:
+    # Solo se levanta en un VPS dedicado (--profile standalone). En un VPS
+    # compartido con un reverse proxy propio, este servicio se omite y
+    # deploy/docker-compose.proxy-externo.yml conecta api/web a esa red en
+    # su lugar — ver deploy/README.md.
+    profiles: ["standalone"]
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
