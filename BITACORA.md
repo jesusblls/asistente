@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] fix(web): no recortar texto de las citas en pantallas móviles
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `898b60c`
 
 ### Qué se hizo
 Probando `/dashboard/calendar` a 375px (iPhone SE / gama baja Android) se
