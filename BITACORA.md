@@ -139,7 +139,7 @@ migraciones.
 
 ## [2026-09-14] docs: sincronizar documentación con la migración a PostgreSQL
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `554929d`
 
 ### Qué se hizo
 
