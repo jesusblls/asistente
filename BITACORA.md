@@ -34,6 +34,45 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(web): pedir "solo sensibles" al servidor en la bitácora
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Probando el panel en vivo (login real, `npm run dev` en `apps/api` y
+`apps/web`) se encontró que el toggle "Solo sensibles" de
+`/dashboard/audit` tenía, en el frontend, el mismo bug que se acababa de
+corregir en el servidor (`fix(api): paginar al filtrar auditoria por
+sensibles`, commit `02ce44a`): la lista en pantalla siempre pedía
+`GET /api/audit?limit=100` sin `onlySensitive`, y el toggle solo
+re-filtraba en el cliente esa página de 100 filas ya cargada
+(`visibleEvents`). Un evento sensible más viejo que las últimas 100 filas
+del periodo (p. ej. en "30 días" o "Todo" en una clínica activa)
+desaparecía del filtro sin aviso — aun con el fix del servidor, porque el
+cliente nunca le pedía `onlySensitive=true`.
+
+Se agregó `onlySensitive` a `buildQuery` y a `requestKey` (para que el
+toggle dispare un refetch), así la petición en vivo ahora es
+`GET /api/audit?...&onlySensitive=true`, que sí usa la paginación por
+cursor corregida en `fetchAuditRows`. `visibleEvents` ya no refiltra en el
+cliente cuando hay datos en vivo (el servidor ya filtró); en modo Demo, sin
+servidor real, se conserva el filtro en el cliente sobre el set fijo de
+eventos de muestra. Verificado manualmente contra el servidor real: la
+petición de red ahora lleva `onlySensitive=true` y la cuenta de eventos
+sensibles sube de 65 a 75 al reflejar actividad reciente, sin depender de
+qué tan atrás quedara en la ventana de 100.
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/audit/page.tsx` — `onlySensitive` en `buildQuery`/`requestKey`, `visibleEvents` ya no refiltra en vivo
+
+### Verificación
+- Prueba manual en el navegador contra `apps/api` + `apps/web` corriendo en vivo con datos reales: el toggle "Solo sensibles" ahora dispara `GET /api/audit?...&onlySensitive=true` (antes no incluía el parámetro) y la cuenta coincide con la bitácora completa.
+- Modo Demo probado aparte: el toggle sigue funcionando sobre el set fijo de eventos de muestra (sin cambios de comportamiento).
+- `npx tsc --noEmit -p apps/web/tsconfig.json` — sin errores.
+- `npm run lint --workspace=apps/web` — 0 errores, 0 advertencias.
+
+---
+
 ## [2026-09-14] fix(observability): no perder el error real en logger.error
 
 **Autor:** Claude Sonnet 5 · **Commit:** `ff82ef4`

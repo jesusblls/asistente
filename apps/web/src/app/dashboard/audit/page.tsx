@@ -181,13 +181,26 @@ function AuditScreen() {
       if (category !== 'all') params.set('action', CATEGORY_ACTIONS[category].join(','));
       if (patientId) params.set('patientId', patientId);
       if (actorId) params.set('actorId', actorId);
+      // Se pide filtrado por sensibles al propio servidor (pagina hacia atrás
+      // hasta encontrarlos) en vez de traer una página y filtrarla aquí: un
+      // evento sensible viejo, fuera de la página cargada, no debe desaparecer
+      // solo porque hubo más eventos ordinarios después.
+      if (onlySensitive) params.set('onlySensitive', 'true');
       for (const [key, value] of Object.entries(extra)) params.set(key, value);
       return params;
     },
-    [period, category, patientId, actorId]
+    [period, category, patientId, actorId, onlySensitive]
   );
 
-  const requestKey = [activeTenantId, period, category, patientId ?? '', actorId ?? '', pageSize].join('|');
+  const requestKey = [
+    activeTenantId,
+    period,
+    category,
+    patientId ?? '',
+    actorId ?? '',
+    pageSize,
+    onlySensitive,
+  ].join('|');
   const viewKey = `${isDemo}|${requestKey}`;
 
   const rememberDirectory = useCallback(
@@ -286,10 +299,13 @@ function AuditScreen() {
     [activeTenant?.doctors]
   );
 
-  const visibleEvents = useMemo(
-    () => (onlySensitive ? events.filter((event) => sensitivityOf(event, scheduleContext)) : events),
-    [events, onlySensitive, scheduleContext]
-  );
+  const visibleEvents = useMemo(() => {
+    if (!onlySensitive) return events;
+    // En vivo, `events` ya viene filtrado por el servidor (`onlySensitive` en
+    // buildQuery). En demo no hay servidor que filtre: se filtra aquí sobre
+    // el set fijo de eventos de muestra.
+    return isDemo ? events.filter((event) => sensitivityOf(event, scheduleContext)) : events;
+  }, [events, onlySensitive, isDemo, scheduleContext]);
   const sensitiveCount = useMemo(
     () => events.filter((event) => sensitivityOf(event, scheduleContext)).length,
     [events, scheduleContext]
@@ -361,8 +377,7 @@ function AuditScreen() {
       if (isDemo) {
         blob = new Blob([auditEventsToCsv(visibleEvents)], { type: 'text/csv;charset=utf-8' });
       } else {
-        const queryParams = buildQuery(onlySensitive ? { onlySensitive: 'true' } : {});
-        const response = await apiFetch(`${API_BASE_URL}/api/audit/export?${queryParams}`);
+        const response = await apiFetch(`${API_BASE_URL}/api/audit/export?${buildQuery()}`);
         if (!response.ok) {
           throw new Error(
             response.status === 403
