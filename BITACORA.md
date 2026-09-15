@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] feat(api): blindar auditoria clinica y horario dinamico
 
-**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `PENDING`
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `39c1bab`
 
 ### Qué se hizo
 
