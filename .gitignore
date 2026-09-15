@@ -6,6 +6,12 @@ next-env.d.ts
 .env
 .env.local
 .env.*.local
+# Bare ".env" solo cubre ese nombre exacto, no "deploy/.env.production" (el
+# real, con secretos — deploy/.env.production.example sí se sube, es la
+# plantilla sin valores). Sin esta línea, seguir deploy/README.md al pie de
+# la letra localmente ("cp deploy/.env.production.example
+# deploy/.env.production") deja el archivo con secretos reales sin ignorar.
+.env.production
 *.log
 npm-debug.log*
 yarn-debug.log*

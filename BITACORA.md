@@ -10,6 +10,39 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-15] fix(seguridad): ignorar deploy/.env.production en git
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Al preparar este repo para subirlo a un GitHub público, se encontró que
+`.gitignore` cubre `.env`, `.env.local` y `.env.*.local`, pero **no**
+`deploy/.env.production` — el archivo real con los secretos de producción
+(`JWT_SECRET`, `POSTGRES_PASSWORD`, `CREDENTIALS_ENCRYPTION_KEY`, etc.) que
+`deploy/README.md` instruye crear con `cp deploy/.env.production.example
+deploy/.env.production`. Ese nombre no coincide con ningún patrón existente,
+así que seguir el README al pie de la letra en una copia local del repo deja
+un archivo con secretos reales completamente visible para `git add`.
+
+No había ningún secreto real commiteado (se revisó todo el historial de
+archivos `.env*`, sin hallazgos), pero el repo estaba a punto de hacerse
+público — el riesgo era real de cara a cualquier futuro `git add .`
+descuidado, propio o de quien clone el repo. Se agregó `.env.production` a
+`.gitignore` (patrón sin `/` — cubre el archivo a cualquier profundidad,
+incluye `deploy/.env.production`) sin afectar a
+`deploy/.env.production.example`, que sigue trackeado a propósito.
+
+### Archivos tocados
+- `.gitignore` — agrega `.env.production`.
+
+### Verificación
+`git check-ignore -v deploy/.env.production` confirma que ahora se ignora;
+`git check-ignore -v deploy/.env.production.example` confirma que la
+plantilla sigue sin ignorarse. `git log --all -p -- '*.env' '*env.production*'`
+revisado en busca de secretos ya commiteados: sin hallazgos.
+
+---
+
 ## [2026-09-15] build(deploy): soportar VPS compartido con reverse proxy propio
 
 **Autor:** Claude Sonnet 5 · **Commit:** `27807c8`
