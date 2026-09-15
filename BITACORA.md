@@ -34,6 +34,49 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(web): no recortar texto de las citas en pantallas móviles
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Probando `/dashboard/calendar` a 375px (iPhone SE / gama baja Android) se
+encontró que cada tarjeta de cita recorta texto en el borde derecho de la
+pantalla en vez de ajustar el renglón: el nombre del tratamiento y doctor
+("Valoración Inicial y Diagnóstico co...") y la línea de
+duración/precio/síntomas quedaban cortados a la mitad de la palabra,
+ilegibles. CLAUDE.md § 4.2 exige "Responsividad Completa" explícitamente
+para tablet y móvil, y la recepción de una clínica revisa la agenda desde
+el celular con frecuencia.
+
+La causa: el contenedor interno "horario + datos del paciente" es un
+`flex` con una columna de hora de ancho fijo (`w-28 shrink-0`) y, junto a
+ella, el bloque de datos del paciente sin `min-width: 0` — el valor por
+defecto de un ítem flex es `min-width: auto`, así que en vez de encogerse
+y dejar que el texto interno haga salto de línea, el ítem crecía más allá
+del ancho disponible y su contenido se recortaba en el borde de la
+tarjeta. Además la línea "Duración • Precio • síntomas" no tenía
+`flex-wrap`, así que sus tres fragmentos se quedaban forzados en una sola
+línea.
+
+Se agregó `min-w-0 flex-1` al bloque de datos del paciente (para que sí se
+encoja y el texto haga wrap) y `flex-wrap` a la línea de
+duración/precio/síntomas. Verificado a 375px: todo el texto ahora hace
+salto de línea limpio; verificado también en escritorio que la tarjeta
+sigue viéndose igual que antes (una sola fila).
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/calendar/page.tsx` — `min-w-0 flex-1` en los datos del paciente, `flex-wrap` en la línea de duración/precio/síntomas
+
+### Verificación
+- Prueba manual en el navegador a 375×812 contra `apps/api` + `apps/web` en vivo: el texto ya no se recorta, hace salto de línea dentro de la tarjeta.
+- Prueba manual en escritorio (1366px): sin cambios visuales respecto al layout anterior.
+- `npx tsc --noEmit -p apps/web/tsconfig.json` — sin errores.
+
+### Pendientes derivados
+- Al revisar la agenda en vivo se encontraron ~9 citas de "Alejandra Morales" con horarios traslapados a 1 segundo de diferencia para el mismo doctor: no es un bug de la app (`SchedulerService` sí rechaza traslapes vía la API), sino datos residuales de una corrida previa de `npm run test:stress` contra este mismo `dev.db` local en vez de una base aislada — el propio `CLAUDE.md` ya documenta esa recomendación pendiente. No se borraron esas filas en este cambio para no tocar datos fuera de alcance sin pedir permiso.
+
+---
+
 ## [2026-09-14] fix(web): pedir "solo sensibles" al servidor en la bitácora
 
 **Autor:** Claude Sonnet 5 · **Commit:** `0f2d07a`

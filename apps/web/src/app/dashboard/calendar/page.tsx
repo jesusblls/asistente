@@ -776,7 +776,7 @@ export default function CalendarPage() {
                   </div>
 
                   {/* Datos del Paciente y Consulta */}
-                  <div className="space-y-1">
+                  <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <h3 className="font-bold text-slate-900 text-base">{appt.patient?.fullName}</h3>
                       <span className="text-xs text-slate-500 font-mono tabular-nums flex items-center gap-1">
@@ -797,7 +797,7 @@ export default function CalendarPage() {
                       {appt.doctor?.specialty})
                     </p>
 
-                    <div className="flex items-center gap-3 text-[11px] text-slate-500 pt-0.5">
+                    <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-500 pt-0.5">
                       <span>Duración: {appt.service?.durationMinutes || 45} min</span>
                       <span>•</span>
                       <span>Precio: ${appt.service?.priceMxn} MXN</span>
