@@ -68,9 +68,24 @@ jobs:
     name: Test Suites
     needs: [lint-and-typecheck]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: asistente
+          POSTGRES_PASSWORD: asistente
+          POSTGRES_DB: asistente_test
+        ports:
+          - 5432:5432
+        # Espera a que Postgres acepte conexiones antes de dar el servicio por listo.
+        options: >-
+          --health-cmd "pg_isready -U asistente"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
-      DATABASE_URL: file:./dev.db
+      DATABASE_URL: postgresql://asistente:asistente@localhost:5432/asistente_test
       JWT_SECRET: ci-test-secret-with-at-least-32-characters
       CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
     steps:
@@ -91,12 +106,10 @@ jobs:
           npm run build --workspace=@asistente/database
           npm run build
 
-      # SQLite exige que el archivo exista antes de `prisma migrate deploy`
-      # (ver packages/database/prisma/migrations/README.md).
       - name: Set up test database
         run: |
-          touch packages/database/prisma/dev.db
           npm run db:migrate
+          npm run db:seed
 
       - name: Run Test Suites
         run: npm run test

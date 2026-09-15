@@ -103,6 +103,40 @@ no teórico — justo lo que bloqueaba producción.
 
 ---
 
+## [2026-09-14] ci(db): usar PostgreSQL en CI y sembrar antes de las pruebas
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Al migrar a PostgreSQL, `ci.yml` necesitaba un servicio de base de datos en
+vez del archivo SQLite que se tocaba a mano. Se agregó un contenedor
+`postgres:16` como `services.postgres` del job `test`, con healthcheck
+(`pg_isready`) para que el job espere a que acepte conexiones antes de
+migrar.
+
+Simulando el job completo de punta a punta contra un Postgres local recién
+creado (mismo usuario/contraseña/base que declara `ci.yml`, sin nada
+sembrado) se encontró que `npm run test` fallaba: tanto
+`packages/ai-agent/src/test-suite.ts` como `apps/api/src/api-test-suite.ts`
+buscan la clínica sembrada `dental-polanco` y lanzan error si no existe
+("Tenant demo no encontrado; ejecuta npm run db:seed"). El `ci.yml` nunca
+corría `npm run db:seed` — un hueco que ya existía desde que se armó el CI
+(`c6f53a2`), enmascarado porque nunca se había corrido el job completo
+contra una base realmente vacía hasta esta simulación. Se agregó
+`npm run db:seed` al paso "Set up test database", después de las
+migraciones.
+
+### Archivos tocados
+- `.github/workflows/ci.yml` — servicio `postgres:16` con healthcheck, `DATABASE_URL` apunta al servicio, se agrega `npm run db:seed`
+
+### Verificación
+- Simulación local exacta del job `test`: se creó un rol y una base Postgres con el mismo usuario/contraseña/nombre que declara `ci.yml`, se corrieron migración + seed + `npm run test` con las mismas variables de entorno — 100% de las suites pasaron (incluidas las de `packages/ai-agent`, antes no verificadas end-to-end contra una base vacía).
+- YAML validado con `js-yaml`.
+- No se pudo correr el workflow en GitHub Actions porque el repositorio no tiene remoto configurado en este entorno.
+
+---
+
 ## [2026-09-14] fix(api): limpiar el usuario de prueba de la suite de integración
 
 **Autor:** Claude Sonnet 5 · **Commit:** `b31b5a7`
