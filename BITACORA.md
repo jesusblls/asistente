@@ -70,7 +70,7 @@ NDJSON en vez de `[object Object]`.
 
 ## [2026-09-14] fix(api): traducir mensajes de validacion de ajv al espanol
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `2f902b0`
 
 ### Qué se hizo
 Las rutas administrativas usan esquemas JSON de Fastify/Ajv desde el commit
