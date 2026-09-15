@@ -34,6 +34,44 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-15] refactor(web): modularizar calendar/page.tsx
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Resuelve la mitad del pendiente de "Calidad de código" de `TODO.md`
+(`inbox/page.tsx` queda para un cambio aparte). `calendar/page.tsx` tenía
+1032 líneas mezclando tipos, datos de demo, una tarjeta de cita de ~130
+líneas y un modal de ~140 líneas dentro del mismo componente. Mismo
+tratamiento que ya recibieron `admin.ts` y `team/page.tsx`: se extrajo cada
+pieza autocontenida a su propio archivo y `page.tsx` quedó como orquestador
+(estado, `fetch`/polling, filtrado) que compone los demás.
+
+- `calendar/types.ts` — `ApiAppointment`, `TenantDoctor`, `TenantService`, `TenantCatalogItem`.
+- `calendar/demo.ts` — los datos de la demostración interactiva.
+- `components/dashboard/calendar/AppointmentRow.tsx` — una fila de la agenda (horario, datos del paciente, badges de estado, acciones).
+- `components/dashboard/calendar/NewAppointmentModal.tsx` — el modal de "Nueva Cita", con el mismo patrón de props (`valor` + `setValor`) que `AddDoctorModal`/`AddServiceModal`.
+
+Cambio de solo estructura: cada bloque de JSX se movió tal cual, sin tocar
+clases de Tailwind, textos ni lógica — la única variación de contenido es
+cambiar comillas rectas por `&quot;` en `AppointmentRow` (JSX fuera de una
+expresión `{}` no debe llevar comillas literales).
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/calendar/page.tsx` — de 1032 a 591 líneas
+- `apps/web/src/app/dashboard/calendar/types.ts` — nuevo
+- `apps/web/src/app/dashboard/calendar/demo.ts` — nuevo
+- `apps/web/src/components/dashboard/calendar/AppointmentRow.tsx` — nuevo
+- `apps/web/src/components/dashboard/calendar/NewAppointmentModal.tsx` — nuevo
+
+### Verificación
+- `npx tsc --noEmit -p apps/web/tsconfig.json` — sin errores.
+- `npm run lint --workspace=apps/web` — 0 errores, 0 advertencias.
+- Probado en el navegador contra `apps/web` en vivo: la agenda renderiza igual que antes (métricas, filtros, tarjetas de cita) y el modal "Nueva Cita" abre y muestra los mismos campos.
+
+---
+
 ## [2026-09-15] feat(db): mover el throttle de lecturas de auditoría a Redis
 
 **Autor:** Claude Sonnet 5 · **Commit:** `807be13`

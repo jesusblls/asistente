@@ -19,10 +19,10 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ### Calidad de código
 
-- [ ] **Partir los archivos-dios restantes en frontend:**
-  - `apps/web/src/app/dashboard/inbox/page.tsx` (1191 líneas)
-  - `apps/web/src/app/dashboard/calendar/page.tsx` (1003 líneas)
+- [ ] **Partir el archivo-dios restante en frontend:**
+  - `apps/web/src/app/dashboard/inbox/page.tsx` (1255 líneas)
 
-  *Nota:* `apps/api/src/routes/admin.ts` y `apps/web/src/app/dashboard/team/page.tsx`
-  fueron exitosamente modularizados en submódulos y componentes dedicados.
+  *Nota:* `apps/api/src/routes/admin.ts`, `apps/web/src/app/dashboard/team/page.tsx`
+  y `apps/web/src/app/dashboard/calendar/page.tsx` (1032 → 591 líneas) ya fueron
+  modularizados en submódulos y componentes dedicados.
   origen: `402dfc4`

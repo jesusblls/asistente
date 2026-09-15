@@ -3,218 +3,26 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
   Plus,
   RefreshCw,
   Search,
-  User,
-  Phone,
-  MessageSquare,
-  Sparkles,
-  Trash2,
-  Check,
-  X,
   SlidersHorizontal,
 } from 'lucide-react';
 import {
   formatDateKeyLong,
   formatDateKeyShort,
-  formatMexicanPhone,
   todayInMexicoCity,
 } from '../../../lib/format';
 import { usePolling } from '../../../hooks/usePolling';
-
-interface ApiAppointment {
-  id: string;
-  tenantId: string;
-  patientId: string;
-  doctorId: string;
-  serviceId: string;
-  startTime: string;
-  endTime: string;
-  status: string;
-  paymentStatus: string;
-  depositAmountMxn?: number | null;
-  channelOrigin: string;
-  symptoms?: string | null;
-  notes?: string | null;
-  createdAt: string;
-  patient: {
-    id: string;
-    fullName: string;
-    phoneE164: string;
-  };
-  doctor: {
-    id: string;
-    name: string;
-    specialty: string;
-  };
-  service: {
-    id: string;
-    name: string;
-    priceMxn: number;
-    durationMinutes: number;
-  };
-}
-
-interface TenantDoctor {
-  id: string;
-  name: string;
-  specialty: string;
-}
-
-interface TenantService {
-  id: string;
-  name: string;
-  priceMxn: number;
-  durationMinutes: number;
-  requiredDepositMxn: number;
-}
-
-interface TenantCatalogItem {
-  id: string;
-  name: string;
-  doctors?: TenantDoctor[];
-  services?: TenantService[];
-}
-
 import { useTenant } from '../../../context/TenantContext';
 import { API_BASE_URL, apiFetch } from '../../../lib/api';
-
-const DEMO_APPOINTMENTS: ApiAppointment[] = [
-  {
-    id: 'demo-1',
-    tenantId: 'demo-tenant',
-    patientId: 'p-1',
-    doctorId: 'd-1',
-    serviceId: 's-1',
-    startTime: '2026-09-09T15:00:00.000Z',
-    endTime: '2026-09-09T15:45:00.000Z',
-    status: 'CONFIRMED',
-    paymentStatus: 'DEPOSIT_PAID',
-    depositAmountMxn: 200,
-    channelOrigin: 'WHATSAPP',
-    symptoms: 'Limpieza semestral de rutina',
-    notes: 'Confirmada por WhatsApp',
-    createdAt: '2026-09-08T10:00:00.000Z',
-    patient: { id: 'p-1', fullName: 'Mariana Hernández', phoneE164: '+52 (55) 1234-9988' },
-    doctor: { id: 'd-1', name: 'Dra. Sofía Silva', specialty: 'Odontología General y Estética' },
-    service: { id: 's-1', name: 'Limpieza Dental con Ultrasonido', priceMxn: 850, durationMinutes: 45 },
-  },
-  {
-    id: 'demo-2',
-    tenantId: 'demo-tenant',
-    patientId: 'p-2',
-    doctorId: 'd-1',
-    serviceId: 's-2',
-    startTime: '2026-09-09T16:00:00.000Z',
-    endTime: '2026-09-09T17:00:00.000Z',
-    status: 'CONFIRMED',
-    paymentStatus: 'DEPOSIT_PAID',
-    depositAmountMxn: 500,
-    channelOrigin: 'WHATSAPP',
-    symptoms: 'Aclaramiento para boda',
-    notes: 'Anticipo acreditado con Mercado Pago',
-    createdAt: '2026-09-08T11:00:00.000Z',
-    patient: { id: 'p-2', fullName: 'Laura Patricia Vega', phoneE164: '+52 (55) 4433-2211' },
-    doctor: { id: 'd-1', name: 'Dra. Sofía Silva', specialty: 'Estética Dental' },
-    service: { id: 's-2', name: 'Blanqueamiento Dental LED', priceMxn: 2600, durationMinutes: 60 },
-  },
-  {
-    id: 'demo-3',
-    tenantId: 'demo-tenant',
-    patientId: 'p-3',
-    doctorId: 'd-2',
-    serviceId: 's-3',
-    startTime: '2026-09-09T17:30:00.000Z',
-    endTime: '2026-09-09T19:00:00.000Z',
-    status: 'CONFIRMED',
-    paymentStatus: 'DEPOSIT_PAID',
-    depositAmountMxn: 300,
-    channelOrigin: 'PHONE_CALL',
-    symptoms: 'Dolor agudo nocturno al masticar',
-    notes: 'Atendido por recepcionista IA telefónica',
-    createdAt: '2026-09-08T12:00:00.000Z',
-    patient: { id: 'p-3', fullName: 'Carlos Gómez', phoneE164: '+52 (55) 8877-6655' },
-    doctor: { id: 'd-2', name: 'Dr. Alejandro Morales', specialty: 'Endodoncia y Cirugía' },
-    service: { id: 's-3', name: 'Tratamiento de Conductos (Endodoncia)', priceMxn: 3200, durationMinutes: 90 },
-  },
-  {
-    id: 'demo-4',
-    tenantId: 'demo-tenant',
-    patientId: 'p-4',
-    doctorId: 'd-2',
-    serviceId: 's-4',
-    startTime: '2026-09-09T19:00:00.000Z',
-    endTime: '2026-09-09T20:00:00.000Z',
-    status: 'URGENT',
-    paymentStatus: 'NONE',
-    depositAmountMxn: 0,
-    channelOrigin: 'PHONE_CALL',
-    symptoms: 'Traumatismo dental con sangrado activo',
-    notes: '🚨 Triaje Urgencia Prioritaria',
-    createdAt: '2026-09-09T08:00:00.000Z',
-    patient: { id: 'p-4', fullName: 'Fernando Rivas (Urgencia)', phoneE164: '+52 (55) 7766-5544' },
-    doctor: { id: 'd-2', name: 'Dr. Alejandro Morales', specialty: 'Cirugía Maxilofacial' },
-    service: { id: 's-4', name: 'Extracción Quirúrgica Urgente', priceMxn: 1950, durationMinutes: 60 },
-  },
-  {
-    id: 'demo-5',
-    tenantId: 'demo-tenant',
-    patientId: 'p-5',
-    doctorId: 'd-1',
-    serviceId: 's-1',
-    startTime: '2026-09-10T17:00:00.000Z',
-    endTime: '2026-09-10T17:45:00.000Z',
-    status: 'CONFIRMED',
-    paymentStatus: 'DEPOSIT_PENDING',
-    depositAmountMxn: 200,
-    channelOrigin: 'WHATSAPP',
-    symptoms: 'Limpieza dental con ultrasonido y pulido',
-    notes: 'Asistencia confirmada vía WhatsApp',
-    createdAt: '2026-09-09T09:00:00.000Z',
-    patient: { id: 'p-5', fullName: 'JC (Confirmado)', phoneE164: '+52 (81) 2865-1819' },
-    doctor: { id: 'd-1', name: 'Dra. Sofía Silva', specialty: 'Odontología General y Estética' },
-    service: { id: 's-1', name: 'Limpieza Dental con Ultrasonido y Pulido', priceMxn: 850, durationMinutes: 45 },
-  },
-  {
-    id: 'demo-6',
-    tenantId: 'demo-tenant',
-    patientId: 'p-6',
-    doctorId: 'd-2',
-    serviceId: 's-5',
-    startTime: '2026-09-10T22:00:00.000Z',
-    endTime: '2026-09-10T23:00:00.000Z',
-    status: 'CONFIRMED',
-    paymentStatus: 'DEPOSIT_PAID',
-    depositAmountMxn: 300,
-    channelOrigin: 'WHATSAPP',
-    symptoms: 'Molestia en muela del juicio',
-    notes: 'Anticipo pagado',
-    createdAt: '2026-09-09T09:30:00.000Z',
-    patient: { id: 'p-6', fullName: 'Roberto Domínguez', phoneE164: '+52 (55) 9988-7711' },
-    doctor: { id: 'd-2', name: 'Dr. Alejandro Morales', specialty: 'Cirugía' },
-    service: { id: 's-5', name: 'Extracción Muela del Juicio', priceMxn: 1950, durationMinutes: 60 },
-  },
-];
-
-const DEMO_DOCTORS: TenantDoctor[] = [
-  { id: 'd-1', name: 'Dra. Sofía Silva', specialty: 'Odontología General y Estética' },
-  { id: 'd-2', name: 'Dr. Alejandro Morales', specialty: 'Endodoncia y Cirugía' },
-];
-
-const DEMO_SERVICES: TenantService[] = [
-  { id: 's-1', name: 'Limpieza Dental con Ultrasonido', priceMxn: 850, durationMinutes: 45, requiredDepositMxn: 200 },
-  { id: 's-2', name: 'Blanqueamiento Dental LED', priceMxn: 2600, durationMinutes: 60, requiredDepositMxn: 500 },
-  { id: 's-3', name: 'Tratamiento de Conductos', priceMxn: 3200, durationMinutes: 90, requiredDepositMxn: 300 },
-];
+import { AppointmentRow } from '../../../components/dashboard/calendar/AppointmentRow';
+import { NewAppointmentModal } from '../../../components/dashboard/calendar/NewAppointmentModal';
+import type { ApiAppointment, TenantDoctor, TenantService, TenantCatalogItem } from './types';
+import { DEMO_APPOINTMENTS, DEMO_DOCTORS, DEMO_SERVICES } from './demo';
 
 export default function CalendarPage() {
-  const { mode, activeTenant, activeTenantId } = useTenant();
+  const { mode, activeTenantId } = useTenant();
   const [appointments, setAppointments] = useState<ApiAppointment[]>(() =>
     mode === 'demo' ? DEMO_APPOINTMENTS : []
   );
@@ -741,292 +549,43 @@ export default function CalendarPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
-          {filteredAppointments.map((appt) => {
-            const isTomorrow = getApptDayStr(appt.startTime) === tomorrowDayStr;
-            const isToday = getApptDayStr(appt.startTime) === todayDayStr;
-
-            return (
-              <div
-                key={appt.id}
-                className={`p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-colors hover:bg-slate-50 ${
-                  isTomorrow ? 'border-l-4 border-l-teal-500 bg-teal-50/10' : ''
-                }`}
-              >
-                {/* Horario y Fecha */}
-                <div className="flex items-start gap-4">
-                  <div className="w-28 shrink-0">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-teal-700 font-mono">
-                      <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                      {formatApptTime(appt.startTime)}
-                    </div>
-                    <div className="text-[11px] font-semibold text-slate-600 mt-1 flex items-center gap-1">
-                      <CalendarIcon className="w-3 h-3 text-slate-400" />
-                      {formatApptDate(appt.startTime)}
-                    </div>
-                    {isTomorrow && (
-                      <span className="inline-block mt-1 px-1.5 py-0.5 text-[10px] font-bold bg-teal-100 text-teal-800 rounded">
-                        Mañana
-                      </span>
-                    )}
-                    {isToday && (
-                      <span className="inline-block mt-1 px-1.5 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800 rounded">
-                        Hoy
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Datos del Paciente y Consulta */}
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <h3 className="font-bold text-slate-900 text-base">{appt.patient?.fullName}</h3>
-                      <span className="text-xs text-slate-500 font-mono tabular-nums flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-slate-400" />
-                        {formatMexicanPhone(appt.patient?.phoneE164)}
-                      </span>
-                      {appt.channelOrigin === 'WHATSAPP' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
-                          <MessageSquare className="w-3 h-3" />
-                          WhatsApp
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-slate-700 font-medium">
-                      <span className="font-semibold text-slate-900">{appt.service?.name}</span> •{' '}
-                      <span className="text-teal-700 font-semibold">{appt.doctor?.name}</span> (
-                      {appt.doctor?.specialty})
-                    </p>
-
-                    <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-500 pt-0.5">
-                      <span>Duración: {appt.service?.durationMinutes || 45} min</span>
-                      <span>•</span>
-                      <span>Precio: ${appt.service?.priceMxn} MXN</span>
-                      {appt.symptoms && (
-                        <>
-                          <span>•</span>
-                          <span className="italic text-slate-600">"{appt.symptoms}"</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Badges y Acciones Rápidas */}
-                <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
-                  {/* Badge de Estatus */}
-                  {appt.status === 'CONFIRMED' ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-md border border-emerald-200">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Confirmada
-                    </span>
-                  ) : appt.status === 'COMPLETED' ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-200">
-                      <Check className="w-3.5 h-3.5 text-blue-600" />
-                      Completada
-                    </span>
-                  ) : appt.status === 'CANCELLED' ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 bg-red-100 px-2.5 py-1 rounded-md border border-red-200">
-                      <X className="w-3.5 h-3.5 text-red-600" />
-                      Cancelada
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md">
-                      Pendiente
-                    </span>
-                  )}
-
-                  {/* Anticipo */}
-                  {appt.paymentStatus === 'DEPOSIT_PENDING' && (
-                    <span className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md">
-                      Anticipo ${appt.depositAmountMxn || 200} MXN Pendiente
-                    </span>
-                  )}
-
-                  {/* Botón WhatsApp directo */}
-                  <a
-                    href={`https://wa.me/${appt.patient?.phoneE164?.replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                    WhatsApp
-                  </a>
-
-                  {/* Acciones de Estado */}
-                  {appt.status !== 'CONFIRMED' && appt.status !== 'COMPLETED' && (
-                    <button
-                      onClick={() => handleUpdateStatus(appt.id, 'CONFIRMED')}
-                      className="px-2.5 py-1.5 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors"
-                      title="Confirmar Asistencia"
-                    >
-                      Confirmar
-                    </button>
-                  )}
-
-                  {appt.status !== 'COMPLETED' && appt.status !== 'CANCELLED' && (
-                    <button
-                      onClick={() => handleUpdateStatus(appt.id, 'COMPLETED')}
-                      className="px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-                      title="Marcar como atendida"
-                    >
-                      Completar
-                    </button>
-                  )}
-
-                  {appt.status !== 'CANCELLED' && (
-                    <button
-                      onClick={() => handleUpdateStatus(appt.id, 'CANCELLED')}
-                      className="px-2 py-1.5 text-xs font-medium text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                      title="Cancelar cita"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {filteredAppointments.map((appt) => (
+            <AppointmentRow
+              key={appt.id}
+              appt={appt}
+              isToday={getApptDayStr(appt.startTime) === todayDayStr}
+              isTomorrow={getApptDayStr(appt.startTime) === tomorrowDayStr}
+              formatApptTime={formatApptTime}
+              formatApptDate={formatApptDate}
+              onUpdateStatus={handleUpdateStatus}
+            />
+          ))}
         </div>
       )}
 
-      {/* Modal para Agendar Nueva Cita Manualmente */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-slate-900 text-lg">Agendar Cita Médica / Dental</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Registra una consulta presencial directamente en el sistema
-                </p>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateAppointment} className="p-6 space-y-4">
-              {submitError && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 font-medium">
-                  {submitError}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nombre Completo del Paciente</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej: JC o Juan Carlos Martínez"
-                  value={newPatientName}
-                  onChange={(e) => setNewPatientName(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono Móvil (México +52)</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="Ej: 8128651819 o +528128651819"
-                  value={newPatientPhone}
-                  onChange={(e) => setNewPatientPhone(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Especialista</label>
-                  <select
-                    value={newDoctorId}
-                    onChange={(e) => setNewDoctorId(e.target.value)}
-                    className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  >
-                    {doctors.map((doc) => (
-                      <option key={doc.id} value={doc.id}>
-                        {doc.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Tratamiento</label>
-                  <select
-                    value={newServiceId}
-                    onChange={(e) => setNewServiceId(e.target.value)}
-                    className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  >
-                    {services.map((svc) => (
-                      <option key={svc.id} value={svc.id}>
-                        {svc.name} (${svc.priceMxn} MXN)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
-                  <input
-                    type="date"
-                    required
-                    value={newDate}
-                    onChange={(e) => setNewDate(e.target.value)}
-                    className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Horario (CDMX)</label>
-                  <input
-                    type="time"
-                    required
-                    value={newTime}
-                    onChange={(e) => setNewTime(e.target.value)}
-                    className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Motivo o Síntomas (Opcional)</label>
-                <input
-                  type="text"
-                  placeholder="Ej: Limpieza dental de rutina"
-                  value={newSymptoms}
-                  onChange={(e) => setNewSymptoms(e.target.value)}
-                  className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 shadow-sm transition-all"
-                >
-                  {isSubmitting ? 'Guardando...' : 'Confirmar y Agendar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <NewAppointmentModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreateAppointment}
+        doctors={doctors}
+        services={services}
+        patientName={newPatientName}
+        setPatientName={setNewPatientName}
+        patientPhone={newPatientPhone}
+        setPatientPhone={setNewPatientPhone}
+        doctorId={newDoctorId}
+        setDoctorId={setNewDoctorId}
+        serviceId={newServiceId}
+        setServiceId={setNewServiceId}
+        date={newDate}
+        setDate={setNewDate}
+        time={newTime}
+        setTime={setNewTime}
+        symptoms={newSymptoms}
+        setSymptoms={setNewSymptoms}
+        isSubmitting={isSubmitting}
+        submitError={submitError}
+      />
     </div>
   );
 }
