@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] fix(web): pedir "solo sensibles" al servidor en la bitácora
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `0f2d07a`
 
 ### Qué se hizo
 Probando el panel en vivo (login real, `npm run dev` en `apps/api` y
