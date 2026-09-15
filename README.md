@@ -37,13 +37,12 @@ asistente/
 ├── AGENTS.md                  # Especificación canónica integral para agentes de IA
 ├── CLAUDE.md                  # Fuente de verdad técnica y de negocio
 ├── README.md                  # Este documento
-├── packages/database/prisma/dev.db # Base de datos SQLite local para desarrollo
 ├── package.json               # Configuración raíz de npm workspaces
 ├── tsconfig.base.json         # Configuración estricta de TypeScript
 │
 ├── packages/
 │   ├── shared-types/          # Tipos e interfaces comunes compartidos (Tenant, Doctor, Appointment, etc.)
-│   ├── database/              # Persistencia con Prisma ORM (schema.prisma, SQLite y seed)
+│   ├── database/              # Persistencia con Prisma ORM (schema.prisma, PostgreSQL y seed)
 │   └── ai-agent/              # Motor de IA (Gemini 2.5 Flash, Scheduler, Triage y Mercado Pago)
 │
 └── apps/
@@ -58,6 +57,7 @@ asistente/
 ### Requisitos Previos
 - **Node.js** v20 o v22+
 - **npm** v10+
+- **PostgreSQL** 14+ corriendo localmente (`brew install postgresql@16 && brew services start postgresql@16`, luego `createdb asistente_dev`)
 
 ### 1. Clonar e Instalar Dependencias
 ```bash
@@ -66,7 +66,7 @@ npm install
 ```
 
 ### 2. Configurar Variables de Entorno
-Copia el archivo de ejemplo a `.env`:
+Copia el archivo de ejemplo a `.env` y ajusta `DATABASE_URL` a tu PostgreSQL local:
 ```bash
 cp .env.example .env
 ```
@@ -77,8 +77,8 @@ cp .env.example .env
 # Generar el cliente de Prisma
 npm run db:generate
 
-# Crear las tablas en SQLite (dev.db)
-npm run db:push
+# Aplicar las migraciones (crea las tablas y los triggers de inmutabilidad de AuditLog)
+npm run db:migrate
 
 # Poblar con la clínica modelo de Polanco (CDMX), doctores y citas
 npm run db:seed

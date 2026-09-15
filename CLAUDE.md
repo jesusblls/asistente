@@ -54,7 +54,7 @@ Este documento es la **fuente de verdad técnica y de negocio** para el desarrol
   * Muestra una clínica modelo consolidada ("Clínica Dental Sonrisas Polanco") con métricas realistas ($185k MXN/mes, 96.8% asistencia, 8 citas hoy, llamadas grabadas de Twilio con reproductor de audio, badges de Mercado Pago).
   * Ninguna pantalla debe verse vacía ni rota en modo Demo.
 * **🟢 Modo En Vivo (Sandbox / Pruebas Operativas):**
-  * Conectado a la base de datos real SQLite y a la API Fastify.
+  * Conectado a la base de datos real PostgreSQL y a la API Fastify.
   * Permite alternar entre clínicas (multi-tenancy), crear nuevas clínicas (`+ Crear Nueva Clínica`), generar 4 citas y chats de prueba con 1 clic (`+ Citas Demo`), o resetear la clínica activa (`Limpiar Citas`).
   * Procesa mensajes reales de WhatsApp Meta Cloud API y llamadas telefónicas de Twilio en tiempo real.
 
@@ -71,7 +71,6 @@ asistente/
 ├── DESIGN.md                     # Especificación del sistema de diseño clínico Impeccable
 ├── README.md                     # Guía de inducción y primeros pasos
 ├── TODO.md                       # Registro vivo de pendientes técnicos y mejoras
-├── dev.db                        # Base de datos SQLite local
 ├── package.json                  # Definición de workspaces (@asistente/*)
 ├── tsconfig.base.json            # Configuración base estricta de TypeScript
 ├── .github/
@@ -84,7 +83,7 @@ asistente/
 │   ├── shared-types/             # Tipos e interfaces comunes compartidos
 │   │   └── src/index.ts          # Tenant, Doctor, Service, Patient, Appointment, Conversation
 │   ├── database/                 # Capa de persistencia con Prisma ORM y Auditoría
-│   │   ├── prisma/schema.prisma  # Esquema multi-tenant con SQLite (migrable a PostgreSQL)
+│   │   ├── prisma/schema.prisma  # Esquema multi-tenant con PostgreSQL
 │   │   └── src/
 │   │       ├── index.ts          # Cliente Prisma singleton (`db`), helpers de contraseñas y credenciales
 │   │       ├── audit.ts          # Registro inmutable de auditoría (NOM-024 / LFPDPPP)
@@ -151,7 +150,7 @@ asistente/
 | **Runtime** | Node.js | v22+ | Ejecución en backend |
 | **Lenguaje** | TypeScript | v5.7+ | Tipado estricto en todo el monorepo |
 | **Backend Framework** | Fastify | v5.2+ | API REST ultrarrápida con validación JSON Schema y WebSockets |
-| **ORM & DB** | Prisma + SQLite | v6.19+ | Esquema relacional tipado (migrable a PostgreSQL) |
+| **ORM & DB** | Prisma + PostgreSQL | v6.19+ | Esquema relacional tipado, multi-escritor |
 | **Frontend Framework** | Next.js (App Router) | v16.3+ | Renderizado híbrido SSR y Client Components |
 | **Librería UI** | React | v19.0 | Componentes reactivos y Server Actions |
 | **Estilos** | Tailwind CSS | v3.4+ | Sistema de diseño de alta velocidad (estándar Impeccable) |
@@ -160,7 +159,7 @@ asistente/
 | **Telefonía & Voz** | Twilio Voice (+52) | TwiML + WebSockets | Audio streaming bidireccional, Polly.Mia-Neural |
 | **Pipeline de Voz Ultra-Rápido** | Deepgram + Cartesia | G.711 mu-law | STT y TTS en tiempo real (<600 ms) con detección de interrupción (barge-in) |
 | **Mensajería** | Meta Cloud API | Graph API v22.0 | WhatsApp Business oficial (botones interactivos) |
-| **Cola de Trabajos** | Cola durable en DB | SQLite/PostgreSQL | Procesamiento asíncrono e idempotente de webhooks |
+| **Cola de Trabajos** | Cola durable en DB | PostgreSQL | Procesamiento asíncrono e idempotente de webhooks |
 | **Observabilidad** | `@asistente/observability` | NDJSON estructurado | Registro y enmascaramiento automático de PII (NOM-024) |
 | **Pasarela de Pago** | Mercado Pago SDK | REST API | Cobro de anticipos en MXN y No-Show Shield |
 

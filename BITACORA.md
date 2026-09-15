@@ -137,6 +137,34 @@ migraciones.
 
 ---
 
+## [2026-09-14] docs: sincronizar documentación con la migración a PostgreSQL
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+`README.md`, `CLAUDE.md`, `AGENTS.md`, `packages/database/README.md`,
+`apps/web/README.md`, `apps/api/QUEUE.md` y
+`packages/database/prisma/migrations/README.md` describían SQLite como el
+motor local (`dev.db`, "migrable a PostgreSQL en producción"), que ya no es
+cierto tras el commit `6813beb`. Se actualizaron todas las menciones:
+requisito de PostgreSQL local en "Requisitos Previos" e instrucciones de
+setup del `README.md` raíz, árbol de archivos sin el ya inexistente
+`dev.db`, tabla de stack de `CLAUDE.md`, y el pendiente de `QUEUE.md` sobre
+transporte de la cola (con PostgreSQL varios workers sí pueden escribir a
+la vez, ya no aplica la limitación de "un solo escritor" de SQLite).
+`packages/database/prisma/migrations/README.md` se reescribió por completo
+con el flujo de PostgreSQL local (instalación con Homebrew, `createdb`,
+`DATABASE_URL`) en vez de la creación manual del archivo `.db`.
+
+### Archivos tocados
+- `README.md`, `CLAUDE.md`, `AGENTS.md`, `packages/database/README.md`, `apps/web/README.md`, `apps/api/QUEUE.md`, `packages/database/prisma/migrations/README.md`
+
+### Verificación
+- Cambio de solo documentación: sin código ni configuración de por medio. Se revisó cada mención restante de "SQLite" en el repo (`grep -rn sqlite`) para confirmar que ninguna quedó desactualizada.
+
+---
+
 ## [2026-09-14] fix(api): limpiar el usuario de prueba de la suite de integración
 
 **Autor:** Claude Sonnet 5 · **Commit:** `b31b5a7`

@@ -16,4 +16,4 @@ Frontend de la plataforma AsistentePro Clínicas construido con Next.js 15 (App 
 
 ## 🎛️ Estado Global y Dualidad (`src/context/TenantContext.tsx`)
 - **Modo Demo (Showcase Comercial):** Datos de alta fidelidad preconfigurados ("Clínica Dental Sonrisas Polanco") ideales para demostraciones en vivo a médicos.
-- **Modo En Vivo (Sandbox Operativo):** Conectado en tiempo real a la API Fastify (`http://localhost:3000`) y la base de datos SQLite (`dev.db`). Permite crear clínicas, generar citas de prueba (`+ Citas Demo`) o resetearlas (`Limpiar Citas`).
+- **Modo En Vivo (Sandbox Operativo):** Conectado en tiempo real a la API Fastify (`http://localhost:3000`) y a PostgreSQL. Permite crear clínicas, generar citas de prueba (`+ Citas Demo`) o resetearlas (`Limpiar Citas`).

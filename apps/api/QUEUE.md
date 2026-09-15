@@ -75,9 +75,10 @@ worker (in-process por defecto)
 
 ## Pendientes conocidos
 
-1. **Transporte**: hoy la cola es la propia base de datos. Con SQLite hay un
-   solo escritor, así que funciona bien en un proceso; para volumen alto
-   conviene migrar a Redis/BullMQ o SQS manteniendo la misma interfaz
+1. **Transporte**: hoy la cola es la propia base de datos. Con PostgreSQL el
+   compare-and-swap de `claim()` soporta varios workers escribiendo a la vez
+   (ya no hay un solo escritor como con SQLite); para volumen muy alto sigue
+   conviniendo migrar a Redis/BullMQ o SQS manteniendo la misma interfaz
    (`enqueue` / handler), ya que el resto del código no conoce el transporte.
 2. **Observabilidad externa**: las métricas son en proceso; falta exportarlas a
    Prometheus/CloudWatch para alertar sobre `DEAD` y profundidad de cola.

@@ -63,7 +63,7 @@ Cualquier cambio de código debe adherirse de forma estricta a los estándares d
 
 ### 2.1 Localización y Zona Horaria
 - **Huso Horario Oficial:** `America/Mexico_City` (GMT-6 / Tiempo del Centro).
-- **Almacenamiento:** En base de datos (SQLite / PostgreSQL), las fechas siempre se almacenan en formato UTC (ISO 8601).
+- **Almacenamiento:** En base de datos (PostgreSQL), las fechas siempre se almacenan en formato UTC (ISO 8601).
 - **Presentación al Usuario y Pacientes:** Toda fecha y hora calculada o mostrada debe transformarse a `America/Mexico_City` usando librerías de zona horaria (`date-fns-tz`).
 - **Formatos de Hora:** Preferir formato de 12 horas con indicador AM/PM para el paciente (ej. `04:00 PM`) y formato largo en español para fechas (ej. `Martes 10 de Septiembre de 2026`).
 
@@ -92,7 +92,6 @@ El repositorio está estructurado como un monorepo administrado con **npm worksp
 asistente/
 ├── package.json               # Configuración raíz de npm workspaces
 ├── tsconfig.base.json         # Opciones estrictas de TypeScript
-├── dev.db                     # Base de datos SQLite local
 ├── AGENTS.md                  # Especificación canónica para agentes de IA (este archivo)
 ├── CLAUDE.md                  # Especificación sincronizada para Claude
 ├── README.md                  # Introducción y guía de inicio rápido
@@ -188,7 +187,7 @@ asistente/
 
 ## 4. Modelo de Datos y Esquema Prisma (`schema.prisma`)
 
-El esquema de base de datos (`packages/database/prisma/schema.prisma`) utiliza SQLite para desarrollo local (`dev.db`) con soporte nativo para migrar a PostgreSQL en producción.
+El esquema de base de datos (`packages/database/prisma/schema.prisma`) utiliza PostgreSQL en todos los entornos, incluido desarrollo local (ver `packages/database/prisma/migrations/README.md` para el setup).
 
 ### Resumen de Modelos y Relaciones
 
@@ -417,7 +416,7 @@ Construido sobre Next.js 16.3 (App Router), React 19, Tailwind CSS (estándar Im
 El frontend implementa el hook `useTenant()` mediante `TenantContext.tsx`:
 
 - **🟣 Modo Demo (Showcase Comercial):** Muestra una clínica preconfigurada de alto rendimiento ("Clínica Dental Sonrisas Polanco") con métricas consolidadas ($185,000 MXN mensuales, 96.8% de asistencia, llamadas grabadas y citas pobladas) para demostraciones comerciales a médicos.
-- **🟢 Modo En Vivo (Live Sandbox):** Conectado directamente a la API de Fastify y a la base de datos local SQLite (`dev.db`). Permite seleccionar clínicas, crear nuevos consultorios en vivo, presionar `+ Citas Demo` para poblar datos de prueba instantáneamente o `Limpiar Citas` para vaciarlos.
+- **🟢 Modo En Vivo (Live Sandbox):** Conectado directamente a la API de Fastify y a PostgreSQL. Permite seleccionar clínicas, crear nuevos consultorios en vivo, presionar `+ Citas Demo` para poblar datos de prueba instantáneamente o `Limpiar Citas` para vaciarlos.
 
 ### 7.3 Sistema de Diseño Clínico (Principios Impeccable)
 
@@ -476,8 +475,8 @@ Cualquier agente de IA que modifique o extienda este código debe cumplir con la
 Archivo `.env` en la raíz del proyecto (basado en `.env.example`):
 
 ```bash
-# 1. Base de datos (SQLite local o PostgreSQL)
-DATABASE_URL="file:../../dev.db"
+# 1. Base de datos (PostgreSQL local)
+DATABASE_URL="postgresql://usuario@localhost:5432/asistente_dev"
 
 # 2. Servidor API Fastify
 PORT=3000

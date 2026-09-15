@@ -1,6 +1,6 @@
 # @asistente/database
 
-Capa de persistencia con Prisma ORM y SQLite (`dev.db`), diseñada para aislamiento multi-tenant estricto y compatible con PostgreSQL para entornos de producción.
+Capa de persistencia con Prisma ORM y PostgreSQL, diseñada para aislamiento multi-tenant estricto. Requiere PostgreSQL también en desarrollo local (ver `prisma/migrations/README.md`): SQLite admite un solo escritor a la vez, cuello de botella real bajo webhooks concurrentes y la cola de trabajos.
 
 ## 🗄️ Esquema Relacional (`prisma/schema.prisma`)
 
