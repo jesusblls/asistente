@@ -135,7 +135,7 @@ ambos jobs a 22.
 
 ## [2026-09-14] refactor(web,api): unificar reglas de sensibilidad de auditoria
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `20b1978`
 
 ### Qué se hizo
 `isRowSensitive` en `apps/api/src/routes/admin/audit.ts` y `sensitivityOf`
