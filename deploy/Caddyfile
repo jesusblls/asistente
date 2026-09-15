@@ -1,0 +1,20 @@
+# Entrada única del VPS. `SITE_ADDRESS` viene de .env.production:
+#   - sin dominio todavía:      SITE_ADDRESS=:80           (como está hoy)
+#   - con dominio apuntado:     SITE_ADDRESS=clinica.mx    (Caddy saca el
+#     certificado HTTPS de Let's Encrypt solo, sin tocar nada más aquí)
+{$SITE_ADDRESS:80} {
+	# Los webhooks de Meta/Twilio/Mercado Pago y el stream de voz van
+	# directo a la API; el resto (páginas y /api/*, /auth/* que el propio
+	# Next reenvía server-side) va al panel.
+	handle /webhooks/* {
+		reverse_proxy api:3000
+	}
+	handle /voice/* {
+		reverse_proxy api:3000
+	}
+	handle {
+		reverse_proxy web:3001
+	}
+
+	encode gzip
+}

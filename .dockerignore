@@ -1,0 +1,18 @@
+# Reduce lo que se envía al daemon de Docker como contexto de build. Las
+# imágenes copian archivos explícitos vía COPY; esto solo evita mandar basura.
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+.git
+.githooks
+**/*.db
+**/*.db-journal
+# Sin `**/` estos patrones solo excluyen la raíz del contexto de build, no
+# packages/database/.env ni apps/api/.env: se filtraban dentro de la imagen.
+**/.env
+**/.env.*
+!.env.example
+.chrome-user-dir
+coverage

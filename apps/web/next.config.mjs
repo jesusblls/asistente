@@ -12,6 +12,9 @@ if (isProduction && !apiProxyTarget && !globalThis.__asistenteProxyWarned) {
 }
 
 const nextConfig = {
+  // Imagen de Docker autocontenida: copia solo lo que `next start` necesita
+  // en vez del monorepo completo con todos sus node_modules de workspace.
+  output: 'standalone',
   // Evita que Next genere AGENTS.md/CLAUDE.md dentro de apps/web (la
   // especificación canónica vive en la raíz del monorepo).
   agentRules: false,

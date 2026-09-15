@@ -1,0 +1,120 @@
+## Despliegue de un solo VPS: Postgres y Redis corren como contenedores junto
+## a la API y el panel, con Caddy como entrada única en el puerto 80 (y 443
+## en cuanto haya un dominio apuntando aquí — ver deploy/README.md).
+##
+## Uso:
+##   cp .env.example .env.production   # y ajusta los valores reales
+##   docker compose --env-file .env.production up -d --build
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-asistente}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-asistente}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-asistente}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-asistente}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-asistente}
+      REDIS_URL: redis://redis:6379
+      # Detrás de Caddy: sin esto, la auditoría y el rate limit ven la IP del
+      # proxy para todo mundo en vez de la del cliente real.
+      TRUST_PROXY: "true"
+      # "false" mientras no haya dominio + HTTPS (ver COOKIE_SECURE en
+      # deploy/.env.production.example); por defecto sigue atado a
+      # NODE_ENV=production si se omite esta variable.
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.production (32+ caracteres aleatorios)}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?Define CREDENTIALS_ENCRYPTION_KEY en .env.production (openssl rand -base64 32)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      PUBLIC_API_HOST: ${PUBLIC_API_HOST:-}
+      PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      TWILIO_HUMAN_NUMBER: ${TWILIO_HUMAN_NUMBER:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      CARTESIA_API_KEY: ${CARTESIA_API_KEY:-}
+      CARTESIA_VOICE_ID: ${CARTESIA_VOICE_ID:-}
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
+      MERCADOPAGO_WEBHOOK_URL: ${MERCADOPAGO_WEBHOOK_URL:-}
+    expose:
+      - "3000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Debe ir como build-arg, no como `environment:` de runtime: Next
+        # congela el rewrite /api/* -> API dentro de la imagen durante
+        # `next build` (ver apps/web/Dockerfile). El navegador nunca ve esta
+        # URL; solo la usa el servidor de Next para reenviar por la red
+        # interna de Docker.
+        API_PROXY_TARGET: http://api:3000
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+    expose:
+      - "3001"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

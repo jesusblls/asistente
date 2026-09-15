@@ -34,6 +34,88 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-15] build(deploy): añadir despliegue Docker Compose para VPS (OVH, sin dominio)
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El usuario tiene un VPS en OVH, sin dominio todavía (entra por IP), y eligió
+correr Postgres y Redis como contenedores junto a la app en el mismo VPS
+("Todo en el VPS") en vez de usar un Postgres/Redis gestionado. Se agregó un
+despliegue Docker Compose completo: Dockerfiles multi-stage para `api` y
+`web`, Caddy como entrada única (HTTP en `:80` hoy; HTTPS automático vía
+Let's Encrypt el día que `SITE_ADDRESS` tenga un dominio, sin tocar Caddyfile
+ni compose), y volúmenes con nombre para persistir Postgres/Caddy entre
+reinicios.
+
+Se validó todo el stack de punta a punta contra un runtime Docker local
+(colima, ya que este Mac no tiene Docker Desktop) antes de darlo por
+terminado, y esa validación encontró y corrigió dos bugs reales que un
+`docker compose up` sin más habría dejado pasar silenciosamente:
+
+1. **`.dockerignore` sin `**/`**: los patrones `.env`/`.env.*` sin prefijo
+   `**/` solo excluyen la raíz del contexto de build en Docker, no rutas
+   anidadas — `packages/database/.env` y `apps/api/.env` se filtraban dentro
+   de la imagen. Confirmado con `docker run --rm asistente-api:test sh -c
+   "find /app -name '.env*'"` antes y después del fix.
+2. **`API_PROXY_TARGET` como variable de runtime no funciona**: Next.js
+   evalúa `rewrites()` una sola vez durante `next build` y congela el
+   resultado en `routes-manifest.json` dentro de `.next/standalone` — el
+   `environment:` de docker-compose.yml llega después de que la imagen ya
+   fue construida, así que el rewrite `/api/*` → API quedaba vacío para
+   siempre. Se movió a build-arg (`apps/web/Dockerfile` + `docker-
+   compose.yml`'s `web.build.args`). Confirmado: antes del fix, `POST
+   /auth/login` a través de Caddy devolvía el 404 propio de Next; después,
+   llega hasta Fastify.
+
+También se corrigió `deploy/.env.production.example`, que documentaba
+`META_APP_SECRET`, `TWILIO_AUTH_TOKEN` y `MERCADOPAGO_WEBHOOK_SECRET` junto a
+las integraciones opcionales ("dejar vacío = simulación"), cuando en
+realidad `apps/api/src/lib/env.ts` los exige de forma obligatoria en
+producción (validan firmas HMAC de webhooks) y el arranque falla sin ellos
+— confirmado al reproducir el fallo real contra el contenedor.
+
+El seed inicial (`packages/database/src/seed.ts`) no se automatizó dentro
+del `CMD` del Dockerfile a propósito: crea la clínica modelo y el primer
+admin, pero no es idempotente para todos sus `create()` (doctores, servicios,
+FAQs) — correrlo en cada reinicio del contenedor duplicaría esas filas. Queda
+como paso manual documentado en `deploy/README.md`, ejecutado una sola vez
+contra una base de datos nueva.
+
+### Archivos tocados
+- `apps/api/Dockerfile` (nuevo) — build multi-stage, `prisma migrate deploy` al arrancar.
+- `apps/web/Dockerfile` (nuevo) — build standalone de Next; `API_PROXY_TARGET` y `NEXT_PUBLIC_API_URL` como build-args, no runtime (ver bug #2 arriba).
+- `.dockerignore` (nuevo) — patrones `**/.env` (no `.env` a secas, ver bug #1 arriba).
+- `docker-compose.yml` (nuevo) — servicios `postgres`, `redis`, `api`, `web`, `caddy`; volúmenes con nombre.
+- `deploy/Caddyfile` (nuevo) — entrada única; webhooks/voz a la API, resto al panel.
+- `deploy/.env.production.example` (nuevo) — variables documentadas, corregido qué es realmente obligatorio.
+- `deploy/README.md` (nuevo) — pasos de despliegue, incluyendo el seed manual y el cambio a HTTPS cuando haya dominio.
+- `apps/web/next.config.mjs` — `output: 'standalone'` para una imagen Docker ligera.
+
+### Verificación
+`docker compose up -d --build` contra colima con secretos de prueba
+(`asistente-smoke`, con puertos remapeados para no chocar con los dev
+servers locales). Verificado con curl y en navegador real (Browser pane, no
+solo curl — curl no respeta el flag `Secure` de cookies y hubiera ocultado
+el bug de cookie `Secure` corregido en la entrada de abajo):
+migraciones aplicadas (`prisma migrate deploy`), los 5 contenedores sanos,
+ruteo de Caddy correcto a `api`/`web`, seed manual, login real en el
+navegador con la cookie de sesión persistiendo y el dashboard cargando datos
+reales desde Postgres (ese login en navegador real fue el que expuso el bug
+de cookie `Secure` sobre HTTP corregido en la entrada de abajo — curl no lo
+hubiera detectado). Stack de prueba desmontado (`down -v`) al terminar.
+
+### Pendientes derivados
+- Backups de `postgres_data`: queda como responsabilidad operativa del
+  usuario (documentado en `deploy/README.md`); no hay backup automatizado.
+- Credenciales reales de WhatsApp/Twilio/Gemini/Mercado Pago: el usuario las
+  irá agregando cuando conecte cada integración.
+- Landing page (`Pricing.tsx`) dice "Facturación CFDI 4.0 mensual
+  automática" pero no existe código de generación de CFDI en el repo — sigue
+  sin confirmar con el usuario si es solo copy comercial o una funcionalidad
+  pendiente de construir.
+
+---
 ## [2026-09-15] fix(web): el badge "En vivo" de la bandeja ya no se parte en dos líneas
 
 **Autor:** Claude Sonnet 5 · **Commit:** `2888cf1`
