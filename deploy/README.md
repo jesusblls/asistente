@@ -21,20 +21,10 @@ curl -fsSL https://get.docker.com | sh
 
 Esto instala Docker Engine con el plugin `docker compose` incluido.
 
-## 2. Copiar el código y configurar
-
-Sin un remoto de git configurado en el repo, la forma más simple es
-transferir directamente lo que está en control de versiones (sin
-`node_modules`, sin `.env` locales):
+## 2. Clonar el código y configurar
 
 ```bash
-git archive --format=tar HEAD | ssh usuario@ip-del-vps \
-  'mkdir -p ~/apps/asistente && tar -x -C ~/apps/asistente'
-```
-
-Ya en el VPS:
-
-```bash
+git clone https://github.com/jesusblls/asistente.git ~/apps/asistente
 cd ~/apps/asistente
 cp deploy/.env.production.example deploy/.env.production
 ```
@@ -162,6 +152,5 @@ paso 4.
   tar czf /backup/postgres_backup.tar.gz /data` (con los contenedores
   detenidos, o usando `pg_dump` en caliente).
 - **Logs**: `docker compose logs -f api` / `web`.
-- **Actualizar tras cambios**: repetir el `git archive | ssh ... tar -x` del
-  paso 2 y volver a correr el `docker compose ... up -d --build` de la
-  opción que uses.
+- **Actualizar tras cambios**: `git pull` en `~/apps/asistente` y volver a
+  correr el `docker compose ... up -d --build` de la opción que uses.

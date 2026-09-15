@@ -10,6 +10,37 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-15] docs(deploy): usar git clone ahora que el repo ya existe en GitHub
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`deploy/README.md` documentaba transferir el código con `git archive | ssh
+... tar -x` porque, al escribirlo, el repo no tenía ningún remoto configurado.
+Ahora que existe `https://github.com/jesusblls/asistente` (público), se
+actualizó el paso 2 a un `git clone` normal, y la nota de "actualizar tras
+cambios" a `git pull` en vez de repetir el archive.
+
+De paso, se convirtió el directorio ya desplegado en el VPS real
+(`~/apps/asistente`, llegado originalmente por `git archive`, sin `.git`) en
+un clon de verdad: `git init` + `git remote add origin` + `git fetch` +
+`git reset --hard origin/main`. Se verificó antes y después que
+`deploy/.env.production` (los secretos reales, ignorado mientras no estaba
+trackeado) quedó bit a bit intacto — `git reset --hard` no toca archivos sin
+trackear, solo confirma que el `.gitignore` corregido lo sigue excluyendo
+ahí también. Sin esto, el `git pull` que el README ahora promete no hubiera
+funcionado en el despliegue real.
+
+### Archivos tocados
+- `deploy/README.md` — paso 2 usa `git clone`; nota de actualización usa `git pull`.
+
+### Verificación
+En el VPS: `sha256sum deploy/.env.production` idéntico antes y después del
+`git reset --hard origin/main`; `git status --short` sin salida (confirma
+que sigue ignorado); `git log --oneline -1` muestra el VPS al día con `main`.
+
+---
+
 ## [2026-09-15] fix(seguridad): ignorar deploy/.env.production en git
 
 **Autor:** Claude Sonnet 5 · **Commit:** `8ca218c`
