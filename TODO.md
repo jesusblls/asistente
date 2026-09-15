@@ -15,16 +15,6 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
 
 ---
 
-## Alta — antes de producción
-
-- [ ] **Migrar de SQLite a PostgreSQL y reescribir los triggers de `AuditLog`.**
-  SQLite admite un solo escritor, y ese es el cuello de botella real bajo
-  webhooks concurrentes y la cola de trabajos. Los dos triggers que hacen
-  inmutable la bitácora (sin `UPDATE`, sin `DELETE` antes de 5 años) deben
-  reescribirse en PL/pgSQL en la misma migración: Prisma no los genera y
-  `migrate diff` no los detecta, así que la protección desaparecería sin aviso.
-  `packages/database/prisma/migrations/0003_audit_log/` · origen: `402dfc4`, `052a205`
-
 ## Media
 
 ### Auditoría

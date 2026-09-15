@@ -34,6 +34,75 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] feat(db)!: migrar de SQLite a PostgreSQL
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+
+Resuelve el único pendiente de prioridad Alta de `TODO.md`. SQLite admite un
+solo escritor a la vez; bajo webhooks concurrentes de Meta/Twilio/Mercado
+Pago más el worker de la cola de trabajos, eso es un cuello de botella real,
+no teórico — justo lo que bloqueaba producción.
+
+1. **`schema.prisma`**: `datasource db.provider` pasó de `sqlite` a
+   `postgresql`. El resto del esquema no necesitó cambios: todos los tipos
+   (`String`, `Float`, `Boolean`, `DateTime`, `@default(cuid())`) mapean
+   igual de bien a Postgres, y una búsqueda de `$queryRaw`/`$executeRaw`/
+   `PRAGMA` en `packages/database/src` y `apps/api/src` no encontró SQL
+   crudo específico de SQLite en ningún lado del código.
+
+2. **Migraciones**: las 3 migraciones de SQLite (`0001_baseline`,
+   `0002_appointment_slot_key`, `0003_audit_log`) no son compatibles con
+   Postgres — el SQL de creación de tablas es distinto por motor — así que
+   se reemplazaron por dos nuevas, generadas y verificadas contra un
+   PostgreSQL 16 real:
+   - `0001_postgres_baseline`: el esquema completo tal como está hoy
+     (`prisma migrate dev --create-only` contra Postgres).
+   - `0002_audit_log_triggers`: los dos triggers de inmutabilidad de
+     `AuditLog`, reescritos de PL/SQLite a PL/pgSQL. Postgres exige una
+     función separada por trigger (no admite el cuerpo inline de SQLite) y
+     `FOR EACH ROW` explícito. El trigger de retención cambia de fondo: en
+     SQLite `createdAt` vivía como epoch en milisegundos y la comparación
+     era aritmética entera (`strftime('%s','now') * 1000 - 157852800000`);
+     en Postgres es un `TIMESTAMP` nativo y la comparación usa aritmética de
+     intervalos real (`NOW() - INTERVAL '1827 days'`) — mismos 1827 días
+     (5 años + 2 bisiestos), mecanismo distinto.
+
+     Verificado con SQL directo contra Postgres, no solo leído: un
+     `UPDATE` a una fila de `AuditLog` falla siempre; un `DELETE` de una fila
+     reciente falla; un `DELETE` de una fila con `createdAt` de hace 6 años
+     se permite. Los tres casos se probaron con datos reales insertados a
+     mano, no solo inspeccionando el SQL.
+
+3. **Entornos**: `.env`, `packages/database/.env` y `apps/api/.env` (no
+   versionados) apuntan a un PostgreSQL 16 local
+   (`brew install postgresql@16`). `.env.example` documenta el setup.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma` — `provider = "postgresql"`
+- `packages/database/prisma/migrations/0001_postgres_baseline/` — esquema completo (nuevo)
+- `packages/database/prisma/migrations/0002_audit_log_triggers/` — triggers en PL/pgSQL (nuevo)
+- `packages/database/prisma/migrations/0001_baseline/`, `0002_appointment_slot_key/`, `0003_audit_log/` — eliminadas (SQL específico de SQLite, no portable)
+- `packages/database/prisma/migrations/migration_lock.toml` — `provider = "postgresql"`
+- `.env.example` — `DATABASE_URL` de ejemplo apunta a Postgres local
+- `TODO.md` — se retira el pendiente resuelto
+
+### Verificación
+- Migraciones aplicadas dos veces desde cero contra PostgreSQL 16 local (`prisma migrate deploy`), sin errores.
+- Triggers probados con SQL directo (`psql`): `UPDATE` bloqueado siempre; `DELETE` de fila reciente bloqueado; `DELETE` de fila de +5 años permitido.
+- `npm run db:seed` — crea la clínica modelo, administrador, doctores, servicios y FAQs sin errores.
+- `npm run build --workspaces --if-present` — 6/6 workspaces.
+- `npm run test --workspace=@asistente/api` — 9/9 suites (incluida `voice-test-suite.ts`, 59/59).
+- `npm run test:stress --workspace=@asistente/ai-agent` — 40/40 pruebas.
+- `npm run test --workspace=@asistente/ai-agent` (`test-suite.ts`) — 20/20 pruebas.
+- Probado en vivo en el navegador contra `apps/api` + `apps/web` corriendo de verdad: login, `+ Citas Demo`, calendario y Bitácora de Auditoría (con badges de sensibilidad) funcionan igual que con SQLite.
+
+### Pendientes derivados
+- Verificar el primer despliegue real a un PostgreSQL gestionado (RDS, Supabase, etc.): esta migración se validó contra un Postgres 16 local; producción probablemente necesite ajustar el pool de conexiones de Prisma (`connection_limit` en `DATABASE_URL`) según el plan del proveedor.
+
+---
+
 ## [2026-09-14] fix(api): limpiar el usuario de prueba de la suite de integración
 
 **Autor:** Claude Sonnet 5 · **Commit:** `b31b5a7`
