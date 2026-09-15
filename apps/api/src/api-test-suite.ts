@@ -222,6 +222,10 @@ async function runApiIntegrationTests() {
       await db.message.deleteMany({ where: { tenantId: tenantIdForCleanup, senderRole: 'PATIENT', content: { contains: 'dónde están ubicados' } } });
       await db.conversation.deleteMany({ where: { tenantId: tenantIdForCleanup, patient: { phoneE164: '+525512349988' } } });
       await db.patient.deleteMany({ where: { tenantId: tenantIdForCleanup, phoneE164: '+525512349988' } });
+      // El usuario ADMIN de la prueba (arriba, vía upsert) también es dato de
+      // prueba: sin esto queda para siempre en la clínica demo real, visible
+      // en el selector de personal de la Bitácora de Auditoría.
+      await db.user.deleteMany({ where: { tenantId: tenantIdForCleanup, email: 'api-test@asistente.mx' } });
     }
     await app.close();
   }

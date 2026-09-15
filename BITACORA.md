@@ -34,6 +34,40 @@ Deuda que este cambio deja abierta, si la hay.
 
 ---
 
+## [2026-09-14] fix(api): limpiar el usuario de prueba de la suite de integración
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Investigando el reporte de citas duplicadas de "Alejandra Morales" en el
+`dev.db` local (ver hallazgo de la sesión anterior), se auditó qué suites
+tocan la clínica demo real (`dental-polanco`) en vez de un tenant aislado:
+`api-test-suite.ts` y `packages/ai-agent/src/test-suite.ts` sí la usan a
+propósito (necesitan doctores/servicios reales para probar el flujo
+completo), pero solo `api-test-suite.ts` tenía una fuga: creaba (vía
+`upsert`) un usuario ADMIN `api-test@asistente.mx` para firmar el JWT de
+las pruebas y nunca lo borraba. Cada corrida de `npm run test` (local o en
+CI) dejaba ese usuario permanentemente en la clínica real, visible en el
+selector de personal de la Bitácora de Auditoría.
+
+Las citas duplicadas en sí **no** vienen de ninguna suite de pruebas:
+`stress-test-suite.ts` sí reutiliza el teléfono de Alejandra Morales
+(+525544332211) pero contra un tenant aislado que crea y borra él mismo, y
+`test-suite.ts` solo lo usa para dos mensajes de solo-lectura (emergencia y
+cotización) que no agendan nada. Todo apunta a ciclos manuales de
+"+ Citas Demo" → "Limpiar Citas" → "+ Citas Demo" durante pruebas
+exploratorias anteriores en este mismo `dev.db` (comportamiento esperado
+de esas herramientas de sandbox, no un bug).
+
+### Archivos tocados
+- `apps/api/src/api-test-suite.ts` — borra el usuario `api-test@asistente.mx` en el `finally`
+
+### Verificación
+- `npx tsx src/api-test-suite.ts` — 10/10 pruebas exitosas.
+- Consulta directa post-corrida: `db.user.findMany({ where: { email: 'api-test@asistente.mx' } })` devuelve 0 filas.
+
+---
+
 ## [2026-09-14] fix(web): no recortar texto de las citas en pantallas móviles
 
 **Autor:** Claude Sonnet 5 · **Commit:** `898b60c`
