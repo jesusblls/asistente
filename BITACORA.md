@@ -174,7 +174,7 @@ recortar") se mantiene idéntico al de antes; se corrige por separado.
 
 ## [2026-09-14] fix(api): paginar al filtrar auditoria por sensibles
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `02ce44a`
 
 ### Qué se hizo
 `GET /api/audit` y `/api/audit/export` con `onlySensitive=true` traían
