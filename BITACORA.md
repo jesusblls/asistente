@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
-**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `PENDIENTE`
+**Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`
 
 ### Qué se hizo
 
