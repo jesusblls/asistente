@@ -72,6 +72,80 @@ function auditFilters(query: Record<string, string | undefined>) {
   return { patientId, entityType, entityId, actorId, action, from, to, onlySensitive };
 }
 
+/** Cuántas filas se piden a la vez al paginar hacia atrás buscando sensibles. */
+const SENSITIVE_SCAN_BATCH = 500;
+/**
+ * Tope duro de filas escaneadas al filtrar por sensibles. Los criterios
+ * (fuera de horario según el doctor, cambios de pago, etc.) no se pueden
+ * expresar en el `where` de Prisma, así que hay que traerlas y evaluarlas en
+ * JS; este tope evita escanear el historial completo de una clínica vieja.
+ */
+const SENSITIVE_SCAN_MAX_ROWS = 5000;
+
+/**
+ * Trae filas de auditoría ya recortadas a `limit`, respetando `onlySensitive`.
+ *
+ * Cuando se pide solo sensibles, NO se puede traer `limit` filas y filtrar
+ * después: eso devuelve "las sensibles entre las últimas N", no "las últimas
+ * N sensibles" (un evento sensible viejo se pierde si hay N eventos
+ * ordinarios más recientes). En su lugar se pagina hacia atrás en lotes de
+ * `SENSITIVE_SCAN_BATCH`, acumulando sensibles hasta juntar `limit` o agotar
+ * `SENSITIVE_SCAN_MAX_ROWS`.
+ */
+async function fetchAuditRows(
+  tenantId: string,
+  query: Record<string, string | undefined>,
+  limit: number,
+  onlySensitive: boolean
+): Promise<AuditRow[]> {
+  const where = auditWhere(tenantId, query);
+  const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+
+  if (!onlySensitive) {
+    return db.auditLog.findMany({ where, orderBy, take: limit });
+  }
+
+  const doctors = await db.doctor.findMany({
+    where: { tenantId },
+    select: { id: true, availabilityRules: true, isActive: true },
+  });
+
+  const result: AuditRow[] = [];
+  let cursorId: string | undefined;
+  let scanned = 0;
+
+  while (result.length < limit && scanned < SENSITIVE_SCAN_MAX_ROWS) {
+    const batch = await db.auditLog.findMany({
+      where,
+      orderBy,
+      take: SENSITIVE_SCAN_BATCH,
+      ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+    });
+    if (batch.length === 0) break;
+    scanned += batch.length;
+
+    for (const row of batch) {
+      const sensitive = isRowSensitive(
+        {
+          ...row,
+          changes: parseJsonField(row.changes),
+          metadata: parseJsonField(row.metadata),
+        },
+        doctors
+      );
+      if (sensitive) {
+        result.push(row);
+        if (result.length >= limit) break;
+      }
+    }
+
+    cursorId = batch[batch.length - 1].id;
+    if (batch.length < SENSITIVE_SCAN_BATCH) break;
+  }
+
+  return result;
+}
+
 /**
  * Nombres del paciente y del empleado de cada fila. AuditLog no tiene
  * relaciones a propósito (sobrevive a los borrados), así que se resuelven
@@ -163,12 +237,10 @@ export async function auditRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = requireRole(request, ['ADMIN']);
       const query = request.query as Record<string, string | undefined>;
+      const onlySensitive = query.onlySensitive === 'true';
+      const limit = parseLimit(query.limit, 100, 500);
 
-      const rows = await db.auditLog.findMany({
-        where: auditWhere(user.tenantId, query),
-        orderBy: { createdAt: 'desc' },
-        take: parseLimit(query.limit, 100, 500),
-      });
+      const rows = await fetchAuditRows(user.tenantId, query, limit, onlySensitive);
 
       await recordAudit({
         tenantId: user.tenantId,
@@ -179,15 +251,7 @@ export async function auditRoutes(fastify: FastifyInstance) {
         metadata: { count: rows.length },
       });
 
-      let named = await withNames(user.tenantId, rows);
-      if (query.onlySensitive === 'true') {
-        const doctors = await db.doctor.findMany({
-          where: { tenantId: user.tenantId },
-          select: { id: true, availabilityRules: true, isActive: true },
-        });
-        named = named.filter((row) => isRowSensitive(row, doctors));
-      }
-
+      const named = await withNames(user.tenantId, rows);
       return reply.send(named);
     }
   );
@@ -202,21 +266,11 @@ export async function auditRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = requireRole(request, ['ADMIN']);
       const query = request.query as Record<string, string | undefined>;
+      const onlySensitive = query.onlySensitive === 'true';
+      const limit = parseLimit(query.limit, 5000, 5000);
 
-      const rows = await db.auditLog.findMany({
-        where: auditWhere(user.tenantId, query),
-        orderBy: { createdAt: 'desc' },
-        take: parseLimit(query.limit, 5000, 5000),
-      });
-      let named = await withNames(user.tenantId, rows);
-
-      if (query.onlySensitive === 'true') {
-        const doctors = await db.doctor.findMany({
-          where: { tenantId: user.tenantId },
-          select: { id: true, availabilityRules: true, isActive: true },
-        });
-        named = named.filter((row) => isRowSensitive(row, doctors));
-      }
+      const rows = await fetchAuditRows(user.tenantId, query, limit, onlySensitive);
+      const named = await withNames(user.tenantId, rows);
 
       await recordAudit({
         tenantId: user.tenantId,
@@ -227,7 +281,7 @@ export async function auditRoutes(fastify: FastifyInstance) {
         metadata: {
           count: named.length,
           filters: auditFilters(query),
-          onlySensitive: query.onlySensitive === 'true',
+          onlySensitive,
         },
       });
 

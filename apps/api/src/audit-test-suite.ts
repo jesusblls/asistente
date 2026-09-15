@@ -410,6 +410,49 @@ async function runAuditTests() {
       'El filtro acepta varias acciones a la vez (las categorías del panel)'
     );
 
+    // Genera un evento sensible garantizado (EXPORT) y luego varios eventos
+    // NO sensibles más recientes (LIST sobre la propia bitácora, exento de
+    // sensibilidad). Con `limit` chico, un filtro ingenuo de "trae `limit` y
+    // filtra después" nunca vería el EXPORT: queda fuera de la ventana. El
+    // filtro correcto pagina hacia atrás hasta encontrarlo.
+    //
+    // Los "rellenos" se insertan directo en la BD (no vía la API) para que no
+    // los colapse el throttle de lecturas repetidas (AUDIT_READ_THROTTLE_MS):
+    // esta misma suite ya hizo varias consultas LIST de este admin sobre la
+    // bitácora, así que una cuarta por la API no generaría fila nueva.
+    await app.inject({ method: 'GET', url: '/api/audit/export', headers: authAdminA });
+    const exportMarker = await db.auditLog.findFirst({
+      where: { tenantId: tenantA.id, action: 'EXPORT', actorId: adminA.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    const fillerBase = (exportMarker?.createdAt ?? new Date()).getTime();
+    for (let i = 1; i <= 3; i += 1) {
+      await db.auditLog.create({
+        data: {
+          tenantId: tenantA.id,
+          actorType: 'USER',
+          actorId: adminA.id,
+          actorRole: 'ADMIN',
+          action: 'LIST',
+          entityType: 'AUDIT_LOG',
+          createdAt: new Date(fillerBase + i * 1000),
+        },
+      });
+    }
+    const onlySensitiveNarrow = await app.inject({
+      method: 'GET',
+      url: '/api/audit?onlySensitive=true&limit=1',
+      headers: authAdminA,
+    });
+    const sensitiveNarrowRows = onlySensitiveNarrow.json() as Array<{ id: string; action: string }>;
+    assert(
+      onlySensitiveNarrow.statusCode === 200 &&
+        exportMarker !== null &&
+        sensitiveNarrowRows.length === 1 &&
+        sensitiveNarrowRows[0].id === exportMarker.id,
+      'onlySensitive con limit chico encuentra el sensible aunque haya eventos más recientes no sensibles (pagina, no filtra la ventana)'
+    );
+
     // ------------------------------------------------------------------
     console.log('\n📤 6. Nombres y exportación');
     const namedRows = byPatient.json() as Array<{ patient: { fullName: string } | null }>;

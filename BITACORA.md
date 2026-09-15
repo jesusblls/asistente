@@ -172,6 +172,44 @@ recortar") se mantiene idéntico al de antes; se corrige por separado.
 
 ---
 
+## [2026-09-14] fix(api): paginar al filtrar auditoria por sensibles
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`GET /api/audit` y `/api/audit/export` con `onlySensitive=true` traían
+`limit` filas más recientes y filtraban la sensibilidad después, en JS. Eso
+responde "los sensibles entre los últimos N", no "los últimos N sensibles":
+un evento sensible que quedó fuera de esa ventana (porque hubo N eventos
+ordinarios más recientes) desaparecía sin aviso, justo en la vista que un
+director usa para revisar lo que de verdad importa.
+
+Se agregó `fetchAuditRows()`, que para `onlySensitive` pagina hacia atrás en
+lotes de 500 filas (con cursor por `id`, orden `createdAt desc, id desc`
+para que la paginación sea estable) acumulando sensibles hasta juntar
+`limit` o agotar un tope de 5000 filas escaneadas — el resto de reglas de
+sensibilidad (fuera de horario del doctor, cambios de pago) no se pueden
+expresar en el `where` de Prisma, así que no hay forma de evitar traer y
+evaluar en JS.
+
+Se agregó una prueba de regresión en `audit-test-suite.ts`: genera un evento
+sensible garantizado (`EXPORT`) y tres eventos no sensibles más recientes
+insertados directo en la BD (para no toparse con el throttle de lecturas
+repetidas), y confirma que `onlySensitive` con `limit=1` sigue encontrando
+el primero. Se verificó manualmente que la prueba falla si se revierte
+`fetchAuditRows` al comportamiento anterior (traer y filtrar después).
+
+### Archivos tocados
+- `apps/api/src/routes/admin/audit.ts` — `fetchAuditRows()` con paginación por cursor para `onlySensitive`
+- `apps/api/src/audit-test-suite.ts` — prueba de regresión para el filtro `onlySensitive`
+
+### Verificación
+- Prueba manual: se forzó temporalmente `fetchAuditRows` a devolver el comportamiento anterior (traer `limit` sin filtrar) y la nueva prueba falló como se esperaba; revertido antes de commitear.
+- `npm run build --workspace=@asistente/api` — sin errores.
+- `npm run test --workspace=@asistente/api` — 9/9 suites (auditoría 41/41, incluida la prueba nueva).
+
+---
+
 ## [2026-09-14] refactor(api): modularizar rutas admin y pulir pendientes del sistema
 
 **Autor:** Antigravity (Gemini 3.8 Flash) · **Commit:** `ace2983`
