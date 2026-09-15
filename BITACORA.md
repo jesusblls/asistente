@@ -36,7 +36,7 @@ Deuda que este cambio deja abierta, si la hay.
 
 ## [2026-09-14] fix(api): limpiar el usuario de prueba de la suite de integración
 
-**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+**Autor:** Claude Sonnet 5 · **Commit:** `b31b5a7`
 
 ### Qué se hizo
 Investigando el reporte de citas duplicadas de "Alejandra Morales" en el
