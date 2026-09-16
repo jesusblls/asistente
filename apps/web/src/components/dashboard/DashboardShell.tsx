@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useTenant } from '../../context/TenantContext';
 import { logoutRequest, getUser, type AuthUserInfo } from '../../lib/api';
+import { TrialBanner } from './TrialBanner';
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -458,6 +459,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         )}
+
+        {/* Vigencia de la prueba. Solo en Modo En Vivo: en una demostración
+            comercial, un aviso de "tu prueba vence" es ruido que además habla
+            de la cuenta del vendedor, no de la clínica prospecto. */}
+        {mode === 'live' && <TrialBanner />}
 
         {/* Banner Informativo si está en Modo Demo */}
         {mode === 'demo' && (

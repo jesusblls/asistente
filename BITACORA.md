@@ -10,6 +10,65 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(web): avisar cuando la prueba está por vencer
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`GET /api/plan` ya sabía cuántos días le quedaban a la prueba, pero el dato no
+llegaba a ninguna pantalla: la clínica se enteraba de que su prueba había
+vencido cuando el panel empezó a rechazarle acciones con un 402, sin decirle
+por qué. Se agregó el aviso en el panel, con cuatro estados según la urgencia:
+
+| Situación | Color | Se puede ocultar |
+| :--- | :--- | :--- |
+| Más de 7 días | Teal (informativo) | Sí |
+| 4 a 7 días | Ámbar | Sí |
+| 3 días o menos | Ámbar, `role="alert"` | **No** |
+| Vencida o suspendida | Rojo, `role="alert"` | **No** |
+
+Cuatro decisiones que vale la pena dejar escritas:
+
+1. **El aviso crítico no se puede quitar.** Con la prueba vencida el panel
+   rechaza justo las acciones que importan; esconder el porqué convertiría el
+   bloqueo en un misterio. Por eso a partir de 3 días desaparece la ✕.
+2. **El descarte dura un día, no para siempre.** Se guarda la fecha en
+   `localStorage` y se compara contra hoy: la clínica puede quitarse el aviso
+   de encima mientras trabaja, pero lo vuelve a ver mañana, con un día menos.
+   Un descarte permanente haría que justo quien más necesita el recordatorio
+   nunca lo viera.
+3. **No aparece en Modo Demo.** En una demostración comercial, un aviso de "tu
+   prueba vence" es ruido que además habla de la cuenta del vendedor, no de la
+   clínica prospecto. Solo se monta con `mode === 'live'`.
+4. **El mensaje de suspensión dice qué se rompe y qué no.** "No puedes dar de
+   alta especialistas, agendar citas ni recibir llamadas… Tus datos siguen
+   intactos": lo segundo importa tanto como lo primero, porque el miedo real
+   de quien ve un bloqueo es haber perdido su información.
+
+El botón lleva a `/#precios`, la sección de planes de la landing, que sí
+existe. No se inventó un enlace de pago ni un contacto de ventas porque
+todavía no hay cobro autoservicio (ver pendientes).
+
+### Archivos tocados
+- `apps/web/src/components/dashboard/TrialBanner.tsx` (nuevo) — el aviso y su lógica de urgencia y descarte.
+- `apps/web/src/components/dashboard/DashboardShell.tsx` — lo monta arriba del contenido, solo en Modo En Vivo.
+
+### Verificación
+Los cuatro estados se comprobaron en el navegador real contra una clínica de
+prueba, moviendo `trialEndsAt` en base de datos entre cada uno: 13 días (teal,
+con ✕), 5 días (ámbar, con ✕), 2 días (ámbar, `role="alert"`, sin ✕) y vencida
+(rojo, `role="alert"`, sin ✕, con el texto de qué queda bloqueado). El descarte
+se probó pulsando la ✕ —el aviso desapareció y quedó `2026-09-16` en
+`localStorage`— y su caducidad simulando un descarte del día anterior. En Modo
+Demo el aviso no se monta y solo queda el banner morado. Suites de la API
+11/11 en dos corridas seguidas y `npm run build --workspaces` sin errores.
+
+### Pendientes derivados
+- **Sigue sin haber cobro autoservicio.** El aviso manda a `/#precios`, pero desde ahí la clínica no puede activar un plan sola: `subscriptionStatus` se mueve a mano. Es el hueco más grande que queda del flujo SaaS.
+- Se detectó, al verificar esto, un bug **no relacionado y anterior a este cambio**: recargar (F5) cualquier pantalla del panel con sesión válida rebota a `/login`. `AuthGuard` resuelve `isAuthenticated()` con `useSyncExternalStore` cuyo `getServerSnapshot` devuelve `false`, y el `useEffect` de redirección se dispara en el render de hidratación, antes de que aplique el snapshot del cliente. Afecta a cualquiera que refresque o abra el panel desde un favorito. No se corrigió aquí para no mezclarlo con este cambio.
+
+---
+
 ## [2026-09-16] feat(web): asistente de configuración inicial
 
 **Autor:** Claude Opus 5 · **Commit:** `7a61054`
