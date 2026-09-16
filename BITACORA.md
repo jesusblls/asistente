@@ -10,6 +10,43 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(web): rediseño completo de la landing page bajo estándar Impeccable
+
+**Autor:** Antigravity (Gemini 3.8 Flash)
+
+### Qué se hizo
+- Rediseño integral de la página principal (`apps/web/src/app/page.tsx`) y de todos sus componentes en `apps/web/src/components/landing/`, preservando y honrando la paleta de colores canónica (`Medical Teal`, neutrales `Slate`, acentos semánticos `Emerald`, `Sky`, `Rose` y `Amber`) bajo los principios de rigor clínico y confianza institucional del estándar Impeccable.
+- **Navbar (`Navbar.tsx`):** Encabezado con efecto cristal translúcido, branding médico unificado, acceso rápido a la línea demo (+52 55), enlaces de navegación y menú móvil accesible.
+- **Hero (`Hero.tsx`):** Mensaje principal cálido y enfocado en consultorios de México (+52) sin kickers o etiquetas redundantes. Se integró un reproductor interactivo de muestra de voz con Web Speech API (`es-MX`) y ecualizador animado en vivo, tarjeta simuladora de llamada con triaje dental y 4 métricas clave con cifras tabulares.
+- **Simulador Interactivo (`InteractiveDemo.tsx`):** Experiencia dual entre llamada telefónica (Twilio +52 con sintetizador de voz y ondas animadas) y mensajería oficial (Meta WhatsApp Cloud API con tarjeta interactiva de cita y enlace a Mercado Pago). Incluye selector de 3 especialidades clínicas (Dental Polanco CDMX, Medicina Providencia GDL, Dermatología San Pedro MTY) con escenarios de dolor/urgencia predefinidos.
+- **Soluciones Clínicas (`Features.tsx`):** Navegación interactiva por pestañas que profundiza en Telefonía Twilio sub-600ms, WhatsApp Cloud API oficial, Triaje en 3 niveles (NOM-024), Escudo Anti-Inasistencia Mercado Pago y Modo Copiloto para recepcionistas.
+- **Calculadora ROI (`RoiCalculator.tsx`):** Calculadora táctil con presets instantáneos por tamaño de consultorio, cifras formateadas en moneda nacional (`tabular-nums`) y proyección de citas y pesos mexicanos recuperados al mes y al año.
+- **Precios (`Pricing.tsx`):** Switch mensual y anual con 2 meses gratis, tarjetas limpias sin antipatrones de contraste, desglose transparente de prestaciones médicas y mención a CFDI 4.0.
+- **Testimonios (`Testimonials.tsx`):** Casos de éxito con métricas cuantitativas en Polanco, San Pedro Garza García y Providencia, presentados en tarjetas con contraste sobrio.
+- **Preguntas Frecuentes (`FaqSection.tsx`):** Acordeón interactivo con filtro por categorías (Telefonía, Anticipos, Legal/NOM-004) y botón de contacto directo con un asesor clínico en CDMX.
+- **Pre-Footer y Footer (`page.tsx` y `Footer.tsx`):** Llamado a la acción con garantías de cero contratos forzosos y pie de página completo con normativas sanitarias mexicanas (NOM-004-SSA3, LFPDPPP).
+
+### Archivos tocados
+- `apps/web/src/app/page.tsx`
+- `apps/web/src/components/landing/Navbar.tsx`
+- `apps/web/src/components/landing/Hero.tsx`
+- `apps/web/src/components/landing/InteractiveDemo.tsx`
+- `apps/web/src/components/landing/Features.tsx`
+- `apps/web/src/components/landing/RoiCalculator.tsx`
+- `apps/web/src/components/landing/Pricing.tsx`
+- `apps/web/src/components/landing/Testimonials.tsx`
+- `apps/web/src/components/landing/FaqSection.tsx`
+- `apps/web/src/components/landing/Footer.tsx`
+- `BITACORA.md`
+
+### Verificación
+- Build estático exitoso de Next.js 16.3.5 Turbopack (`npm --workspace=@asistente/web run build`) con 11/11 rutas generadas sin advertencias.
+- Detector mecánico Impeccable (`.agents/skills/impeccable/scripts/impeccable detect --json`) verificado con 0 hallazgos y código de salida 0.
+- Suite de pruebas de IA (`npm --workspace=@asistente/ai-agent run test`): 20/20 pruebas exitosas.
+- Suite de pruebas de API (`npm --workspace=@asistente/api run test`): 9/9 suites (83 pruebas) exitosas.
+
+---
+
 ## [2026-09-15] docs(deploy): usar git clone ahora que el repo ya existe en GitHub
 
 **Autor:** Claude Sonnet 5 · **Commit:** `b487250`

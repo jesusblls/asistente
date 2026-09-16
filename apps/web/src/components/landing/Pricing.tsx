@@ -4,16 +4,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { 
   Check, 
-  Sparkles, 
-  PhoneCall, 
-  MessageSquare, 
-  ShieldCheck, 
-  HelpCircle, 
   ArrowRight,
-  Zap,
   Building2,
   Stethoscope,
-  Crown
+  Crown,
+  ShieldCheck
 } from 'lucide-react';
 
 export function Pricing() {
@@ -31,16 +26,16 @@ export function Pricing() {
         'Ideal para consultorios dentales o médicos privados de un solo especialista que desean automatizar WhatsApp y eliminar inasistencias.',
       popular: false,
       features: [
-        '1 Doctor / Especialista activo',
+        '1 Doctor o Especialista activo',
         'Hasta 250 citas gestionadas al mes',
         'WhatsApp Cloud API oficial de Meta 24/7',
         'Escudo Anti-Inasistencias con Mercado Pago',
         'Recordatorios automáticos 24h y 2h antes',
         'Sincronización con Google Calendar',
         'Bandeja web para recepcionista o doctor',
-        'Soporte técnico por WhatsApp',
+        'Facturación fiscal CFDI 4.0 mensual',
       ],
-      ctaText: 'Iniciar Prueba de 14 Días',
+      ctaText: 'Comenzar Prueba de 14 Días',
       ctaHref: '/dashboard',
     },
     {
@@ -61,10 +56,9 @@ export function Pricing() {
         'Modo Copiloto para equipo de recepción en vivo',
         'Sincronización con Google Calendar & Cal.com',
         'Cobro de anticipos con Mercado Pago (Tarjetas / SPEI)',
-        'Reportes de citas perdidas y conversión semanal',
-        'Soporte prioritario con respuesta <30 min',
+        'Soporte técnico prioritario por WhatsApp en México',
       ],
-      ctaText: 'Comenzar con Clínica Pro',
+      ctaText: 'Probar Clínica Pro Gratis',
       ctaHref: '/dashboard',
     },
     {
@@ -87,7 +81,7 @@ export function Pricing() {
         'Contrato corporativo y cumplimiento NOM-004-SSA3',
         'Facturación CFDI 4.0 mensual automática',
       ],
-      ctaText: 'Contactar a Ventas Corporativas',
+      ctaText: 'Contactar a Asesor Clínico',
       ctaHref: '/dashboard',
     },
   ];
@@ -101,51 +95,50 @@ export function Pricing() {
   };
 
   return (
-    <section id="precios" className="py-20 md:py-28 bg-white relative">
+    <section id="precios" className="py-20 md:py-28 bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-            Invierte una fracción de un sueldo y{' '}
-            <span className="text-teal-700">
-              multiplica la ocupación de tu clínica
-            </span>
+            Tarifas claras en pesos mexicanos, sin letras chiquitas
           </h2>
 
           <p className="mt-4 text-slate-600 text-base sm:text-lg leading-relaxed">
-            Planes adaptados a consultorios independientes, clínicas medianas y cadenas de salud en México. Todos incluyen 14 días de prueba sin compromiso.
+            Sin contratos forzosos. Todos los planes incluyen 14 días de prueba completa para que evalúes el impacto en tu consultorio.
           </p>
 
           {/* Billing Cycle Switcher */}
-          <div className="mt-8 inline-flex items-center p-1.5 rounded-2xl bg-slate-100 border border-slate-200">
+          <div className="mt-8 inline-flex items-center p-1.5 rounded-xl bg-slate-100 border border-slate-200">
             <button
+              type="button"
               onClick={() => setBillingCycle('MONTHLY')}
-              className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              className={`px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors ${
                 billingCycle === 'MONTHLY'
                   ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Pago Mensual
             </button>
             <button
+              type="button"
               onClick={() => setBillingCycle('ANNUAL')}
-              className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors flex items-center gap-1.5 ${
                 billingCycle === 'ANNUAL'
-                  ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <span>Pago Anual</span>
-              <span className="bg-amber-300 text-amber-950 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md">
+              <span className="bg-amber-300 text-amber-950 text-[10px] font-black px-1.5 py-0.5 rounded">
                 2 MESES GRATIS
               </span>
             </button>
           </div>
         </div>
 
-        {/* Pricing Cards Grid */}
+        {/* Pricing Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
           {plans.map((plan) => {
             const Icon = plan.icon;
@@ -154,127 +147,117 @@ export function Pricing() {
             return (
               <div
                 key={plan.slug}
-                className={`relative rounded-3xl p-8 flex flex-col justify-between transition-all ${
+                className={`rounded-2xl p-7 sm:p-8 flex flex-col justify-between transition-all ${
                   plan.popular
-                    ? 'bg-slate-900 text-white shadow-2xl shadow-teal-900/30 border-2 border-teal-500 ring-4 ring-teal-500/10 -translate-y-2'
-                    : 'bg-slate-50 text-slate-900 border border-slate-200 hover:border-slate-300 hover:shadow-lg'
+                    ? 'bg-slate-900 text-white border-2 border-teal-500 shadow-md'
+                    : 'bg-white text-slate-900 border border-slate-200 hover:border-slate-300'
                 }`}
               >
-                {/* Popular Ribbon */}
-                {plan.popular && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-wider shadow-md">
-                    {plan.badge}
-                  </div>
-                )}
-
                 <div>
-                  {/* Icon & Plan Name */}
+                  {/* Top Bar inside Card */}
                   <div className="flex items-center justify-between mb-4">
                     <div
-                      className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                      className={`w-11 h-11 rounded-xl flex items-center justify-center ${
                         plan.popular
                           ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30'
-                          : 'bg-teal-100/80 text-teal-700 border border-teal-200'
+                          : 'bg-teal-50 text-teal-700 border border-teal-200'
                       }`}
                     >
-                      <Icon className="w-6 h-6" />
+                      <Icon className="w-5 h-5" />
                     </div>
-                    {!plan.popular && (
-                      <span className="text-[11px] font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-0.5 rounded-full">
+
+                    {plan.popular ? (
+                      <span className="bg-teal-300 text-teal-950 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider">
+                        {plan.badge}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
                         {plan.badge}
                       </span>
                     )}
                   </div>
 
-                  <h3 className={`text-2xl font-bold ${plan.popular ? 'text-white' : 'text-slate-900'}`}>
-                    {plan.name}
-                  </h3>
-
-                  <p className={`mt-2 text-xs leading-relaxed ${plan.popular ? 'text-slate-300' : 'text-slate-600'}`}>
+                  <h3 className="text-xl font-bold">{plan.name}</h3>
+                  <p className={`mt-2 text-xs leading-relaxed min-h-[40px] ${
+                    plan.popular ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                     {plan.description}
                   </p>
 
                   {/* Price */}
-                  <div className="mt-6 mb-6 pb-6 border-b border-slate-200/40">
-                    <div className="flex items-baseline gap-2">
-                      <span className={`text-4xl sm:text-5xl font-extrabold tracking-tight ${plan.popular ? 'text-white' : 'text-slate-900'}`}>
+                  <div className="mt-6 pb-6 border-b border-slate-200/80">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-extrabold tracking-tight tabular-nums">
                         {formatPrice(price)}
                       </span>
-                      <span className={`text-xs font-semibold ${plan.popular ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <span className={`text-xs font-medium ${plan.popular ? 'text-slate-400' : 'text-slate-500'}`}>
                         MXN / mes
                       </span>
                     </div>
-                    {billingCycle === 'ANNUAL' && (
-                      <p className={`text-xs mt-1 font-medium ${plan.popular ? 'text-emerald-300' : 'text-emerald-600'}`}>
-                        Facturado anualmente (Ahorras {formatPrice((plan.priceMonthly - plan.priceAnnual) * 12)} MXN al año)
-                      </p>
-                    )}
+                    <div className={`text-xs mt-1 ${plan.popular ? 'text-teal-300' : 'text-teal-700 font-medium'}`}>
+                      {billingCycle === 'ANNUAL' ? 'Facturado anualmente (Ahorro del 20%)' : 'Facturación mensual recurrente'}
+                    </div>
                   </div>
 
-                  {/* Feature Checklist */}
-                  <div className="space-y-3 mb-8">
-                    <div className={`text-xs font-bold uppercase tracking-wider ${plan.popular ? 'text-teal-300' : 'text-slate-400'}`}>
+                  {/* Features List */}
+                  <div className="mt-6 space-y-3">
+                    <span className={`text-xs font-bold uppercase tracking-wider block mb-3 ${
+                      plan.popular ? 'text-slate-400' : 'text-slate-500'
+                    }`}>
                       Incluye:
-                    </div>
-                    {plan.features.map((feature, fIdx) => (
-                      <div key={fIdx} className="flex items-start gap-2.5 text-xs">
-                        <div
-                          className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                            plan.popular
-                              ? 'bg-teal-500 text-white font-bold'
-                              : 'bg-teal-700 text-white'
-                          }`}
-                        >
-                          <Check className="w-2.5 h-2.5 stroke-[3]" />
-                        </div>
+                    </span>
+                    {plan.features.map((feat, idx) => (
+                      <div key={idx} className="flex items-start gap-2.5 text-xs sm:text-sm">
+                        <Check className={`w-4 h-4 shrink-0 mt-0.5 ${
+                          plan.popular ? 'text-teal-400' : 'text-teal-600'
+                        }`} />
                         <span className={plan.popular ? 'text-slate-200' : 'text-slate-700'}>
-                          {feature}
+                          {feat}
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* CTA Button */}
-                <div>
+                {/* Bottom CTA */}
+                <div className="mt-8 pt-6 border-t border-slate-200/80">
                   <Link
                     href={plan.ctaHref}
-                    className={`w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl font-bold text-sm transition-all ${
+                    className={`w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm transition-colors ${
                       plan.popular
-                        ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-900/40'
+                        ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-sm'
                         : 'bg-slate-900 hover:bg-slate-800 text-white'
                     }`}
                   >
                     <span>{plan.ctaText}</span>
                     <ArrowRight className="w-4 h-4" />
                   </Link>
-
-                  <p className={`text-center text-[11px] mt-2.5 ${plan.popular ? 'text-slate-400' : 'text-slate-500'}`}>
-                    14 días de prueba gratis • Sin tarjeta requerida
+                  <p className={`text-center text-[11px] mt-2.5 ${
+                    plan.popular ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Prueba de 14 días sin costo
                   </p>
                 </div>
+
               </div>
             );
           })}
         </div>
 
-        {/* Facturación Fiscal México Reassurance */}
-        <div className="mt-14 max-w-4xl mx-auto bg-slate-50 rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-teal-700 font-bold shrink-0">
-              SAT
-            </div>
-            <div>
-              <p className="font-bold text-slate-800 text-sm">Facturación Fiscal Mexicana (CFDI 4.0)</p>
-              <p className="text-slate-500">
-                Emitimos factura fiscal con IVA desglosado 100% deducible para tu consultorio o clínica en México.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-teal-700 font-semibold shrink-0">
-            <ShieldCheck className="w-5 h-5 text-teal-600" />
-            <span>Garantía de Satisfacción 100%</span>
-          </div>
+        {/* Reassurance Footer */}
+        <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Factura fiscal mexicana CFDI 4.0 mensual</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Paga con tarjeta de crédito, débito o transferencia SPEI</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Soporte técnico directo en México</span>
+          </span>
         </div>
 
       </div>

@@ -5,22 +5,27 @@ import {
   Calculator, 
   TrendingUp, 
   ShieldCheck, 
-  AlertCircle, 
-  CheckCircle2, 
   ArrowRight,
   Sparkles,
-  HelpCircle,
-  PiggyBank
+  Building2,
+  Stethoscope
 } from 'lucide-react';
 
 export function RoiCalculator() {
   const [monthlyAppointments, setMonthlyAppointments] = useState<number>(180);
   const [averageTicket, setAverageTicket] = useState<number>(1200);
-  const [noShowRate, setNoShowRate] = useState<number>(28); // 28% typical clinic average in Mexico
+  const [noShowRate, setNoShowRate] = useState<number>(28);
 
   const monthlyAppointmentsId = useId();
   const averageTicketId = useId();
   const noShowRateId = useId();
+
+  // Presets for quick selection
+  const handleApplyPreset = (appointments: number, ticket: number, rate: number) => {
+    setMonthlyAppointments(appointments);
+    setAverageTicket(ticket);
+    setNoShowRate(rate);
+  };
 
   // Calculations
   const lostAppointments = Math.round(monthlyAppointments * (noShowRate / 100));
@@ -45,25 +50,48 @@ export function RoiCalculator() {
   };
 
   return (
-    <section id="calculadora" className="py-20 md:py-28 bg-slate-100/70 relative">
+    <section id="calculadora" className="py-20 md:py-28 bg-slate-50 border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-14">
+        <div className="text-center max-w-3xl mx-auto mb-12">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-            ¿Cuánto dinero está perdiendo tu clínica{' '}
-            <span className="text-teal-700">
-              por llamadas no contestadas y no-shows?
-            </span>
+            ¿Cuánto dinero recuperaría tu clínica con el Escudo Anti-Inasistencias?
           </h2>
 
           <p className="mt-4 text-slate-600 text-base sm:text-lg leading-relaxed">
-            Ajusta los controles deslizantes con las métricas actuales de tu consultorio y descubre cuántos pesos mexicanos puedes recuperar mes con mes con el <strong className="text-slate-800">Escudo Anti-Inasistencias</strong>.
+            Mueve los controles con las cifras de tu consultorio y comprueba cuántos pesos mexicanos dejas de perder mes a mes al asegurar las citas con anticipo en Mercado Pago.
           </p>
+
+          {/* Quick preset selector */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <span className="text-xs text-slate-500 font-semibold mr-1">Ejemplos rápidos:</span>
+            <button
+              type="button"
+              onClick={() => handleApplyPreset(80, 850, 25)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-teal-500 text-xs font-semibold text-slate-700 transition-colors"
+            >
+              Consultorio Individual (80 citas)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyPreset(180, 1200, 28)}
+              className="px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-xs font-semibold text-teal-800 transition-colors"
+            >
+              Clínica Dental Promedio (180 citas)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyPreset(400, 1800, 32)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-teal-500 text-xs font-semibold text-slate-700 transition-colors"
+            >
+              Centro Multiespecialidad (400 citas)
+            </button>
+          </div>
         </div>
 
-        {/* Calculator Card Container */}
-        <div className="max-w-5xl mx-auto bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden grid grid-cols-1 lg:grid-cols-12">
+        {/* Calculator Grid */}
+        <div className="max-w-5xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12">
           
           {/* Sliders Input Panel (7 cols) */}
           <div className="lg:col-span-7 p-6 sm:p-10 flex flex-col justify-between space-y-8">
@@ -71,18 +99,18 @@ export function RoiCalculator() {
               <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <Calculator className="w-5 h-5 text-teal-600" />
-                  <h3 className="font-bold text-slate-900 text-lg">Parámetros de tu Consultorio</h3>
+                  <h3 className="font-bold text-slate-900 text-base">Parámetros de tu Consultorio</h3>
                 </div>
-                <span className="text-xs text-slate-400 font-medium">Valores en Pesos Mexicanos (MXN)</span>
+                <span className="text-xs text-slate-500 font-medium">Pesos Mexicanos (MXN)</span>
               </div>
 
               {/* Slider 1: Consultas al mes */}
               <div className="space-y-3 mb-8">
                 <div className="flex items-center justify-between">
-                  <label htmlFor={monthlyAppointmentsId} className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                    <span>Consultas programadas al mes</span>
+                  <label htmlFor={monthlyAppointmentsId} className="text-sm font-bold text-slate-800">
+                    Consultas programadas al mes
                   </label>
-                  <span className="text-base font-extrabold text-teal-700 bg-teal-50 px-3 py-1 rounded-lg border border-teal-200">
+                  <span className="text-sm font-bold text-teal-700 bg-teal-50 px-3 py-1 rounded-lg border border-teal-200 tabular-nums">
                     {monthlyAppointments} citas
                   </span>
                 </div>
@@ -97,8 +125,8 @@ export function RoiCalculator() {
                   className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600 focus:outline-none"
                 />
                 <div className="flex justify-between text-[11px] text-slate-400 font-medium">
-                  <span>30 citas (Consultorio individual)</span>
-                  <span>600 citas (Clínica multiespecialidad)</span>
+                  <span>30 citas</span>
+                  <span>600 citas</span>
                 </div>
               </div>
 
@@ -106,9 +134,9 @@ export function RoiCalculator() {
               <div className="space-y-3 mb-8">
                 <div className="flex items-center justify-between">
                   <label htmlFor={averageTicketId} className="text-sm font-bold text-slate-800">
-                    Ticket promedio por consulta / procedimiento
+                    Costo promedio por consulta / tratamiento
                   </label>
-                  <span className="text-base font-extrabold text-teal-700 bg-teal-50 px-3 py-1 rounded-lg border border-teal-200">
+                  <span className="text-sm font-bold text-teal-700 bg-teal-50 px-3 py-1 rounded-lg border border-teal-200 tabular-nums">
                     {formatMxn(averageTicket)}
                   </span>
                 </div>
@@ -123,19 +151,19 @@ export function RoiCalculator() {
                   className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600 focus:outline-none"
                 />
                 <div className="flex justify-between text-[11px] text-slate-400 font-medium">
-                  <span>$400 MXN (General)</span>
-                  <span>$4,000 MXN (Especialidad / Cirugía)</span>
+                  <span>$400 MXN</span>
+                  <span>$4,000 MXN</span>
                 </div>
               </div>
 
               {/* Slider 3: Tasa de inasistencia actual */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label htmlFor={noShowRateId} className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                    <span>Tasa de inasistencia (No-Shows) actual</span>
+                  <label htmlFor={noShowRateId} className="text-sm font-bold text-slate-800">
+                    Tasa de inasistencia actual (No-Shows)
                   </label>
-                  <span className="text-base font-extrabold text-rose-700 bg-rose-50 px-3 py-1 rounded-lg border border-rose-200">
-                    {noShowRate}% no asiste
+                  <span className="text-sm font-bold text-rose-700 bg-rose-50 px-3 py-1 rounded-lg border border-rose-200 tabular-nums">
+                    {noShowRate}% no se presenta
                   </span>
                 </div>
                 <input
@@ -149,79 +177,78 @@ export function RoiCalculator() {
                   className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-rose-600 focus:outline-none"
                 />
                 <div className="flex justify-between text-[11px] text-slate-400 font-medium">
-                  <span>10% (Bajo control)</span>
-                  <span>28% (Promedio México)</span>
+                  <span>10% (Bajo)</span>
+                  <span>28% (Promedio en México)</span>
                   <span>45% (Crítico)</span>
                 </div>
               </div>
             </div>
 
-            {/* Explanatory notes */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 text-xs text-slate-600 space-y-1.5">
-              <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+            {/* Reassurance note */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-600 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-slate-800">
                 <ShieldCheck className="w-4 h-4 text-teal-600" />
-                <span>¿Cómo logramos reducir el 80% de inasistencias?</span>
+                <span>¿Por qué funciona el 80% de reducción?</span>
               </div>
               <p className="text-slate-500 leading-relaxed">
-                Al solicitar un anticipo simbólico de $200 a $500 MXN mediante Mercado Pago y enviar recordatorios por WhatsApp interactivo 24h y 2h antes, el compromiso del paciente aumenta drásticamente.
+                Un anticipo de $200 a $500 MXN genera compromiso formal del paciente. Si además recibe recordatorios automáticos interactivos 24h y 2h antes por WhatsApp, las ausencias caen a menos del 5%.
               </p>
             </div>
           </div>
 
-          {/* Result Highlight Panel (5 cols) */}
-          <div className="lg:col-span-5 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950 text-white p-6 sm:p-10 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-slate-800">
+          {/* Results Panel (5 cols) */}
+          <div className="lg:col-span-5 bg-slate-900 text-white p-6 sm:p-10 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-slate-800">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-500/20 text-teal-300 text-xs font-semibold mb-4 border border-teal-500/30">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Impacto Financiero Estimado</span>
+              <div className="text-xs font-bold uppercase tracking-wider text-teal-400 mb-2">
+                Resultado de Recuperación
               </div>
 
-              {/* Monthly Pesos Recovered */}
+              {/* Big recovered amount */}
               <div className="mb-6">
-                <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold block mb-1">
+                <span className="text-xs text-slate-400 block mb-1">
                   Pesos Mensuales Recuperados
                 </span>
-                <div className="text-3xl sm:text-4xl font-extrabold text-emerald-400 tracking-tight">
+                <div className="text-3xl sm:text-4xl font-extrabold text-emerald-400 tracking-tight tabular-nums">
                   {formatMxn(monthlyRecoveredMxn)}
                 </div>
                 <p className="text-xs text-slate-300 mt-1">
-                  Equivalente a <strong className="text-white font-bold">+{recoveredAppointments} pacientes</strong> que sí acuden a su cita cada mes.
+                  Recuperas aproximadamente <strong className="text-white font-bold tabular-nums">+{recoveredAppointments} pacientes</strong> en el consultorio cada mes.
                 </p>
               </div>
 
-              {/* Detailed Breakdown */}
-              <div className="space-y-3.5 pt-4 border-t border-slate-800/90 text-sm">
+              {/* Financial Breakdown */}
+              <div className="space-y-3 pt-4 border-t border-slate-800 text-xs sm:text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Pérdida actual sin IA:</span>
-                  <span className="font-semibold text-rose-400 line-through">
+                  <span className="text-slate-400">Pérdida actual por no-shows:</span>
+                  <span className="font-semibold text-rose-400 tabular-nums">
                     {formatMxn(lostRevenueMxn)}/mes
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Costo Plan Clínica Pro:</span>
-                  <span className="font-semibold text-slate-300">
+                  <span className="text-slate-400">Costo mensual Plan Clínica Pro:</span>
+                  <span className="font-semibold text-slate-300 tabular-nums">
                     -{formatMxn(subscriptionCostMxn)}/mes
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800 font-medium">
-                  <span className="text-white font-semibold">Ganancia Neta Extra:</span>
-                  <span className="text-emerald-400 font-extrabold text-base">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                  <span className="text-white font-bold">Ganancia Neta Extra:</span>
+                  <span className="text-emerald-400 font-extrabold text-base tabular-nums">
                     +{formatMxn(netMonthlyProfit)}/mes
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-slate-400">Retorno Anual Proyectado:</span>
-                  <span className="text-teal-300 font-bold">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Recuperación anual estimada:</span>
+                  <span className="text-teal-300 font-bold tabular-nums">
                     {formatMxn(annualRecoveredMxn)} / año
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between bg-teal-900/40 p-2.5 rounded-xl border border-teal-800/60 mt-3">
-                  <span className="text-xs text-teal-200">ROI Estimado:</span>
-                  <span className="text-sm font-extrabold text-teal-300 flex items-center gap-1">
+                <div className="flex items-center justify-between bg-teal-950/80 p-2.5 rounded-xl border border-teal-800/80 mt-3">
+                  <span className="text-xs text-teal-200">Retorno de Inversión (ROI):</span>
+                  <span className="text-sm font-extrabold text-teal-300 flex items-center gap-1 tabular-nums">
                     <TrendingUp className="w-4 h-4" />
                     +{roiPercentage}%
                   </span>
@@ -229,17 +256,17 @@ export function RoiCalculator() {
               </div>
             </div>
 
-            {/* Bottom CTA in ROI */}
+            {/* CTA */}
             <div className="mt-8 pt-6 border-t border-slate-800">
               <a
                 href="#precios"
-                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl shadow-lg transition-all text-sm"
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-sm transition-colors text-sm"
               >
-                <span>Comenzar a Recuperar Citas</span>
+                <span>Ver Planes y Activar Escudo</span>
                 <ArrowRight className="w-4 h-4" />
               </a>
               <p className="text-center text-[11px] text-slate-400 mt-2">
-                Prueba de 14 días sin costo • Cancela cuando quieras
+                Sin contratos forzosos • Factura CFDI 4.0 mensual
               </p>
             </div>
 
