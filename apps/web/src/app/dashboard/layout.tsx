@@ -1,6 +1,7 @@
 import { TenantProvider } from '../../context/TenantContext';
 import { DashboardShell } from '../../components/dashboard/DashboardShell';
 import { AuthGuard } from '../../components/auth/AuthGuard';
+import { OnboardingGate } from '../../components/auth/OnboardingGate';
 
 export default function DashboardLayout({
   children,
@@ -10,7 +11,9 @@ export default function DashboardLayout({
   return (
     <TenantProvider>
       <AuthGuard>
-        <DashboardShell>{children}</DashboardShell>
+        <OnboardingGate>
+          <DashboardShell>{children}</DashboardShell>
+        </OnboardingGate>
       </AuthGuard>
     </TenantProvider>
   );

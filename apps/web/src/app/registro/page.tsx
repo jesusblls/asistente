@@ -47,7 +47,9 @@ export default function RegistroPage() {
         password,
       });
       setSession(session.token, session.user, session.tenant);
-      router.replace('/dashboard');
+      // La cuenta nace vacía: sin doctores, horarios ni precios la IA no tiene
+      // con qué atender, así que el primer destino es la configuración inicial.
+      router.replace('/onboarding');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error de conexión con el servidor');
     } finally {

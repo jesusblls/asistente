@@ -10,6 +10,77 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(web): asistente de configuración inicial
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Con el registro público ya funcionando, quedaba el hueco que lo hacía inútil:
+una clínica recién creada aterrizaba en un panel vacío, sin doctores,
+horarios, precios ni preguntas frecuentes. Si en ese estado conectaba WhatsApp
+o su número, el agente **contestaría el teléfono sin poder ayudar a nadie**: no
+tendría un solo horario que ofrecer ni un precio que cotizar. La primera
+impresión del producto sería un asistente inservible.
+
+Se agregó el asistente de configuración en cinco pasos —clínica, especialista,
+tratamiento, preguntas frecuentes y cierre— en `/onboarding`, con
+`GET`/`PATCH /api/onboarding` como respaldo.
+
+Decisiones que vale la pena dejar escritas:
+
+1. **El avance se guarda paso a paso en `Tenant.onboardingStep`.** Quien cierra
+   el navegador a la mitad retoma donde iba, no desde cero. Se comprobó en el
+   navegador: tras un reinicio del componente, el asistente volvió al paso 2
+   con el 1 ya marcado.
+2. **No se puede dar por terminado sin un especialista y un tratamiento.** El
+   `PATCH` con `completed: true` los cuenta en base de datos y responde 400 si
+   faltan. "Terminado" sin eso sería una mentira que el paciente descubre en la
+   primera llamada, no un dato de configuración pendiente.
+3. **Quien vuelve con especialistas ya dados de alta puede seguir de largo.**
+   Los pasos 2 y 3 solo exigen capturar algo si el contador está en cero; si ya
+   hay registros y el campo está vacío, se avanza sin crear duplicados.
+4. **Las preguntas frecuentes se ofrecen como sugerencias de un clic**, con
+   texto genérico y editable, en vez de pedir que las escriban desde cero. Dos
+   vienen preseleccionadas. Es el paso donde más gente abandonaría, y una
+   respuesta genérica que la clínica corrige después es mejor que ninguna,
+   porque sin FAQs el agente improvisa.
+5. **El guardián del panel no bloquea el render.** `OnboardingGate` consulta
+   `/auth/me` y redirige si hace falta, pero muestra el panel mientras tanto:
+   la mayoría de las clínicas ya terminaron, y hacerlas esperar una petición en
+   cada carga sería cobrarles a todas el costo de unas pocas. Un fallo de red
+   tampoco saca a nadie de su panel.
+
+El editor de horarios es el mismo componente del panel (`ScheduleEditor`), así
+que el horario capturado aquí entra estructurado desde el primer día.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/onboarding.ts` (nuevo) — estado y avance, con la validación de cierre.
+- `apps/api/src/routes/admin/index.ts` — registra `onboardingRoutes`.
+- `apps/web/src/app/onboarding/page.tsx` (nuevo) — el asistente de cinco pasos.
+- `apps/web/src/components/auth/OnboardingGate.tsx` (nuevo) — redirige a quien no terminó.
+- `apps/web/src/app/dashboard/layout.tsx` — envuelve el panel con el guardián.
+- `apps/web/src/app/registro/page.tsx` — el alta aterriza en `/onboarding`, no en el panel.
+
+### Verificación
+Recorrido completo en el navegador real, desde cero: se creó la cuenta
+"Clinica Sonrisa Coyoacan" en `/registro`, que aterrizó directo en el paso 1 ya
+precargado con el nombre y el saludo generado; se capturó dirección,
+especialista con horario de lunes a sábado, tratamiento de $890 MXN y tres
+preguntas frecuentes, y se cerró el asistente. En base de datos quedó
+`onboardingStep: null` con `onboardingCompletedAt` puesto, y
+`SchedulerService.getAvailableSlots` devolvió **13 espacios el sábado** —el día
+que se marcó en el asistente— y **0 el domingo**, que no se marcó: la agenda
+real refleja lo capturado. El guardián se probó entrando con una cuenta que
+nunca terminó el asistente, y la sesión aterrizó en `/onboarding` en vez del
+panel vacío. Suites: API 11/11, agente 20/20, estrés 44/44, y
+`npm run build --workspaces` sin errores.
+
+### Pendientes derivados
+- El asistente captura un especialista y un tratamiento; agregar el resto se hace desde el panel. Un paso de carga masiva ayudaría a clínicas con catálogos largos.
+- Falta el aviso de "tu prueba vence en N días" en el panel; `GET /api/plan` ya expone el dato.
+
+---
+
 ## [2026-09-16] feat(api): aplicar los cupos del plan contratado
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`
