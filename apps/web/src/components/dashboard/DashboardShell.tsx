@@ -9,6 +9,7 @@ import {
   Calendar,
   Users,
   Contact,
+  CreditCard,
   Settings,
   Sparkles,
   ExternalLink,
@@ -144,6 +145,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     { href: '/dashboard/patients', label: 'Pacientes', icon: Contact },
     { href: '/dashboard/team', label: 'Doctores y Servicios', icon: Users },
     { href: '/dashboard/settings', label: 'Canales y Telefonía (+52)', icon: Settings },
+    { href: '/dashboard/suscripcion', label: 'Plan y Facturación', icon: CreditCard },
     // En vivo solo ADMIN puede consultar la bitácora; en Demo se muestra a
     // todos porque el cumplimiento es parte de la presentación comercial.
     ...(mode === 'demo' || sessionUser?.role === 'ADMIN'

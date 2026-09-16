@@ -160,7 +160,7 @@ export function TrialBanner() {
 
       <div className="flex items-center gap-3 shrink-0">
         <Link
-          href="/#precios"
+          href="/dashboard/suscripcion"
           className={`inline-flex items-center gap-1 font-bold underline whitespace-nowrap ${
             suspendida ? 'text-red-700 hover:text-red-900' : 'text-teal-700 hover:text-teal-900'
           }`}

@@ -10,6 +10,55 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(web): página para contratar el plan
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La pantalla donde la clínica contrata: plan actual con su consumo, selector de
+ciclo, los tres planes con sus cupos reales y el botón que lleva a Mercado
+Pago. Se agregó "Plan y Facturación" al menú lateral, y el aviso de prueba por
+vencer dejó de apuntar a `/#precios` —la sección comercial de la landing, que
+solo informa— para llevar aquí, donde sí se puede pagar.
+
+Tres detalles que importan en una pantalla de cobro:
+
+1. **El importe anual se dice sin ambigüedad.** La landing anuncia "$2,799 MXN
+   / mes · Facturado anualmente", que es correcto pero no dice cuánto se carga
+   de una sola vez. Aquí se muestran las dos cifras: el precio por mes y
+   "Se cobra $33,588 una vez al año". Nadie debería descubrir el importe real
+   hasta la pantalla de Mercado Pago.
+2. **Los cupos de cada tarjeta salen del mismo catálogo que aplica el
+   backend**, no de una lista escrita a mano en el componente. Si mañana cambia
+   un límite, la tarjeta y el 402 que recibe la clínica no pueden discrepar.
+3. **Sin credencial se avisa, no se redirige.** En desarrollo el link es
+   simulado; en vez de mandar a una página que no va a cobrar nada, la página
+   lo dice con todas sus letras.
+
+En Modo Demo la página no muestra planes ni botones: es una clínica de ejemplo
+y no hay una cuenta que cobrar. Mostrar ahí un botón de contratar invitaría a
+pagar por una cuenta ficticia durante una demostración de ventas.
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/suscripcion/page.tsx` (nuevo) — estado actual, selector de ciclo, planes, contratación y cancelación.
+- `apps/web/src/components/dashboard/DashboardShell.tsx` — "Plan y Facturación" en el menú.
+- `apps/web/src/components/dashboard/TrialBanner.tsx` — "Ver planes" apunta a la página de contratación.
+
+### Verificación
+En el navegador real con una clínica en prueba recién registrada: la página
+muestra "Prueba gratuita · te quedan 14 días" con el consumo (1 especialista,
+0 citas, 0 minutos) y los tres planes con los cupos que el backend aplica
+("1 especialista", "250 citas al mes", "Sin telefonía con IA" para
+Consultorio). El selector anual cambia a "$2,799 MXN / mes · Se cobra $33,588
+una vez al año". Al pulsar Contratar apareció el aviso de modo desarrollo sin
+redirigir, y en base de datos quedó el intento registrado con el importe anual
+correcto ($33,588) **sin activar el plan**: estado `TRIALING` y
+`currentPeriodEnd` en null, con su fila de auditoría `CHECKOUT_CREADO`. En Modo
+Demo la página solo explica que la contratación es de Modo En Vivo. Suites:
+API 12/12, agente 20/20, estrés 44/44, e2e 5/5, build sin errores.
+
+---
+
 ## [2026-09-16] feat(payments): cobro autoservicio con Mercado Pago
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`
