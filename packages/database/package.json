@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@asistente/observability": "*",
+    "@asistente/shared-types": "*",
     "@prisma/client": "^6.4.1",
     "ioredis": "^6.0.0"
   },

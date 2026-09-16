@@ -17,6 +17,21 @@ model Tenant {
   emergencyInstructions String?
   welcomeMessage        String?
   isActive              Boolean           @default(true)
+
+  /// Plan contratado: trial | consultorio | clinica-pro | cadenas.
+  /// El catálogo de cupos vive en `@asistente/shared-types` (PLANS) para que
+  /// el precio anunciado y el límite aplicado no puedan separarse.
+  planSlug              String            @default("trial")
+  /// TRIALING | ACTIVE | PAST_DUE | CANCELED | EXPIRED
+  subscriptionStatus    String            @default("TRIALING")
+  /// Fin de la prueba gratuita. Null en cuentas que nunca estuvieron en prueba.
+  trialEndsAt           DateTime?
+
+  /// Paso del asistente de configuración inicial; null cuando ya terminó.
+  /// Sin esto la IA atendería pacientes con horarios y precios inventados.
+  onboardingStep        String?
+  onboardingCompletedAt DateTime?
+
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
@@ -28,6 +43,29 @@ model Tenant {
   conversations         Conversation[]
   channelConfigs        ChannelConfig[]
   faqItems              FaqItem[]
+  usageCounters         UsageCounter[]
+}
+
+/// Consumo acumulado por clínica y periodo, para aplicar los cupos del plan.
+///
+/// Solo se persiste aquí lo que no tiene otra fuente de verdad: los segundos
+/// de telefonía, que se pierden cuando la llamada cuelga. Las citas del mes
+/// se cuentan directo en `Appointment` — duplicarlas aquí abriría la puerta a
+/// que el contador y la realidad se separen tras un borrado o un reagendado.
+model UsageCounter {
+  id        String   @id @default(cuid())
+  tenantId  String
+  /// VOICE_SECONDS
+  metric    String
+  /// Mes natural en America/Mexico_City, formato "2026-09".
+  period    String
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, metric, period])
+  @@index([tenantId, period])
 }
 
 model User {

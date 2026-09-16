@@ -17,3 +17,19 @@ export {
   type AuditEntityType,
   type AuditEntry,
 } from './audit.js';
+export {
+  PlanLimitError,
+  assertCanAddDoctor,
+  assertCanBookAppointment,
+  assertCanTakeCall,
+  countAppointmentsThisPeriod,
+  getPlanSummary,
+  getUsage,
+  isPlanSlug,
+  recordUsage,
+  resolveTenantPlan,
+  usagePeriod,
+  usagePeriodStart,
+  type TenantPlanFields,
+  type TenantPlanState,
+} from './plan.js';

@@ -10,6 +10,80 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(db): dar respaldo real a los planes de suscripción
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Una auditoría del producto desde la perspectiva del cliente que paga reveló
+que **los tres planes de la landing eran únicamente texto**. `Tenant` no tenía
+un solo campo de plan, suscripción ni vigencia, y ninguna ruta de la API medía
+o limitaba nada: un cliente de Consultorio Individual ($1,499, "1 doctor, 250
+citas al mes, sin telefonía") tenía exactamente el mismo acceso ilimitado que
+uno de Cadenas & Hospitales ($7,999). Cada límite anunciado en `Pricing.tsx`
+era falso.
+
+Este cambio construye la base que faltaba, sin aplicarla todavía en las rutas
+(eso va en su propio commit, para no mezclar el modelo con su enforcement):
+
+- **Catálogo de planes en `@asistente/shared-types`** (`PLANS`): precios y
+  cupos de los cuatro planes —`trial`, `consultorio`, `clinica-pro`,
+  `cadenas`— en una sola fuente de verdad que leen landing, panel y backend.
+  Se puso aquí y no en `database` a propósito: la landing importa el catálogo
+  sin arrastrar Prisma, y así el precio que se anuncia y el cupo que se aplica
+  no pueden separarse con el tiempo.
+- **Columnas nuevas en `Tenant`**: `planSlug`, `subscriptionStatus`,
+  `trialEndsAt`, más `onboardingStep`/`onboardingCompletedAt` (que usará el
+  asistente de configuración inicial).
+- **`UsageCounter`**: consumo por clínica, métrica y mes. Solo guarda los
+  segundos de telefonía, que se pierden al colgar. Las citas del mes se
+  cuentan directo en `Appointment` — duplicarlas en un contador abriría la
+  puerta a que el número y la realidad se separen tras un borrado o un
+  reagendado.
+- **`packages/database/src/plan.ts`**: resuelve el plan efectivo y aplica los
+  cupos (`assertCanAddDoctor`, `assertCanBookAppointment`,
+  `assertCanTakeCall`), acumula consumo y arma el resumen para el panel.
+
+Tres decisiones que vale la pena dejar escritas:
+
+1. **Un plan desconocido degrada a `trial`, no revienta.** Ante un dato
+   corrupto en base de datos se prefiere el cupo más chico; equivocarse hacia
+   el cupo más amplio regalaría el producto.
+2. **La voz se verifica al inicio de la llamada, no al final.** Cortar a la
+   mitad a un paciente que está describiendo un dolor sería peor que no
+   contestarle, así que el último minuto puede rebasar el cupo incluido.
+3. **El periodo de consumo es el mes natural de `America/Mexico_City`.** Una
+   llamada de las 19:00 del 30 de septiembre en CDMX es la 01:00 del 1 de
+   octubre en UTC; cargarla a octubre adelantaría el corte de minutos un día
+   entero para toda clínica que trabaje de tarde.
+
+La migración asigna `cadenas`/`ACTIVE` a las clínicas que ya existían: son
+cuentas dadas de alta a mano por la plataforma, no prospectos en prueba, y
+aplicarles los cupos nuevos les habría cortado el servicio.
+
+### Archivos tocados
+- `packages/shared-types/src/index.ts` — catálogo `PLANS`, tipos `PlanSlug`, `PlanLimits`, `SubscriptionStatus`, `UsageMetric` y `TRIAL_DURATION_DAYS`.
+- `packages/database/prisma/schema.prisma` — campos de plan/suscripción/onboarding en `Tenant` y modelo `UsageCounter`.
+- `packages/database/prisma/migrations/0003_tenant_plan_usage/migration.sql` (nuevo) — migración con el respaldo de las cuentas existentes.
+- `packages/database/src/plan.ts` (nuevo) — resolución de plan, cupos, consumo y resumen.
+- `packages/database/src/index.ts` — exporta la superficie de planes.
+- `packages/database/package.json` — agrega `@asistente/shared-types` (paquete de solo tipos, sin ciclo de dependencias).
+- `apps/api/src/plan-test-suite.ts` (nuevo) — 19 pruebas de cupos, vigencia de prueba y consumo.
+
+### Verificación
+`npm run db:migrate` aplicó `0003` limpio y `prisma migrate diff` reporta
+"No difference detected" entre el esquema y la base real. Builds de
+`@asistente/shared-types` y `@asistente/database` limpios. La suite nueva
+pasa 19/19, incluyendo los casos de borde que importan: el cambio de mes en
+huso de CDMX, la prueba vencida, el plan corrupto, el moroso con plan alto,
+el especialista dado de baja que libera cupo, y los 299 vs 301 minutos.
+
+### Pendientes derivados
+- Los cupos todavía no se aplican en las rutas; eso entra en el commit siguiente.
+- No hay cobro real: `subscriptionStatus` se mueve a mano hasta que se integre la pasarela de suscripciones.
+
+---
+
 ## [2026-09-16] feat(api): directorio de pacientes con historial
 
 **Autor:** Claude Sonnet 5 · **Commit:** `c8022c2`
