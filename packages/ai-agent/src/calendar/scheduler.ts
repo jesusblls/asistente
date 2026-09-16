@@ -1,4 +1,10 @@
-import { db, appointmentSlotKey, recordAudit, type AuditActor } from '@asistente/database';
+import {
+  assertCanBookAppointment,
+  db,
+  appointmentSlotKey,
+  recordAudit,
+  type AuditActor,
+} from '@asistente/database';
 import { createLogger } from '@asistente/observability';
 import { addMinutes } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
@@ -304,6 +310,12 @@ export class SchedulerService {
     if (!/^\+52\d{10}$/.test(patientPhoneE164)) {
       throw new Error('El teléfono del paciente debe ser un número mexicano E.164 válido (+52XXXXXXXXXX)');
     }
+
+    // Cupo mensual de citas del plan. Se verifica aquí y no en la ruta HTTP
+    // porque por este método pasan los dos caminos de agendado: el panel y la
+    // herramienta `agendar_cita` del agente. Ponerlo en la ruta habría dejado
+    // al agente agendando sin límite, que es justo por donde entra el volumen.
+    await assertCanBookAppointment(tenantId);
 
     return db.$transaction(async (tx) => {
       const tenant = await tx.tenant.findFirst({ where: { id: tenantId, isActive: true } });

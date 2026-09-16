@@ -10,6 +10,62 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(api): aplicar los cupos del plan contratado
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El commit del modelo de planes dejó los cupos definidos pero sin aplicar. Aquí
+se conectan, y con eso los tres planes de la landing dejan de ser idénticos:
+
+- **Especialistas** — `POST /api/tenants/:id/doctors` verifica `assertCanAddDoctor`.
+- **Citas del mes** — la verificación vive dentro de `SchedulerService.bookAppointment`, no en la ruta HTTP. Por ese método pasan los **dos** caminos de agendado: el panel y la herramienta `agendar_cita` del agente. Ponerlo en la ruta habría dejado al agente agendando sin límite, que es justo por donde entra el volumen.
+- **Voz** — se verifica al recibir el `start` del stream y se cargan los segundos al colgar, tanto en el evento `stop` como en el `close` del socket: una llamada que se cae sin `stop` también consumió minutos, y no cobrarla sería una vía trivial para rebasar el cupo.
+- **Resumen** — `GET /api/plan` devuelve plan, estado, días de prueba restantes, cupos, consumo del periodo y el catálogo completo, para que el panel pueda avisar antes de que la clínica se tope con un rechazo.
+
+`PlanLimitError` se traduce a **HTTP 402 (Payment Required)**, no a 403: el
+panel necesita distinguir "no te alcanza el plan" —donde ofrece mejorarlo— de
+"no tienes permiso", que no se arregla pagando. La respuesta incluye
+`planSlug`, `limit` y `current`.
+
+**El cupo de voz falla abierto ante errores de infraestructura.** Solo un
+`PlanLimitError` cuelga la llamada; si la verificación no se pudo hacer (base
+de datos caída, fila de clínica ilegible), se registra el error y la llamada
+**continúa**. Dejar sin línea a un paciente que marca por un dolor es un daño
+mayor que regalar unos minutos, y un corte de base de datos no es culpa de
+quien está llamando. Esto se descubrió al romper 5 pruebas de voz con una
+versión anterior que colgaba ante cualquier excepción — el `catch` amplio
+habría rechazado llamadas reales en el primer hipo de la base de datos.
+
+Por la misma lógica, `chargeVoiceUsage` nunca hace fallar el cierre de la
+llamada: perder unos segundos de medición es preferible a dejar una sesión de
+voz colgada.
+
+### Archivos tocados
+- `apps/api/src/lib/http.ts` — `PlanLimitError` → HTTP 402 con el detalle del cupo.
+- `apps/api/src/routes/admin/doctors.ts` — cupo de especialistas en el alta.
+- `apps/api/src/routes/admin/plan.ts` (nuevo) — `GET /api/plan`.
+- `apps/api/src/routes/admin/index.ts` — registra `planRoutes`.
+- `apps/api/src/services/voiceStreamService.ts` — cupo de voz al iniciar y medición al colgar.
+- `packages/ai-agent/src/calendar/scheduler.ts` — cupo mensual de citas en `bookAppointment`.
+- `apps/api/src/plan-test-suite.ts` — prueba de que el agente tampoco rebasa el cupo.
+
+### Verificación
+Contra la API en vivo con una clínica creada por el registro público: el
+resumen reportó plan de prueba con 14 días y 4 de 5 especialistas; el quinto
+entró con 201 y el sexto fue rechazado con **402** y el mensaje "Tu plan Prueba
+gratuita incluye 5 especialistas. Mejora de plan para agregar más." Marcando
+`trialEndsAt` en el pasado, el resumen pasó a `isSuspended: true` con todos los
+cupos en cero y el alta devolvió 402 con "Tu prueba gratuita terminó". Suites:
+API 11/11 (79/79 de voz tras corregir el fallo abierto), agente 20/20, estrés
+44/44, y `npm run build --workspaces` limpio.
+
+### Pendientes derivados
+- No hay cobro real: `subscriptionStatus` se mueve a mano hasta integrar la pasarela de suscripciones. Una clínica cuya prueba vence queda suspendida sin forma de pagar desde el producto.
+- El panel todavía no muestra el aviso de prueba por vencer ni el consumo; `GET /api/plan` ya expone todo lo necesario.
+
+---
+
 ## [2026-09-16] feat(api): editar especialistas, tratamientos y FAQs
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`

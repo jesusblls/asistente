@@ -19,6 +19,7 @@ import {
   usagePeriodStart,
 } from '@asistente/database';
 import { PLANS, TRIAL_DURATION_DAYS } from '@asistente/shared-types';
+import { SchedulerService } from '@asistente/ai-agent';
 
 async function runPlanTests() {
   let passed = 0;
@@ -231,6 +232,25 @@ async function runPlanTests() {
     assert(
       citasExcedidas !== null && citasExcedidas.limit === limiteTrial,
       'Al alcanzar el cupo mensual de citas se rechaza la siguiente'
+    );
+
+    // El cupo vive dentro de `bookAppointment` y no en la ruta HTTP, porque por
+    // ahí pasan los dos caminos de agendado: el panel y la herramienta
+    // `agendar_cita` del agente. Esta prueba es la que fija esa decisión.
+    const porElAgente = await expectPlanLimit(() =>
+      SchedulerService.bookAppointment({
+        tenantId: consultorio.id,
+        patientFullName: 'Paciente Sobre Cupo',
+        patientPhone: '+525588887777',
+        doctorId: doctorConsultorio.id,
+        serviceId: servicio.id,
+        startTimeIso: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        auditActor: { type: 'AI_AGENT' },
+      })
+    );
+    assert(
+      porElAgente !== null,
+      'El agente tampoco puede rebasar el cupo: el límite vive en SchedulerService, no en la ruta HTTP'
     );
 
     // ---------------------------------------------------------------------

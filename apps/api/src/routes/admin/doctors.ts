@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db, diffChanges, recordAudit } from '@asistente/database';
+import { assertCanAddDoctor, db, diffChanges, recordAudit } from '@asistente/database';
 import { actorFromRequest } from '../../lib/audit.js';
 import {
   optionalString,
@@ -32,6 +32,11 @@ export async function doctorRoutes(fastify: FastifyInstance) {
           ? requireMexicanPhone(body.phone, 'Teléfono del doctor')
           : null;
       const email = optionalString(body.email, 'Email', 200) || null;
+
+      // Cupo del plan: se verifica antes de validar el resto para que el
+      // mensaje que ve el usuario sea "tu plan incluye N especialistas" y no
+      // un error de formato de un campo que al final no iba a poder guardar.
+      await assertCanAddDoctor(tenantId);
 
       // Sin horario capturado el especialista cae en el horario por defecto
       // del `SchedulerService` (L-J 9-18, V 9-17, S 10-14), que casi nunca es

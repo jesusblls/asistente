@@ -1,5 +1,5 @@
 import { FastifyError, FastifyInstance, FastifyRequest, FastifySchemaValidationError } from 'fastify';
-import { Prisma } from '@asistente/database';
+import { PlanLimitError, Prisma } from '@asistente/database';
 import { normalizeMexicanPhone } from '@asistente/ai-agent';
 import { AuthUser } from './auth.js';
 
@@ -170,6 +170,18 @@ export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof HttpError) {
       return reply.status(error.statusCode).send({ error: error.message });
+    }
+
+    // Cupo del plan agotado. Se responde 402 (Payment Required) y no 403 para
+    // que el panel distinga "no te alcanza el plan" —donde ofrece mejorar— de
+    // "no tienes permiso", que no se arregla pagando.
+    if (error instanceof PlanLimitError) {
+      return reply.status(402).send({
+        error: error.message,
+        planSlug: error.planSlug,
+        limit: error.limit,
+        current: error.current,
+      });
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {

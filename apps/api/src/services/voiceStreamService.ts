@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { db } from '@asistente/database';
+import { PlanLimitError, assertCanTakeCall, db, recordUsage } from '@asistente/database';
 import { OmnichannelAgent, normalizeMexicanPhone } from '@asistente/ai-agent';
 import { createLogger, maskPhone } from '@asistente/observability';
 import { WhatsAppService } from './whatsappService.js';
@@ -80,6 +80,27 @@ interface TwilioStreamMessage {
 /** Mensaje de seguimiento post-llamada (mismo texto que la versión anterior). */
 export function buildVoiceFollowUpMessage(tenant: VoiceTenant): string {
   return `🦷 *${tenant.name}*\n\n¡Muchas gracias por comunicarte con nosotros por teléfono!\n\nSi necesitas agendar o consultar cualquier duda sobre tus tratamientos, puedes escribirnos por este mismo chat de WhatsApp las 24 horas del día.`;
+}
+
+/**
+ * Carga al plan los segundos que duró la llamada.
+ *
+ * Nunca hace fallar el cierre de la llamada: si el contador no se pudo
+ * escribir, se registra y se sigue. Perder unos segundos de medición es
+ * preferible a dejar una sesión de voz colgada por un error de base de datos.
+ */
+async function chargeVoiceUsage(session: VoiceCallSession, logger: VoiceLogger): Promise<void> {
+  try {
+    const seconds = Math.round(session.getStats().durationMs / 1000);
+    if (seconds <= 0) return;
+    await recordUsage(session.tenant.id, 'VOICE_SECONDS', seconds);
+  } catch (error) {
+    logger.warn('No se pudo registrar el consumo de voz de la llamada', {
+      callSid: session.callSid,
+      tenantId: session.tenant.id,
+      err: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function resolveTenantFromDatabase(params: {
@@ -175,6 +196,36 @@ export class VoiceStreamService {
               });
               close(1008, 'tenant_not_found');
               return;
+            }
+
+            // Cupo de voz del plan. Se verifica al inicio de la llamada y no
+            // al final: cortar a medias a un paciente que está describiendo un
+            // dolor sería peor que no contestarle, así que el último minuto
+            // puede rebasar los incluidos.
+            //
+            // Solo un `PlanLimitError` cuelga la llamada. Cualquier otro fallo
+            // (base de datos caída, fila de clínica ilegible) se registra y se
+            // deja pasar: dejar sin línea a un paciente que marca por un dolor
+            // es un daño mayor que regalar unos minutos de voz, y un corte de
+            // base de datos no es culpa de quien está llamando.
+            try {
+              await assertCanTakeCall(tenant.id);
+            } catch (error) {
+              if (error instanceof PlanLimitError) {
+                logger.warn('Llamada rechazada por el cupo del plan', {
+                  callSid,
+                  tenantId: tenant.id,
+                  motivo: error.message,
+                });
+                close(1000, 'plan_limit_reached');
+                return;
+              }
+
+              logger.error(
+                'No se pudo verificar el cupo del plan; la llamada continúa',
+                error instanceof Error ? error : undefined,
+                { callSid, tenantId: tenant.id }
+              );
             }
 
             if (!isVoicePipelineEnabled({ stt, tts, config })) {
@@ -280,6 +331,7 @@ export class VoiceStreamService {
             session = null;
             if (active) {
               await active.handleStop();
+              await chargeVoiceUsage(active, logger);
             }
             close(1000, 'call_ended');
             break;
@@ -303,7 +355,9 @@ export class VoiceStreamService {
       const active = session;
       session = null;
       if (active) {
-        void active.handleStop();
+        // Una llamada que se cae sin evento 'stop' también consumió minutos:
+        // no cobrarla dejaría una vía trivial para rebasar el cupo del plan.
+        void active.handleStop().then(() => chargeVoiceUsage(active, logger));
       }
     });
   }
