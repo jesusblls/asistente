@@ -5,7 +5,7 @@ import { buildServer } from './server.js';
 process.env.JWT_SECRET ||= 'audit-test-secret-with-at-least-32-chars';
 process.env.META_WHATSAPP_TOKEN = '';
 process.env.META_PHONE_NUMBER_ID = '';
-process.env.GEMINI_API_KEY = '';
+process.env.DEEPSEEK_API_KEY = '';
 process.env.AUDIT_READ_THROTTLE_MS = String(10 * 60 * 1000);
 
 /**

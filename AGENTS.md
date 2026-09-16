@@ -20,7 +20,7 @@ Este documento es la **fuente de verdad canónica e integral** para cualquier ag
 4. [Modelo de Datos y Esquema Prisma (`schema.prisma`)](#4-modelo-de-datos-y-esquema-prisma-schemaprisma)
 5. [Motor de Inteligencia Artificial (`@asistente/ai-agent`)](#5-motor-de-inteligencia-artificial-asistenteai-agent)
    - [5.1 Capas de Decisión del Agente](#51-capas-de-decisión-del-agente)
-   - [5.2 Herramientas de Gemini 2.5 Flash (Tool Calling)](#52-herramientas-de-gemini-25-flash-tool-calling)
+   - [5.2 Herramientas de DeepSeek V4.1 Flash (Tool Calling)](#52-herramientas-de-deepseek-v41-flash-tool-calling)
    - [5.3 Motor de Respaldo Heurístico (13 Intenciones)](#53-motor-de-respaldo-heurístico-13-intenciones)
    - [5.4 Protocolo de Triaje Clínico en 3 Niveles](#54-protocolo-de-triaje-clínico-en-3-niveles)
    - [5.5 Motor de Calendario y Anti-Colisión](#55-motor-de-calendario-y-anti-colisión)
@@ -124,7 +124,7 @@ asistente/
 │       └── src/
 │           ├── index.ts       # Re-export de módulos
 │           ├── agent/
-│           │   └── geminiAgent.ts # OmnichannelAgent (Gemini 2.5 Flash + 13 fallbacks)
+│           │   └── deepseekAgent.ts # OmnichannelAgent (DeepSeek V4.1 Flash + 13 fallbacks)
 │           ├── calendar/
 │           │   └── scheduler.ts   # SchedulerService (disponibilidad, colisiones, reservas)
 │           ├── triage/
@@ -216,7 +216,7 @@ El esquema de base de datos (`packages/database/prisma/schema.prisma`) utiliza P
 
 ## 5. Motor de Inteligencia Artificial (`@asistente/ai-agent`)
 
-El agente principal es la clase `OmnichannelAgent` (`packages/ai-agent/src/agent/geminiAgent.ts`).
+El agente principal es la clase `OmnichannelAgent` (`packages/ai-agent/src/agent/deepseekAgent.ts`).
 
 ### 5.1 Capas de Decisión del Agente
 
@@ -231,8 +231,8 @@ Mensaje Entrante (Voz, WhatsApp, IG, FB, Web)
         └── NO
              │
              ▼
-[Capa 2: Motor Gemini 2.5 Flash con Tool Calling]
-   ¿Existe GEMINI_API_KEY configurada y funcional?
+[Capa 2: Motor DeepSeek V4.1 Flash con Tool Calling]
+   ¿Existe DEEPSEEK_API_KEY configurada y funcional?
         ├── SÍ ──► Bucle de Function Calling (hasta 5 iteraciones)
         │          Ejecuta herramientas sobre DB Prisma y devuelve respuesta final
         └── NO / Error de cuota / Fallo de red
@@ -243,9 +243,9 @@ Mensaje Entrante (Voz, WhatsApp, IG, FB, Web)
    consultas de citas reales y respuestas contextuales en español mexicano.
 ```
 
-### 5.2 Herramientas de Gemini 2.5 Flash (Tool Calling)
+### 5.2 Herramientas de DeepSeek V4.1 Flash (Tool Calling)
 
-Cuando Gemini 2.5 Flash procesa la conversación, dispone de 8 declaraciones de función oficiales:
+Cuando DeepSeek V4.1 Flash procesa la conversación, dispone de 8 declaraciones de función oficiales:
 
 1. **`consultar_disponibilidad`:**
    - *Parámetros:* `fecha` (YYYY-MM-DD, obligatorio), `servicioId` (opcional), `doctorId` (opcional), `preferenciaTurno` (`morning` | `afternoon` | `any`).
@@ -274,7 +274,7 @@ Cuando Gemini 2.5 Flash procesa la conversación, dispone de 8 declaraciones de 
 
 ### 5.3 Motor de Respaldo Heurístico (13 Intenciones)
 
-Si no se dispone de conexión a Google Gemini o falla el servicio externo, el agente activa su motor heurístico (`handleFallbackProcessing`), garantizando **cero tiempo de inactividad**:
+Si no se dispone de conexión a DeepSeek o falla el servicio externo, el agente activa su motor heurístico (`handleFallbackProcessing`), garantizando **cero tiempo de inactividad**:
 
 - **Intención 0: Urgencias Dentales Agudas:** Detecta dolor severo (nivel ≥ 7, abscesos, traumatismos) y canaliza con el cirujano maxilofacial o endodoncista el mismo día.
 - **Intención 1: Confirmación de Asistencia:** Detecta frases como `"asistencia"`, `"confirmo"`, `"sí confirmo"`, `"allá nos vemos"`. Actualiza la cita en BD y devuelve confirmación con dirección y valet parking.
@@ -456,7 +456,7 @@ Cualquier agente de IA que modifique o extienda este código debe cumplir con la
 6. **Resolución de URLs del Entorno:**
    - En el frontend, las peticiones HTTP deben consumir `process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'`, evitando URLs quemadas en código duro.
 7. **La Identidad del Paciente la Define el Canal, Nunca el Modelo:**
-   - Los argumentos que produce Gemini derivan del **texto libre del paciente**. Una herramienta que acepte un teléfono como parámetro permite que cualquiera dicte el número ajeno y lea o cancele la cita de otra persona.
+   - Los argumentos que produce el modelo derivan del **texto libre del paciente**. Una herramienta que acepte un teléfono como parámetro permite que cualquiera dicte el número ajeno y lea o cancele la cita de otra persona.
    - Para consultar, confirmar o cancelar, usa **siempre** `channelAuthenticatedPhone(context)` (remitente de WhatsApp o caller ID de Twilio). No expongas `telefonoPaciente` en el esquema de esas herramientas: si el modelo no puede expresarlo, no puede equivocarse.
    - La misma regla aplica a cualquier herramienta futura que lea o modifique datos de un paciente concreto.
 8. **Rol Explícito en Operaciones Destructivas y de Cobro:**
@@ -483,9 +483,9 @@ PORT=3000
 HOST=0.0.0.0
 NODE_ENV=development
 
-# 3. Inteligencia Artificial (Google Gemini 2.5 Flash)
+# 3. Inteligencia Artificial (DeepSeek V4.1 Flash)
 # Si está vacía, el sistema activa automáticamente el motor heurístico local de 13 intenciones
-GEMINI_API_KEY=
+DEEPSEEK_API_KEY=
 
 # 4. Meta Cloud API (WhatsApp Business oficial)
 META_VERIFY_TOKEN=asistente_mexico_secret_2026

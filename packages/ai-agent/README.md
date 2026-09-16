@@ -4,8 +4,8 @@ Motor conversacional, agendamiento de citas, triaje médico/dental y pasarela de
 
 ## 🧠 Módulos Principales
 
-### 1. `OmnichannelAgent` (`src/agent/geminiAgent.ts`)
-- **Procesamiento Híbrido:** Conecta con **Google Gemini 2.5 Flash** mediante Function Calling (8 herramientas). Si no hay API key o hay error de red, activa el **motor heurístico local de 13 intenciones** garantizando 100% de disponibilidad.
+### 1. `OmnichannelAgent` (`src/agent/deepseekAgent.ts`)
+- **Procesamiento Híbrido:** Conecta con **DeepSeek V4.1 Flash** (`deepseek-flash`, API REST compatible con OpenAI) mediante Tool Calling (8 herramientas). Si no hay API key o hay error de red, activa el **motor heurístico local de 13 intenciones** garantizando 100% de disponibilidad.
 - **Detección de Emergencias:** Filtro previo que canaliza emergencias vitales al 911 o urgencias hospitalarias antes de cualquier interacción.
 
 ### 2. `SchedulerService` (`src/calendar/scheduler.ts`)

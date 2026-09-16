@@ -14,7 +14,7 @@ const apiEnv = {
   JWT_SECRET: process.env.JWT_SECRET || 'e2e-jwt-secret-with-at-least-32-characters',
   META_WHATSAPP_TOKEN: '',
   META_PHONE_NUMBER_ID: '',
-  GEMINI_API_KEY: '',
+  DEEPSEEK_API_KEY: '',
   QUEUE_WORKER_ENABLED: 'false',
 };
 

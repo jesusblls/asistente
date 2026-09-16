@@ -38,7 +38,7 @@ obligatorias (el propio archivo trae los comandos `openssl` para generarlas):
 valor de relleno sirve hasta que conectes esa integración real; env.ts
 rechaza el arranque en producción si faltan).
 
-Las integraciones externas (`GEMINI_API_KEY`, `META_WHATSAPP_TOKEN`,
+Las integraciones externas (`DEEPSEEK_API_KEY`, `META_WHATSAPP_TOKEN`,
 `TWILIO_ACCOUNT_SID`, etc.) pueden quedar vacías: el sistema arranca igual en
 modo simulación, como en desarrollo.
 

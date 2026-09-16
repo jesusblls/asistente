@@ -1,6 +1,6 @@
 # CLAUDE.md — AsistentePro Clínicas (Plataforma SaaS Omnicanal IA México +52)
 
-Este documento es la **fuente de verdad técnica y de negocio** para el desarrollo en este repositorio. Para una especificación exhaustiva de ingeniería dirigida a agentes de IA autónomos (modelos de datos completos, las 8 herramientas de Gemini 2.5 Flash, las 13 intenciones del fallback heurístico y arquitectura de streaming de voz), consulta también [AGENTS.md](AGENTS.md).
+Este documento es la **fuente de verdad técnica y de negocio** para el desarrollo en este repositorio. Para una especificación exhaustiva de ingeniería dirigida a agentes de IA autónomos (modelos de datos completos, las 8 herramientas de DeepSeek V4.1 Flash, las 13 intenciones del fallback heurístico y arquitectura de streaming de voz), consulta también [AGENTS.md](AGENTS.md).
 
 > ⚠️ **Antes de escribir una sola línea:** todo cambio en este repositorio exige
 > una entrada en [`BITACORA.md`](BITACORA.md) y un commit con formato
@@ -94,7 +94,7 @@ asistente/
 │   │       └── index.ts          # createLogger('modulo')
 │   └── ai-agent/                 # Motor de Inteligencia Artificial y Reglas de Negocio
 │       └── src/
-│           ├── agent/            # OmnichannelAgent (Gemini 2.5 Flash con Tool Calling)
+│           ├── agent/            # OmnichannelAgent (DeepSeek V4.1 Flash con Tool Calling)
 │           ├── calendar/         # SchedulerService (cálculo de slots y anti-colisiones)
 │           ├── triage/           # triageEngine (evaluación de síntomas 911 vs urgencia)
 │           ├── payment/          # MercadoPagoService (links de anticipo y webhooks)
@@ -155,7 +155,7 @@ asistente/
 | **Librería UI** | React | v19.0 | Componentes reactivos y Server Actions |
 | **Estilos** | Tailwind CSS | v3.4+ | Sistema de diseño de alta velocidad (estándar Impeccable) |
 | **Iconografía** | Lucide React | v0.475+ | Iconos vectoriales coherentes |
-| **Modelo de IA (LLM)** | Google Gemini 2.5 Flash | SDK `@google/genai` | Agente conversacional con Tool Calling |
+| **Modelo de IA (LLM)** | DeepSeek V4.1 Flash (`deepseek-flash`) | API REST compatible con OpenAI | Agente conversacional con Tool Calling |
 | **Telefonía & Voz** | Twilio Voice (+52) | TwiML + WebSockets | Audio streaming bidireccional, Polly.Mia-Neural |
 | **Pipeline de Voz Ultra-Rápido** | Deepgram + Cartesia | G.711 mu-law | STT y TTS en tiempo real (<600 ms) con detección de interrupción (barge-in) |
 | **Mensajería** | Meta Cloud API | Graph API v22.0 | WhatsApp Business oficial (botones interactivos) |

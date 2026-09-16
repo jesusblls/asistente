@@ -2,7 +2,7 @@ import { normalizeMexicanPhone, formatMexicanPhoneDisplay } from './utils/phone.
 import { mxnToCents, roundMxn } from './utils/money.js';
 import { evaluateTriage } from './triage/triageEngine.js';
 import { SchedulerService } from './calendar/scheduler.js';
-import { OmnichannelAgent, toolDeclarations } from './agent/geminiAgent.js';
+import { OmnichannelAgent, toolDeclarations } from './agent/deepseekAgent.js';
 import { db } from '@asistente/database';
 
 async function runVerificationTests() {
