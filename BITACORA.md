@@ -10,6 +10,249 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(api): directorio de pacientes con historial
+
+**Autor:** Claude Sonnet 5 · **Commit:** `c8022c2`
+
+### Qué se hizo
+Durante la primera ronda de llamadas de voz reales, no había forma de ver en
+el panel cuántas veces había llamado un paciente ni su historial completo sin
+buscar a mano en la base de datos. Se agregó un directorio de pacientes real:
+`GET /api/patients` (lista con búsqueda por nombre/teléfono y conteo de citas
+y llamadas por paciente) y `GET /api/patients/:id` (expediente completo: todas
+sus citas y todas sus conversaciones). El teléfono (E.164) es la llave real
+del directorio porque ya es la restricción única en base de datos
+(`@@unique([tenantId, phoneE164])` en `Patient`) — no se inventó ningún
+concepto nuevo de identidad. En el frontend se agregó la página "Pacientes"
+(lista + detalle, estilo split-pane igual al inbox) con datos de ejemplo en
+Modo Demo para no dejar una pantalla vacía.
+
+Se encontró y corrigió en la misma sesión un bug real: cambiar entre Modo
+Demo y Modo En Vivo dejaba seleccionado un `id` de paciente que no existe en
+el otro set de datos, y el panel de detalle mostraba "no se pudo cargar el
+expediente" en vez de volver a su estado inicial. Se agregó un `useEffect`
+que limpia la selección al cambiar de modo.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/patients.ts` (nuevo) — endpoints de lista y detalle, con aislamiento por tenant y `recordAudit` (LIST/READ) como el resto de las rutas admin.
+- `apps/api/src/routes/admin/index.ts` — registra `patientRoutes` en el plugin admin.
+- `apps/web/src/app/dashboard/patients/page.tsx` (nuevo) — página de lista + detalle, con datos de ejemplo para Modo Demo.
+- `apps/web/src/components/dashboard/DashboardShell.tsx` — agrega "Pacientes" al menú lateral.
+- `packages/ai-agent/src/stress-test-suite.ts` — 4 pruebas nuevas de aislamiento multi-tenant sobre `/api/patients` (lista, 403 cruzado, 404 cruzado en detalle, detalle propio).
+
+### Verificación
+`npm run build --workspace=@asistente/api` y `--workspace=@asistente/web`
+limpios; `npm run test:stress` en verde (44/44, incluidas las 4 pruebas
+nuevas); verificación manual en el navegador real contra la clínica de
+prueba: lista con datos reales (citas y llamadas correctas), detalle con el
+historial completo, Modo Demo con datos de ejemplo, y `AuditLog` confirmando
+las filas `LIST`/`READ PATIENT` tras cada acceso.
+
+---
+
+## [2026-09-16] feat(voice): endurecer el pipeline para producción
+
+**Autor:** Claude Sonnet 5 · **Commit:** `072a4c4`
+
+### Qué se hizo
+La primera tanda de llamadas telefónicas reales (con DeepSeek y SignalWire ya
+funcionando) expuso varios problemas concretos que solo aparecen con audio y
+red reales, nunca con los proveedores simulados de las pruebas existentes:
+
+1. **Silencio muerto de ~6s antes de cada respuesta.** `tts.ts` solo tenía
+   `synthesize()` contra el endpoint REST `/tts/bytes` de Cartesia, que
+   espera el audio completo antes de devolver el primer byte — exactamente lo
+   contrario de por qué se eligió un proveedor de "baja latencia". Se agregó
+   `synthesizeStream()` sobre el WebSocket de Cartesia, y `pipeline.ts::speak()`
+   se reescribió para ir mandando cada trama de 20ms a Twilio/SignalWire en
+   cuanto llega, en vez de esperar la respuesta completa. Medido en una
+   llamada real: primer audio pasó de 5.9s a 1.3s.
+2. **Interrupciones falsas y timeouts de Deepgram sin motivo real.** El
+   umbral de energía para detectar voz (`VOICE_SPEECH_RMS_THRESHOLD=0.02`) era
+   tan sensible que ruido de fondo (clics de teclado, eco del propio teléfono)
+   se contaba como "el paciente está hablando": cortaba al bot a media frase
+   y, peor, abría "utterances" falsas hacia Deepgram que nunca tenían voz real
+   que transcribir. Se subió a `0.04` y `VOICE_BARGE_IN_FRAMES` de 5 a 8
+   (100ms → 160ms sostenidos). Además, `stt.ts` tenía un bug real:
+   una respuesta final de Deepgram con transcripción vacía (o el socket
+   cerrándose sin mandar nada) se descartaba en silencio sin resolver la
+   promesa de `finalize()`, forzando a esperar el timeout completo de 6s
+   incluso cuando Deepgram ya había contestado que no había nada. Ahora
+   cualquier señal de "esto es definitivo" resuelve de inmediato.
+3. **Silencio total del paciente y falla de TTS dejaban la línea muda.**
+   Si el paciente no decía nada, la llamada solo colgaba a los 15 minutos
+   (`VOICE_MAX_CALL_MS`); ahora reinsiste ("¿Sigue en la línea?") tras
+   `VOICE_SILENCE_REPROMPT_MS` (8s) y cuelga con despedida tras
+   `VOICE_MAX_REPROMPTS` (2) intentos sin respuesta. Si Cartesia fallaba a
+   media respuesta, el error solo se registraba en el log y la llamada
+   quedaba en silencio; ahora se intenta una disculpa breve una vez
+   (`VOICE_TTS_ERROR_REPLY`) y, si esa también falla, cuelga limpio sin loop.
+4. **Tono DTMF '0' sin efecto.** Se conecta al mismo flujo de transferencia a
+   recepción humana que ya usaba `requiresHumanHandover`, compartiendo el
+   método `triggerHumanHandover()` en vez de duplicar la lógica.
+5. **"$850 MXN" sonaba como "850 dólares M-X-N".** Cartesia interpreta el
+   símbolo `$` como dólares y lee "MXN" letra por letra. Se agregó
+   `sanitizeForSpeech()` que convierte "$850 MXN" → "850 pesos" y limpia
+   asteriscos de markdown antes de sintetizar (el mismo texto sigue
+   sirviendo tal cual para WhatsApp).
+6. **Colgado automático en despedida y reconocer pacientes que regresan**
+   (herramientas nuevas del agente, ver el commit de DeepSeek) requerían que
+   el pipeline consumiera el nuevo campo `shouldEndCall` de la respuesta del
+   agente — se agregó el `if` correspondiente en `processTurn()`.
+7. La misma relajación de "aceptar cualquier E.164, no solo México" que se
+   aplicó en `webhooks.ts` (ver commit de SignalWire) se replicó en el
+   fallback de resolución por número dentro de `voiceStreamService.ts`, y se
+   agregó el reenvío del evento `dtmf` de Twilio/SignalWire hacia la sesión.
+
+### Archivos tocados
+- `apps/api/src/services/voice/tts.ts` — `synthesizeStream()` (WebSocket de Cartesia).
+- `apps/api/src/services/voice/pipeline.ts` — `speak()` reescrito para streaming; `sanitizeForSpeech()`; reintento en falla de TTS; reinsistencia por silencio total; `handleDtmf()`/`triggerHumanHandover()` compartido; consume `shouldEndCall`.
+- `apps/api/src/services/voice/stt.ts` — resuelve `finalize()` ante cualquier respuesta definitiva de Deepgram, no solo una con texto.
+- `apps/api/src/services/voiceStreamService.ts` — reenvía el evento `dtmf` a la sesión; acepta cualquier E.164 en el fallback de resolución por número.
+- `apps/api/src/voice-test-suite.ts` — pruebas nuevas de streaming, falla de TTS, silencio total y DTMF (59 → 79 pruebas).
+- `.env.example` — documenta `VOICE_SILENCE_REPROMPT_MS`, `VOICE_MAX_REPROMPTS` y los nuevos valores por defecto de `VOICE_BARGE_IN_FRAMES`/`VOICE_SPEECH_RMS_THRESHOLD`.
+
+### Verificación
+`npm run build --workspace=@asistente/api` limpio; `npm run test --workspace=@asistente/api`
+en verde (79/79 pruebas de voz, 9/9 suites); `npm run test:stress` en verde.
+Verificación en llamadas telefónicas reales (SignalWire): latencia de primer
+audio medida en vivo (5.9s → 1.3s), reinsistencia por silencio y colgado en
+despedida confirmados marcando de verdad, precios sonando como "pesos" en el
+audio recibido.
+
+### Pendientes derivados
+Ninguno bloqueante. Quedan como mejoras futuras conocidas (no urgentes):
+soporte de idiomas distintos al español en el propio STT (hoy Deepgram está
+fijo en `language=es`; el agente ya redirige a español por prompt, pero la
+transcripción en sí no detecta el idioma), y perfilar con más detalle en qué
+se va el tiempo de la llamada al agente (DeepSeek) si en el futuro se vuelve
+el cuello de botella dominante.
+
+---
+
+## [2026-09-16] feat(agent)!: migrar el LLM de Gemini a DeepSeek
+
+**Autor:** Claude Sonnet 5 · **Commit:** `478b82a`
+
+### Qué se hizo
+Al preparar la primera prueba real de llamada de voz se descubrió que
+`GEMINI_API_KEY` nunca había estado configurada en ningún entorno de este
+proyecto — todas las pruebas y demos anteriores corrían sobre el motor
+heurístico de respaldo (`handleFallbackProcessing`) sin que nadie lo
+notara, porque ese motor está diseñado para ser indistinguible en los casos
+comunes. Al ir a configurar Gemini por primera vez, se decidió cambiar a
+DeepSeek V4.1 Flash (`deepseek-flash`, API REST compatible con OpenAI) por
+costo. Se reescribió `OmnichannelAgent` completo: `geminiAgent.ts` se
+renombra a `deepseekAgent.ts`, se quita el SDK `@google/genai` y se llama a
+DeepSeek con `fetch` nativo (mismo patrón que ya usan `stt.ts`/`tts.ts` para
+Deepgram/Cartesia en este repo). El modo "thinking" de DeepSeek (activado
+por defecto) se desactiva explícitamente: añade latencia de razonamiento y
+obliga a reenviar `reasoning_content` en cada turno, algo que no aporta valor
+en una llamada telefónica en tiempo real. Las 8 herramientas se mantuvieron
+funcionalmente idénticas, solo cambia el formato de sus parámetros de los
+enums `Type.*` de Gemini a JSON Schema plano.
+
+En la misma reescritura se agregaron dos mejoras de flujo encontradas al
+probar llamadas reales:
+- **`finalizar_llamada`** (herramienta nueva): antes, decir "gracias, adiós"
+  no colgaba la llamada — el bot seguía respondiendo indefinidamente hasta el
+  límite de 15 minutos. Ahora, cuando el paciente se despide y no queda
+  ningún trámite pendiente, el agente responde la despedida y ejecuta esta
+  herramienta en la misma respuesta (capturando el texto de despedida del
+  propio modelo en vez de uno genérico) para que el pipeline cuelgue.
+- **Reconocimiento de pacientes que regresan**: el usuario probó marcar dos
+  veces desde el mismo número dando nombres distintos en cada llamada, y notó
+  que el agente no sabía que ya existía un expediente para ese teléfono — le
+  volvía a preguntar el nombre cada vez. Ahora `processMessage()` busca al
+  paciente por el teléfono autenticado del canal antes de construir el
+  prompt; si ya existe, se le informa al modelo su nombre para que salude por
+  nombre y no vuelva a pedirlo, salvo que el propio paciente lo corrija.
+
+Es un cambio incompatible hacia atrás: quien tuviera `GEMINI_API_KEY`
+configurada deja de tener efecto: hay que configurar `DEEPSEEK_API_KEY`.
+
+### Archivos tocados
+- `packages/ai-agent/src/agent/deepseekAgent.ts` (nuevo, reemplaza a `geminiAgent.ts`) — agente reescrito sobre DeepSeek, con `finalizar_llamada` y reconocimiento de pacientes recurrentes.
+- `packages/ai-agent/src/agent/geminiAgent.ts` (eliminado).
+- `packages/ai-agent/src/index.ts`, `packages/ai-agent/src/test-suite.ts` — actualizan el import al archivo nuevo.
+- `packages/ai-agent/package.json`, `package-lock.json` — se quita la dependencia `@google/genai`.
+- `apps/web/playwright.config.ts`, `apps/api/src/audit-test-suite.ts` — el blanqueo de la API key del LLM para pruebas deterministas pasa de `GEMINI_API_KEY` a `DEEPSEEK_API_KEY`.
+- `.env.example`, `CLAUDE.md`, `AGENTS.md`, `packages/ai-agent/README.md`, `deploy/README.md` — documentación actualizada.
+
+### Verificación
+`npm run build --workspaces` limpio; `npm run test --workspace=@asistente/ai-agent`
+(20/20 — corre contra el motor heurístico, así que confirma que no se rompió
+nada pero no ejercita DeepSeek en sí). Prueba real en vivo con clave real de
+DeepSeek vía un cliente WebSocket que simula los eventos de Twilio/SignalWire
+Media Streams: el agente agendó una cita real de punta a punta (STT real +
+DeepSeek real + TTS real), reconoció a un paciente que ya tenía expediente
+saludándolo por nombre sin preguntárselo, y colgó solo tras una despedida
+real por teléfono.
+
+### Pendientes derivados
+El motor de fallback heurístico sigue siendo más rígido que un LLM real (ver
+el bug de "selección de horario" ya documentado en el Grupo 6 de
+`packages/ai-agent/src/test-suite.ts`); no se tocó en este cambio porque solo
+se activa cuando DeepSeek no está disponible.
+
+---
+
+## [2026-09-16] feat(voice): soportar SignalWire en webhooks y handover
+
+**Autor:** Claude Sonnet 5 · **Commit:** `81a4eee`
+
+### Qué se hizo
+Al intentar la primera llamada de voz real con Twilio, la cuenta trial
+bloqueó la llamada porque exige verificar el número que llama como "Caller
+ID", y esa verificación está bloqueada por región para números mexicanos
+(tanto por SMS como por llamada). Se migró la telefonía de prueba a
+SignalWire, cuya "Compatibility API" es explícitamente un reemplazo
+"drop-in" de la API REST y el TwiML de Twilio. Se confirmó en vivo que:
+(a) SignalWire firma sus webhooks con el mismo HMAC-SHA1 que Twilio — solo
+cambia el nombre del header (`x-signalwire-signature`) y el secreto (la
+"Signing Key", distinta del API Token de las llamadas REST); y (b) su API
+REST de compatibilidad LaML replica 1:1 las rutas de Twilio en su propio
+host (`https://<space>/api/laml/2010-04-01/Accounts/<project>/...`).
+
+Con esa confirmación, se generalizaron los dos puntos donde el código
+hablaba solo con Twilio: la verificación de firma del webhook de voz
+entrante (`/voice/incoming`) y la transferencia de una llamada viva a
+recepción humana (que redirige la llamada vía la API REST del proveedor). En
+ambos casos se detecta cuál proveedor está configurado (SignalWire tiene
+prioridad si sus 3 credenciales — Project ID, API Token, Space URL — están
+completas) sin mezclar credenciales de ambos, y Twilio se conserva como
+fallback para no romper instalaciones existentes.
+
+De paso se relajó `resolveTenantByPhone`: exigía que el número de la clínica
+fuera mexicano (`/^\+52\d{10}$/`), lo cual bloqueaba probar con un número de
+otro país (se usó uno de EE. UU. para evitar el trámite de verificación
+regulatoria de números mexicanos en Twilio) — y se empezó a mandar el
+`From` de la llamada explícito como `<Parameter>` en el TwiML, en vez de
+confiar en que el evento `start` del WebSocket lo replique igual en todos
+los proveedores (SignalWire no lo garantiza como Twilio, y sin identidad de
+canal el agente no podía agendar ni reconocer al paciente).
+
+### Archivos tocados
+- `apps/api/src/lib/webhookSecurity.ts` — `verifySignalWireSignature` y `verifyVoiceWebhookSignature` (detecta el proveedor por el header presente).
+- `apps/api/src/routes/webhooks.ts` — usa `verifyVoiceWebhookSignature`; acepta cualquier E.164 en `resolveTenantByPhone`; manda `From` explícito en el TwiML.
+- `apps/api/src/services/voice/handover.ts` — `redirectCallToHuman` detecta el proveedor (SignalWire o Twilio) para la transferencia REST.
+
+### Verificación
+Firma calculada a mano con la Signing Key real de SignalWire y comprobada
+contra `/voice/incoming` corriendo localmente y luego vía ngrok (200 con el
+TwiML correcto) antes de intentar la llamada real. `npm run test --workspace=@asistente/api`
+(79 pruebas de voz, incluidas 5 nuevas de transferencia a SignalWire) y
+`npm run test:stress` en verde. Llamada telefónica real completada de punta
+a punta contra el número de SignalWire.
+
+### Pendientes derivados
+Ninguno bloqueante. El número usado en esta prueba es de EE. UU. (para
+evitar el trámite de verificación regulatoria de números mexicanos); antes
+de producción real con una clínica mexicana hay que portar o comprar un
+número +52 y volver a probar el flujo completo con él.
+
+---
+
 ## [2026-09-16] fix(web): eliminar saltos de línea y espaciar el navbar
 
 **Autor:** Antigravity (Gemini 3.8 Flash)
