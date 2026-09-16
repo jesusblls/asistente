@@ -26,6 +26,8 @@ export interface AddServiceModalProps {
   setDescription: (v: string) => void;
   error: string | null;
   isSubmitting: boolean;
+  /** Cuando se está corrigiendo un tratamiento existente, no dando uno de alta. */
+  isEditing?: boolean;
 }
 
 export function AddServiceModal({
@@ -50,6 +52,7 @@ export function AddServiceModal({
   setDescription,
   error,
   isSubmitting,
+  isEditing = false,
 }: AddServiceModalProps) {
   if (!isOpen) return null;
 
@@ -63,7 +66,7 @@ export function AddServiceModal({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">
-                Registrar Nuevo Tratamiento
+                {isEditing ? 'Editar Tratamiento' : 'Registrar Nuevo Tratamiento'}
               </h3>
               <p className="text-xs text-slate-500">
                 {mode === 'demo'
@@ -274,7 +277,7 @@ export function AddServiceModal({
               disabled={isSubmitting}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
             >
-              {isSubmitting ? 'Guardando...' : 'Guardar Tratamiento'}
+              {isSubmitting ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Guardar Tratamiento'}
             </button>
           </div>
         </form>

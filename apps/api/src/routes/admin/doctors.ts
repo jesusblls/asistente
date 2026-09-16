@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db, recordAudit } from '@asistente/database';
+import { db, diffChanges, recordAudit } from '@asistente/database';
 import { actorFromRequest } from '../../lib/audit.js';
 import {
   optionalString,
@@ -9,7 +9,7 @@ import {
   requireString,
   resolveTenantId,
 } from '../../lib/http.js';
-import { createDoctorSchema } from './schemas.js';
+import { createDoctorSchema, updateDoctorSchema } from './schemas.js';
 import { parseAvailabilityRules, serializeAvailabilityRules } from '../../lib/availability.js';
 
 export async function doctorRoutes(fastify: FastifyInstance) {
@@ -62,6 +62,69 @@ export async function doctorRoutes(fastify: FastifyInstance) {
       });
 
       return reply.status(201).send(doctor);
+    }
+  );
+
+  /**
+   * Corrige los datos de un doctor.
+   *
+   * Sin esta ruta, arreglar un horario mal capturado obligaba a borrar al
+   * especialista y volverlo a crear — y el borrado arrastra todas sus citas.
+   */
+  fastify.patch(
+    '/api/doctors/:id',
+    { schema: updateDoctorSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      requireRole(request, ['ADMIN']);
+      const user = requireAuthUser(request);
+      const body = (request.body ?? {}) as Record<string, unknown>;
+
+      const doctor = await db.doctor.findFirst({ where: { id, tenantId: user.tenantId } });
+      if (!doctor) return reply.status(404).send({ error: 'Especialista no encontrado' });
+
+      const data = {
+        ...(body.name !== undefined && { name: requireString(body.name, 'Nombre', 200) }),
+        ...(body.specialty !== undefined && {
+          specialty: requireString(body.specialty, 'Especialidad', 200),
+        }),
+        ...(body.phone !== undefined && {
+          phone:
+            body.phone === null || body.phone === ''
+              ? null
+              : requireMexicanPhone(body.phone, 'Teléfono del doctor'),
+        }),
+        ...(body.email !== undefined && {
+          email: optionalString(body.email, 'Email', 200) || null,
+        }),
+        ...(body.availabilityRules !== undefined && {
+          availabilityRules:
+            body.availabilityRules === null
+              ? null
+              : serializeAvailabilityRules(parseAvailabilityRules(body.availabilityRules)),
+        }),
+        ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
+      };
+
+      const updated = await db.$transaction(async (tx) => {
+        const row = await tx.doctor.update({ where: { id }, data });
+
+        await recordAudit(
+          {
+            tenantId: user.tenantId,
+            actor: actorFromRequest(request),
+            action: 'UPDATE',
+            entityType: 'DOCTOR',
+            entityId: id,
+            changes: diffChanges(doctor, data),
+          },
+          tx
+        );
+
+        return row;
+      });
+
+      return reply.send(updated);
     }
   );
 

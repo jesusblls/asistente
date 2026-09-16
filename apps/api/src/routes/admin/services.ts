@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db, recordAudit } from '@asistente/database';
+import { db, diffChanges, recordAudit } from '@asistente/database';
 import { roundMxn } from '@asistente/ai-agent';
 import { actorFromRequest } from '../../lib/audit.js';
 import {
@@ -10,7 +10,7 @@ import {
   requireString,
   resolveTenantId,
 } from '../../lib/http.js';
-import { createServiceSchema } from './schemas.js';
+import { createServiceSchema, updateServiceSchema } from './schemas.js';
 
 export async function serviceRoutes(fastify: FastifyInstance) {
   /**
@@ -64,6 +64,76 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       });
 
       return reply.status(201).send(service);
+    }
+  );
+
+  /**
+   * Corrige un tratamiento del catálogo.
+   *
+   * Los precios de una clínica cambian; sin esta ruta, ajustar uno obligaba a
+   * borrar el tratamiento y volverlo a crear, lo que borra en cascada todas
+   * las citas agendadas con él.
+   */
+  fastify.patch(
+    '/api/services/:id',
+    { schema: updateServiceSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      requireRole(request, ['ADMIN']);
+      const user = requireAuthUser(request);
+      const body = (request.body ?? {}) as Record<string, unknown>;
+
+      const service = await db.service.findFirst({ where: { id, tenantId: user.tenantId } });
+      if (!service) return reply.status(404).send({ error: 'Tratamiento no encontrado' });
+
+      const priceMxn =
+        body.priceMxn !== undefined
+          ? roundMxn(requireNumber(body.priceMxn, 'Precio MXN', { min: 0, max: 10_000_000 }))
+          : service.priceMxn;
+
+      // El anticipo se valida contra el precio que va a quedar, no contra el
+      // que había: bajar el precio sin ajustar el anticipo dejaría al paciente
+      // pagando por adelantado más de lo que cuesta el tratamiento.
+      const requiredDepositMxn =
+        body.requiredDepositMxn !== undefined
+          ? roundMxn(requireNumber(body.requiredDepositMxn, 'Anticipo MXN', { min: 0, max: priceMxn }))
+          : Math.min(service.requiredDepositMxn, priceMxn);
+
+      const data = {
+        ...(body.name !== undefined && { name: requireString(body.name, 'Nombre', 200) }),
+        ...(body.description !== undefined && {
+          description: optionalString(body.description, 'Descripción', 1000) || null,
+        }),
+        ...(body.durationMinutes !== undefined && {
+          durationMinutes: requireNumber(body.durationMinutes, 'Duración', { min: 5, max: 600 }),
+        }),
+        ...(body.category !== undefined && {
+          category: optionalString(body.category, 'Categoría', 120) || 'General',
+        }),
+        ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
+        priceMxn,
+        requiredDepositMxn,
+      };
+
+      const updated = await db.$transaction(async (tx) => {
+        const row = await tx.service.update({ where: { id }, data });
+
+        await recordAudit(
+          {
+            tenantId: user.tenantId,
+            actor: actorFromRequest(request),
+            action: 'UPDATE',
+            entityType: 'SERVICE',
+            entityId: id,
+            changes: diffChanges(service, data),
+          },
+          tx
+        );
+
+        return row;
+      });
+
+      return reply.send(updated);
     }
   );
 

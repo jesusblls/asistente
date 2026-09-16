@@ -10,6 +10,70 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(api): editar especialistas, tratamientos y FAQs
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El panel solo sabía **crear y borrar**. No existía ninguna ruta de edición, y
+eso tenía consecuencias caras porque los borrados van en cascada:
+
+- Corregir el horario de un especialista obligaba a borrarlo y volverlo a
+  crear — y `DELETE /api/doctors/:id` borra **todas sus citas**.
+- Ajustar el precio de un tratamiento, algo que cualquier clínica hace varias
+  veces al año, obligaba a borrarlo — y `DELETE /api/services/:id` borra
+  **todas las citas agendadas con él**.
+
+Además, el modelo `FaqItem` existía y el agente lo consulta con la herramienta
+`consultar_faq_clinica`, pero **no había endpoint ni pantalla**: solo el seed
+las creaba. Una clínica nueva se quedaba con cero preguntas frecuentes y el
+asistente improvisaba las respuestas sobre estacionamiento, aseguradoras o
+formas de pago, que es justo lo que más preguntan los pacientes por teléfono.
+
+Se agregaron `PATCH /api/doctors/:id`, `PATCH /api/services/:id` y el CRUD
+completo de FAQs (`GET`/`POST /api/tenants/:id/faqs`, `PATCH`/`DELETE
+/api/faqs/:id`), con sus pantallas: botón de editar en cada tarjeta de
+especialista y en cada renglón del catálogo (escritorio y móvil), y una
+sección nueva de Preguntas Frecuentes con su propio editor.
+
+Una decisión que no es obvia: **al bajar el precio de un tratamiento, el
+anticipo se recorta solo.** `PATCH` valida el anticipo contra el precio que va
+a quedar, no contra el que había; si el nuevo precio es menor que el anticipo
+vigente, el anticipo se ajusta a ese precio. Sin esto, bajar una limpieza de
+$1,250 a $200 dejaba el anticipo en $300 y el paciente habría pagado por
+adelantado más de lo que cuesta el tratamiento. Un anticipo mayor al precio
+enviado explícitamente sí se rechaza con 400.
+
+`FAQ_ITEM` se agregó a `AUDIT_ENTITY_TYPES`: las respuestas que da la IA en
+nombre de la clínica son contenido de la clínica, y cambiarlas debe dejar
+rastro igual que cambiar un precio.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/doctors.ts` — `PATCH /api/doctors/:id` con validación de horario y auditoría de cambios.
+- `apps/api/src/routes/admin/services.ts` — `PATCH /api/services/:id` con la invariante precio/anticipo.
+- `apps/api/src/routes/admin/faqs.ts` (nuevo) — CRUD de preguntas frecuentes.
+- `apps/api/src/routes/admin/schemas.ts` — esquemas de actualización y de FAQs.
+- `apps/api/src/routes/admin/index.ts` — registra `faqRoutes`.
+- `packages/database/src/audit.ts` — `FAQ_ITEM` en `AUDIT_ENTITY_TYPES`.
+- `apps/web/src/components/dashboard/team/FaqSection.tsx` (nuevo) — administración de FAQs, con ejemplos en Modo Demo.
+- `apps/web/src/components/dashboard/team/AddDoctorModal.tsx` y `AddServiceModal.tsx` — modo edición (título y botón cambian).
+- `apps/web/src/app/dashboard/team/page.tsx` — estado de edición, `PATCH` al guardar y botones de editar.
+
+### Verificación
+Contra la API en vivo: `PATCH` de doctor cambió especialidad y horario a solo
+domingo 08:00-12:00 con citas de 60 minutos; un horario inválido se rechazó
+con el mismo mensaje en español que el alta; un id ajeno devolvió 404 (el
+filtro por `tenantId` sostiene el aislamiento). En tratamientos se comprobó la
+invariante: subir a $1,250.556 redondeó a $1,250.56, bajar a $200 recortó el
+anticipo de $300 a $200, y un anticipo de $900 sobre un precio de $500 se
+rechazó con 400. En FAQs se creó, editó y listó, y se confirmó en base de
+datos que `consultar_faq_clinica` devolvería las dos respuestas al agente, con
+tres filas de auditoría (dos CREATE y un UPDATE con el `before`/`after` del
+texto). En el navegador real se editó una pregunta desde el panel y el cambio
+quedó persistido. Suites: API 11/11, estrés 44/44.
+
+---
+
 ## [2026-09-16] fix(api): persistir el horario capturado del especialista
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`

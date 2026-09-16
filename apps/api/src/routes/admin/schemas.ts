@@ -213,3 +213,76 @@ export const auditQuerySchema = {
     },
   },
 };
+
+const idParams = {
+  type: 'object',
+  required: ['id'],
+  properties: {
+    id: { type: 'string', minLength: 1 },
+  },
+};
+
+export const updateDoctorSchema = {
+  params: idParams,
+  body: {
+    type: 'object',
+    minProperties: 1,
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      specialty: { type: 'string', minLength: 1, maxLength: 200 },
+      phone: { type: ['string', 'null'], maxLength: 30 },
+      email: { type: ['string', 'null'], maxLength: 200 },
+      availabilityRules: { type: ['object', 'null'] },
+      isActive: { type: 'boolean' },
+    },
+    additionalProperties: false,
+  },
+};
+
+export const updateServiceSchema = {
+  params: idParams,
+  body: {
+    type: 'object',
+    minProperties: 1,
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      priceMxn: { type: 'number', minimum: 0, maximum: 10_000_000 },
+      durationMinutes: { type: 'number', minimum: 5, maximum: 600 },
+      requiredDepositMxn: { type: 'number', minimum: 0 },
+      description: { type: ['string', 'null'], maxLength: 1000 },
+      category: { type: 'string', maxLength: 120 },
+      isActive: { type: 'boolean' },
+    },
+    additionalProperties: false,
+  },
+};
+
+export const createFaqSchema = {
+  params: idParams,
+  body: {
+    type: 'object',
+    required: ['question', 'answer'],
+    properties: {
+      question: { type: 'string', minLength: 1, maxLength: 500 },
+      answer: { type: 'string', minLength: 1, maxLength: 2000 },
+      category: { type: 'string', maxLength: 120 },
+      keywords: { type: 'string', maxLength: 500 },
+    },
+    additionalProperties: false,
+  },
+};
+
+export const updateFaqSchema = {
+  params: idParams,
+  body: {
+    type: 'object',
+    minProperties: 1,
+    properties: {
+      question: { type: 'string', minLength: 1, maxLength: 500 },
+      answer: { type: 'string', minLength: 1, maxLength: 2000 },
+      category: { type: ['string', 'null'], maxLength: 120 },
+      keywords: { type: ['string', 'null'], maxLength: 500 },
+    },
+    additionalProperties: false,
+  },
+};

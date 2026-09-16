@@ -24,6 +24,8 @@ export interface AddDoctorModalProps {
   setSlotDuration: (v: number) => void;
   error: string | null;
   isSubmitting: boolean;
+  /** Cuando se está corrigiendo un especialista existente, no dando uno de alta. */
+  isEditing?: boolean;
 }
 
 export function AddDoctorModal({
@@ -46,6 +48,7 @@ export function AddDoctorModal({
   setSlotDuration,
   error,
   isSubmitting,
+  isEditing = false,
 }: AddDoctorModalProps) {
   if (!isOpen) return null;
 
@@ -59,12 +62,14 @@ export function AddDoctorModal({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">
-                Registrar Nuevo Especialista
+                {isEditing ? 'Editar Especialista' : 'Registrar Nuevo Especialista'}
               </h3>
               <p className="text-xs text-slate-500">
-                {mode === 'demo'
-                  ? 'Se agregará a la demostración interactiva'
-                  : `Se asociará a la clínica: ${tenantName || 'Activa'}`}
+                {isEditing
+                  ? 'Los cambios aplican de inmediato al Asistente IA'
+                  : mode === 'demo'
+                    ? 'Se agregará a la demostración interactiva'
+                    : `Se asociará a la clínica: ${tenantName || 'Activa'}`}
               </p>
             </div>
           </div>
@@ -162,7 +167,7 @@ export function AddDoctorModal({
               disabled={isSubmitting}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
             >
-              {isSubmitting ? 'Guardando...' : 'Guardar Especialista'}
+              {isSubmitting ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Guardar Especialista'}
             </button>
           </div>
         </form>

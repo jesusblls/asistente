@@ -8,6 +8,7 @@ import {
   Stethoscope,
   Plus,
   Trash2,
+  Pencil,
   Mail,
   Phone,
   Calendar,
@@ -29,8 +30,10 @@ import { formatMexicanPhone } from '@/lib/format';
 import { AddDoctorModal } from '@/components/dashboard/team/AddDoctorModal';
 import { AddServiceModal } from '@/components/dashboard/team/AddServiceModal';
 import { DeleteConfirmModal } from '@/components/dashboard/team/DeleteConfirmModal';
+import { FaqSection } from '@/components/dashboard/team/FaqSection';
 import {
   defaultWeeklySchedule,
+  fromAvailabilityRules,
   toAvailabilityRules,
   type WeeklySchedule,
 } from '@/components/schedule/ScheduleEditor';
@@ -51,6 +54,10 @@ interface DisplayDoctor {
   slotDuration: string;
   status: string;
   isDemo?: boolean;
+  /** Valores tal como los guarda la API, para poder reabrirlos en el editor. */
+  rawPhone?: string | null;
+  rawEmail?: string | null;
+  rawAvailabilityRules?: string | null;
 }
 
 interface DisplayService {
@@ -309,6 +316,8 @@ export default function TeamAndServicesPage() {
   const [docSlotDuration, setDocSlotDuration] = useState(45);
   const [isSubmittingDoctor, setIsSubmittingDoctor] = useState(false);
   const [doctorError, setDoctorError] = useState<string | null>(null);
+  // null = alta; con id = corrección de un especialista existente.
+  const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null);
 
   // Estados para Modal de Servicio
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
@@ -319,6 +328,8 @@ export default function TeamAndServicesPage() {
   const [svcRequiredDepositMxn, setSvcRequiredDepositMxn] = useState<number | ''>(0);
   const [svcDescription, setSvcDescription] = useState('');
   const [isSubmittingService, setIsSubmittingService] = useState(false);
+  // null = alta; con id = corrección de un tratamiento existente.
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
 
   // Estados para Modal de Confirmación de Eliminación
@@ -363,6 +374,9 @@ export default function TeamAndServicesPage() {
         slotDuration: slotDuration,
         status: doc.isActive !== false ? 'Activo' : 'Inactivo',
         isDemo: false,
+        rawPhone: doc.phone ?? null,
+        rawEmail: doc.email ?? null,
+        rawAvailabilityRules: doc.availabilityRules ?? null,
       };
     });
   }, [mode, demoDoctors, activeTenant]);
@@ -417,6 +431,21 @@ export default function TeamAndServicesPage() {
     setDocSchedule(defaultWeeklySchedule());
     setDocSlotDuration(45);
     setDoctorError(null);
+    setEditingDoctorId(null);
+  };
+
+  // Abre el modal con los datos actuales del especialista para corregirlos.
+  const openDoctorEditor = (doc: DisplayDoctor) => {
+    const { schedule, slotDurationMinutes } = fromAvailabilityRules(doc.rawAvailabilityRules);
+    setEditingDoctorId(doc.id);
+    setDocName(doc.name);
+    setDocSpecialty(doc.specialty);
+    setDocPhone(doc.rawPhone || '');
+    setDocEmail(doc.rawEmail || '');
+    setDocSchedule(schedule);
+    setDocSlotDuration(slotDurationMinutes);
+    setDoctorError(null);
+    setIsDoctorModalOpen(true);
   };
 
   // Limpiar formulario de servicio
@@ -428,6 +457,20 @@ export default function TeamAndServicesPage() {
     setSvcRequiredDepositMxn(0);
     setSvcDescription('');
     setServiceError(null);
+    setEditingServiceId(null);
+  };
+
+  // Abre el modal con los datos actuales del tratamiento para corregirlos.
+  const openServiceEditor = (svc: DisplayService) => {
+    setEditingServiceId(svc.id);
+    setSvcName(svc.name);
+    setSvcCategory(svc.category);
+    setSvcDurationMinutes(svc.durationMinutes);
+    setSvcPriceMxn(svc.priceMxn);
+    setSvcRequiredDepositMxn(svc.requiredDepositMxn);
+    setSvcDescription(svc.description || '');
+    setServiceError(null);
+    setIsServiceModalOpen(true);
   };
 
   // Guardar doctor
@@ -470,25 +513,39 @@ export default function TeamAndServicesPage() {
           throw new Error('No hay una clínica activa seleccionada');
         }
 
-        const res = await apiFetch(`${API_BASE_URL}/api/tenants/${targetTenantId}/doctors`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: docName.trim(),
-            specialty: docSpecialty.trim(),
-            phone: docPhone.trim() || null,
-            email: docEmail.trim() || null,
-            availabilityRules,
-          }),
-        });
+        const payload = {
+          name: docName.trim(),
+          specialty: docSpecialty.trim(),
+          phone: docPhone.trim() || null,
+          email: docEmail.trim() || null,
+          availabilityRules,
+        };
+
+        const res = editingDoctorId
+          ? await apiFetch(`${API_BASE_URL}/api/doctors/${editingDoctorId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            })
+          : await apiFetch(`${API_BASE_URL}/api/tenants/${targetTenantId}/doctors`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || 'Error al registrar el doctor');
+          throw new Error(
+            data.error || (editingDoctorId ? 'Error al guardar los cambios' : 'Error al registrar el doctor')
+          );
         }
 
         await refreshTenants();
-        showToast(`Especialista "${docName.trim()}" registrado con éxito`);
+        showToast(
+          editingDoctorId
+            ? `Especialista "${docName.trim()}" actualizado`
+            : `Especialista "${docName.trim()}" registrado con éxito`
+        );
         setIsDoctorModalOpen(false);
         resetDoctorForm();
       }
@@ -554,26 +611,41 @@ export default function TeamAndServicesPage() {
           throw new Error('No hay una clínica activa seleccionada');
         }
 
-        const res = await apiFetch(`${API_BASE_URL}/api/tenants/${targetTenantId}/services`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: svcName.trim(),
-            description: svcDescription.trim() || null,
-            durationMinutes: Number(svcDurationMinutes) || 30,
-            priceMxn: price,
-            requiredDepositMxn: deposit,
-            category: svcCategory.trim() || 'General',
-          }),
-        });
+        const payload = {
+          name: svcName.trim(),
+          description: svcDescription.trim() || null,
+          durationMinutes: Number(svcDurationMinutes) || 30,
+          priceMxn: price,
+          requiredDepositMxn: deposit,
+          category: svcCategory.trim() || 'General',
+        };
+
+        const res = editingServiceId
+          ? await apiFetch(`${API_BASE_URL}/api/services/${editingServiceId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            })
+          : await apiFetch(`${API_BASE_URL}/api/tenants/${targetTenantId}/services`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || 'Error al registrar el tratamiento');
+          throw new Error(
+            data.error ||
+              (editingServiceId ? 'Error al guardar los cambios' : 'Error al registrar el tratamiento')
+          );
         }
 
         await refreshTenants();
-        showToast(`Tratamiento "${svcName.trim()}" registrado con éxito`);
+        showToast(
+          editingServiceId
+            ? `Tratamiento "${svcName.trim()}" actualizado`
+            : `Tratamiento "${svcName.trim()}" registrado con éxito`
+        );
         setIsServiceModalOpen(false);
         resetServiceForm();
       }
@@ -823,6 +895,13 @@ export default function TeamAndServicesPage() {
                       {doc.status}
                     </span>
                     <button
+                      onClick={() => openDoctorEditor(doc)}
+                      className="p-1.5 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
+                      title="Editar especialista"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() =>
                         setItemToDelete({
                           type: 'doctor',
@@ -922,6 +1001,13 @@ export default function TeamAndServicesPage() {
                       <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{s.description}</p>
                     )}
                   </div>
+                  <button
+                    onClick={() => openServiceEditor(s)}
+                    className="flex h-10 w-10 -mt-1 items-center justify-center text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors shrink-0"
+                    title="Editar tratamiento"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() =>
                       setItemToDelete({
@@ -1061,7 +1147,14 @@ export default function TeamAndServicesPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => openServiceEditor(s)}
+                          className="p-1.5 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
+                          title="Editar tratamiento"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() =>
                             setItemToDelete({
@@ -1085,6 +1178,14 @@ export default function TeamAndServicesPage() {
         )}
       </div>
 
+      {/* Preguntas frecuentes: el guion del Asistente IA fuera de la agenda */}
+      <FaqSection
+        mode={mode}
+        tenantId={activeTenantId || activeTenant?.id}
+        canEdit
+        onToast={showToast}
+      />
+
       {/* Modal: Registrar Nuevo Especialista */}
       <AddDoctorModal
         isOpen={isDoctorModalOpen}
@@ -1100,6 +1201,7 @@ export default function TeamAndServicesPage() {
         setPhone={setDocPhone}
         email={docEmail}
         setEmail={setDocEmail}
+        isEditing={Boolean(editingDoctorId)}
         schedule={docSchedule}
         setSchedule={setDocSchedule}
         slotDuration={docSlotDuration}
@@ -1119,6 +1221,7 @@ export default function TeamAndServicesPage() {
         setName={setSvcName}
         category={svcCategory}
         setCategory={setSvcCategory}
+        isEditing={Boolean(editingServiceId)}
         presetCategories={PRESET_CATEGORIES}
         durationMinutes={svcDurationMinutes}
         setDurationMinutes={setSvcDurationMinutes}

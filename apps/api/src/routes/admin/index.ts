@@ -5,6 +5,7 @@ import { serviceRoutes } from './services.js';
 import { appointmentRoutes } from './appointments.js';
 import { conversationRoutes } from './conversations.js';
 import { patientRoutes } from './patients.js';
+import { faqRoutes } from './faqs.js';
 import { auditRoutes } from './audit.js';
 
 export async function adminPlugin(fastify: FastifyInstance) {
@@ -17,6 +18,7 @@ export async function adminPlugin(fastify: FastifyInstance) {
   await fastify.register(appointmentRoutes);
   await fastify.register(conversationRoutes);
   await fastify.register(patientRoutes);
+  await fastify.register(faqRoutes);
   await fastify.register(auditRoutes);
 }
 
@@ -28,4 +30,5 @@ export { serviceRoutes } from './services.js';
 export { appointmentRoutes } from './appointments.js';
 export { conversationRoutes } from './conversations.js';
 export { patientRoutes } from './patients.js';
+export { faqRoutes } from './faqs.js';
 export { auditRoutes } from './audit.js';
