@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-16] feat(web): avisar cuando la prueba está por vencer
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `d23445a`
 
 ### Qué se hizo
 `GET /api/plan` ya sabía cuántos días le quedaban a la prueba, pero el dato no
