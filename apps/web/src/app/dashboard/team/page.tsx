@@ -29,6 +29,11 @@ import { formatMexicanPhone } from '@/lib/format';
 import { AddDoctorModal } from '@/components/dashboard/team/AddDoctorModal';
 import { AddServiceModal } from '@/components/dashboard/team/AddServiceModal';
 import { DeleteConfirmModal } from '@/components/dashboard/team/DeleteConfirmModal';
+import {
+  defaultWeeklySchedule,
+  toAvailabilityRules,
+  type WeeklySchedule,
+} from '@/components/schedule/ScheduleEditor';
 
 export interface ScheduleChip {
   days: string;
@@ -300,8 +305,8 @@ export default function TeamAndServicesPage() {
   const [docSpecialty, setDocSpecialty] = useState('');
   const [docPhone, setDocPhone] = useState('');
   const [docEmail, setDocEmail] = useState('');
-  const [docSchedule, setDocSchedule] = useState('Lunes a Viernes: 9:00 - 18:00');
-  const [docSlotDuration, setDocSlotDuration] = useState('45 minutos');
+  const [docSchedule, setDocSchedule] = useState<WeeklySchedule>(defaultWeeklySchedule);
+  const [docSlotDuration, setDocSlotDuration] = useState(45);
   const [isSubmittingDoctor, setIsSubmittingDoctor] = useState(false);
   const [doctorError, setDoctorError] = useState<string | null>(null);
 
@@ -409,8 +414,8 @@ export default function TeamAndServicesPage() {
     setDocSpecialty('');
     setDocPhone('');
     setDocEmail('');
-    setDocSchedule('Lunes a Viernes: 9:00 - 18:00');
-    setDocSlotDuration('45 minutos');
+    setDocSchedule(defaultWeeklySchedule());
+    setDocSlotDuration(45);
     setDoctorError(null);
   };
 
@@ -437,17 +442,21 @@ export default function TeamAndServicesPage() {
     setDoctorError(null);
 
     try {
+      const availabilityRules = toAvailabilityRules(docSchedule, docSlotDuration);
+
       if (mode === 'demo') {
-        const { scheduleText, chips, slotDuration } = formatAvailabilityRules(docSchedule);
+        const { scheduleText, chips, slotDuration } = formatAvailabilityRules(
+          JSON.stringify(availabilityRules)
+        );
         const newDemoDoc: DisplayDoctor = {
           id: `demo-doc-${Date.now()}`,
           name: docName.trim(),
           specialty: docSpecialty.trim(),
           email: docEmail.trim() || 'contacto@sonrisaspolanco.mx',
           phone: docPhone.trim() ? formatMexicanPhone(docPhone) : '+52 (55) 0000-0000',
-          schedule: scheduleText || 'Lunes a Viernes: 9:00 - 18:00',
+          schedule: scheduleText,
           scheduleChips: chips,
-          slotDuration: docSlotDuration.trim() || slotDuration,
+          slotDuration,
           status: 'Activo',
           isDemo: true,
         };
@@ -469,6 +478,7 @@ export default function TeamAndServicesPage() {
             specialty: docSpecialty.trim(),
             phone: docPhone.trim() || null,
             email: docEmail.trim() || null,
+            availabilityRules,
           }),
         });
 

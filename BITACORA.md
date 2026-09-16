@@ -10,6 +10,71 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] fix(api): persistir el horario capturado del especialista
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+**El horario que capturaba la clínica se tiraba a la basura, en silencio.** El
+modal de alta de especialista pedía "Horario de consulta / Disponibilidad" y
+"Duración base por cita", pero en Modo En Vivo `handleCreateDoctor` armaba el
+cuerpo de la petición con solo `name`, `specialty`, `phone` y `email`. Peor:
+`createDoctorSchema` declara `additionalProperties: false`, así que aunque el
+panel los hubiera mandado, la API los habría rechazado con 400. El dueño
+capturaba su horario, veía el aviso de éxito y no se guardaba nada.
+
+Esto no era cosmético. `SchedulerService` valida contra
+`doctor.availabilityRules` y, cuando viene vacío, usa su horario por defecto
+(L-J 9-18 con comida 14-15, V 9-17, S 10-14). Una clínica que abre de 11 a 20
+veía a su asistente rechazar pacientes reales a las 19:00 con "El horario
+solicitado está fuera del horario de atención del especialista", y ofrecer
+citas a las 9:00 con el consultorio cerrado. De todos los problemas hallados
+en esta auditoría, este es el que estaba costando dinero.
+
+Se corrigió de raíz, no parchando el envío:
+
+- **El campo de texto libre desapareció.** "Lunes a Viernes: 9:00 - 18:00" no
+  se puede traducir de forma confiable a reglas de agenda, así que aunque se
+  hubiera guardado, el motor no habría podido usarlo. En su lugar hay un
+  editor estructurado (`ScheduleEditor`): casilla por día, horas de apertura
+  y cierre, comida opcional y duración base. Se extrajo como componente propio
+  porque el asistente de configuración inicial lo va a reutilizar.
+- **`POST /api/tenants/:id/doctors` acepta y valida `availabilityRules`.** La
+  validación vive en `lib/availability.ts` y devuelve mensajes que el personal
+  pueda entender ("El lunes la hora de cierre debe ser posterior a la de
+  apertura"), no errores de esquema. Cubre traslapes entre turnos, comida
+  fuera del horario, días fuera de 0-6 y rangos absurdos de duración.
+
+`availabilityRules` se declara como `{ type: 'object' }` en el esquema JSON a
+propósito: describirlo ahí produciría el error genérico de validación de
+Fastify, y este formulario lo va a llenar gente que no lee mensajes de error
+técnicos.
+
+### Archivos tocados
+- `apps/api/src/lib/availability.ts` (nuevo) — validación y normalización de horarios.
+- `apps/api/src/routes/admin/doctors.ts` — acepta, valida y guarda `availabilityRules`.
+- `apps/api/src/routes/admin/schemas.ts` — `availabilityRules` en el esquema de alta.
+- `apps/web/src/components/schedule/ScheduleEditor.tsx` (nuevo) — editor semanal reutilizable, con conversión desde y hacia el JSON de la API.
+- `apps/web/src/components/dashboard/team/AddDoctorModal.tsx` — usa el editor en vez del campo de texto.
+- `apps/web/src/app/dashboard/team/page.tsx` — el horario viaja en el cuerpo de la petición.
+- `apps/api/src/availability-test-suite.ts` (nuevo) — 19 pruebas del validador.
+
+### Verificación
+Prueba de extremo a extremo contra la API en vivo con una clínica real creada
+por el registro público: se dio de alta una ortodoncista con martes 11:00-20:00
+(comida 15:00-16:00) y sábado 15:00-20:00, y `SchedulerService.getAvailableSlots`
+devolvió **7 espacios el sábado de 3:00 a 7:00 PM**, 11 el martes de 11:00 AM a
+7:00 PM y **0 el lunes** — justo lo contrario de lo que habría hecho con el
+horario por defecto. Los ocho casos de rechazo se comprobaron uno por uno
+contra la API (mensajes en español, HTTP 400). En el navegador real se dio de
+alta un especialista destildando lunes y marcando sábado, y la tarjeta quedó
+como "Mar - Sáb: 09:00 - 18:00". Suites: API 11/11, agente 20/20.
+
+### Pendientes derivados
+- Todavía no se puede **editar** un especialista: corregir un horario mal capturado obliga a borrarlo y volverlo a crear, lo que arrastra sus citas. Entra en el commit siguiente.
+
+---
+
 ## [2026-09-16] feat(auth): registro público con prueba de 14 días
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { AlertCircle, Stethoscope, X } from 'lucide-react';
+import { ScheduleEditor, type WeeklySchedule } from '../../schedule/ScheduleEditor';
 
 export interface AddDoctorModalProps {
   isOpen: boolean;
@@ -17,10 +18,10 @@ export interface AddDoctorModalProps {
   setPhone: (v: string) => void;
   email: string;
   setEmail: (v: string) => void;
-  schedule: string;
-  setSchedule: (v: string) => void;
-  slotDuration: string;
-  setSlotDuration: (v: string) => void;
+  schedule: WeeklySchedule;
+  setSchedule: (v: WeeklySchedule) => void;
+  slotDuration: number;
+  setSlotDuration: (v: number) => void;
   error: string | null;
   isSubmitting: boolean;
 }
@@ -140,34 +141,12 @@ export function AddDoctorModal({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Horario de consulta / Disponibilidad
-              </label>
-              <input
-                type="text"
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder="Lunes a Viernes: 9:00 - 18:00"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Duración base por cita
-              </label>
-              <select
-                value={slotDuration}
-                onChange={(e) => setSlotDuration(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-              >
-                <option value="30 minutos">30 minutos</option>
-                <option value="45 minutos">45 minutos</option>
-                <option value="60 minutos">60 minutos</option>
-                <option value="90 minutos">90 minutos</option>
-              </select>
-            </div>
+            <ScheduleEditor
+              schedule={schedule}
+              onChange={setSchedule}
+              slotDurationMinutes={slotDuration}
+              onSlotDurationChange={setSlotDuration}
+            />
           </div>
 
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">

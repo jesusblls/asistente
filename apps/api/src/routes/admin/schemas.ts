@@ -68,6 +68,10 @@ export const createDoctorSchema = {
       specialty: { type: 'string', minLength: 1, maxLength: 200 },
       phone: { type: 'string', maxLength: 30 },
       email: { type: 'string', maxLength: 200 },
+      // Estructura libre a propósito: `parseAvailabilityRules` la valida con
+      // mensajes que el personal de la clínica pueda entender, en vez del
+      // error de esquema genérico que produciría declararla aquí.
+      availabilityRules: { type: 'object' },
     },
     additionalProperties: false,
   },

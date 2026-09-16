@@ -10,6 +10,7 @@ import {
   resolveTenantId,
 } from '../../lib/http.js';
 import { createDoctorSchema } from './schemas.js';
+import { parseAvailabilityRules, serializeAvailabilityRules } from '../../lib/availability.js';
 
 export async function doctorRoutes(fastify: FastifyInstance) {
   /**
@@ -32,9 +33,17 @@ export async function doctorRoutes(fastify: FastifyInstance) {
           : null;
       const email = optionalString(body.email, 'Email', 200) || null;
 
+      // Sin horario capturado el especialista cae en el horario por defecto
+      // del `SchedulerService` (L-J 9-18, V 9-17, S 10-14), que casi nunca es
+      // el real: el panel debe mandarlo y aquí se valida antes de guardarlo.
+      const availabilityRules =
+        body.availabilityRules === undefined || body.availabilityRules === null
+          ? null
+          : serializeAvailabilityRules(parseAvailabilityRules(body.availabilityRules));
+
       const doctor = await db.$transaction(async (tx) => {
         const created = await tx.doctor.create({
-          data: { tenantId, name, specialty, phone, email },
+          data: { tenantId, name, specialty, phone, email, availabilityRules },
         });
 
         await recordAudit(
@@ -44,7 +53,7 @@ export async function doctorRoutes(fastify: FastifyInstance) {
             action: 'CREATE',
             entityType: 'DOCTOR',
             entityId: created.id,
-            metadata: { name, specialty },
+            metadata: { name, specialty, horarioCapturado: availabilityRules !== null },
           },
           tx
         );
