@@ -20,6 +20,8 @@ import {
   VoiceCallSession,
   isVoicePipelineEnabled,
   resolveVoicePipelineConfig,
+  VOICE_SILENCE_REPROMPT_REPLY,
+  VOICE_TTS_ERROR_REPLY,
   type VoiceAgent,
   type VoiceAgentContext,
   type VoiceAgentResponse,
@@ -180,6 +182,41 @@ class FakeTtsProvider implements TextToSpeechProvider {
   async synthesize(text: string): Promise<Buffer> {
     this.calls.push(text);
     return this.audio;
+  }
+
+  async synthesizeStream(text: string, options: { onChunk: (chunk: Buffer) => void }): Promise<void> {
+    this.calls.push(text);
+    if (this.audio.length > 0) options.onChunk(this.audio);
+  }
+}
+
+/**
+ * Simula a Cartesia fallando a media respuesta las primeras `failuresLeft`
+ * veces que se le pide sintetizar; después de eso sintetiza con normalidad.
+ */
+class FailingTtsProvider implements TextToSpeechProvider {
+  readonly id = 'failing-tts';
+  calls: string[] = [];
+
+  constructor(
+    readonly isConfigured: boolean,
+    private failuresLeft: number
+  ) {}
+
+  async synthesize(): Promise<Buffer> {
+    throw new Error('Cartesia synth error (prueba)');
+  }
+
+  async synthesizeStream(
+    text: string,
+    options: { onChunk: (chunk: Buffer) => void }
+  ): Promise<void> {
+    this.calls.push(text);
+    if (this.failuresLeft > 0) {
+      this.failuresLeft -= 1;
+      throw new Error('Cartesia stream error (prueba)');
+    }
+    options.onChunk(Buffer.alloc(320, MULAW_SILENCE_BYTE));
   }
 }
 
@@ -732,6 +769,224 @@ async function runVoiceTests(): Promise<void> {
       }
     );
     assert(failedTransfer === false, 'un error de Twilio devuelve false sin romper la llamada');
+
+    let fetchCalledWithoutSignalwireConfig = false;
+    const missingSignalwireConfig = await redirectCallToHuman(
+      { callSid: 'CA1' },
+      {
+        env: {
+          SIGNALWIRE_PROJECT_ID: 'PROJ1',
+          SIGNALWIRE_API_TOKEN: 'tok',
+          // Falta SIGNALWIRE_SPACE_URL y no hay credenciales de Twilio: no debe
+          // llamar a ninguna API.
+          TWILIO_HUMAN_NUMBER: '+525555000000',
+        } as NodeJS.ProcessEnv,
+        fetchImpl: (async () => {
+          fetchCalledWithoutSignalwireConfig = true;
+          return new Response('{}', { status: 200 });
+        }) as typeof fetch,
+      }
+    );
+    assert(
+      missingSignalwireConfig === false && fetchCalledWithoutSignalwireConfig === false,
+      'sin credenciales completas de SignalWire no se llama a su API'
+    );
+
+    let capturedSignalwire: { url: string; init: any } | null = null;
+    const redirectedSignalwire = await redirectCallToHuman(
+      { callSid: 'CA456', callerId: '+525555123456' },
+      {
+        env: {
+          SIGNALWIRE_PROJECT_ID: 'PROJ1',
+          SIGNALWIRE_API_TOKEN: 'secret-token',
+          SIGNALWIRE_SPACE_URL: 'https://jesusblls.signalwire.com/',
+          TWILIO_HUMAN_NUMBER: '+525555000000',
+          TWILIO_HUMAN_DIAL_TIMEOUT: '15',
+        } as NodeJS.ProcessEnv,
+        fetchImpl: (async (url: unknown, init: unknown) => {
+          capturedSignalwire = { url: String(url), init };
+          return new Response('{}', { status: 200 });
+        }) as typeof fetch,
+      }
+    );
+    assert(
+      redirectedSignalwire === true,
+      'con credenciales completas de SignalWire y 200 la transferencia es exitosa'
+    );
+    assert(
+      capturedSignalwire?.url ===
+        'https://jesusblls.signalwire.com/api/laml/2010-04-01/Accounts/PROJ1/Calls/CA456.json',
+      'la transferencia llama al endpoint correcto de SignalWire (espacio y Project ID normalizados)'
+    );
+    assert(
+      String(capturedSignalwire?.init?.body).includes('Twiml=') &&
+        String(capturedSignalwire?.init?.headers?.Authorization).startsWith('Basic '),
+      'la transferencia a SignalWire envía TwiML y autenticación Basic'
+    );
+
+    const failedSignalwireTransfer = await redirectCallToHuman(
+      { callSid: 'CA9' },
+      {
+        env: {
+          SIGNALWIRE_PROJECT_ID: 'PROJ1',
+          SIGNALWIRE_API_TOKEN: 'secret-token',
+          SIGNALWIRE_SPACE_URL: 'jesusblls.signalwire.com',
+          TWILIO_HUMAN_NUMBER: '+525555000000',
+        } as NodeJS.ProcessEnv,
+        fetchImpl: (async () => new Response('err', { status: 500 })) as typeof fetch,
+      }
+    );
+    assert(
+      failedSignalwireTransfer === false,
+      'un error HTTP de SignalWire devuelve false sin romper la llamada'
+    );
+  }
+
+  section('🛠️ Falla de TTS a media respuesta (silencio total → recuperación)');
+  {
+    // Cartesia falla en el primer intento (la respuesta normal del agente);
+    // el pipeline debe intentar una disculpa breve en vez de dejar la
+    // llamada en silencio total.
+    const tts = new FailingTtsProvider(true, 1);
+    const store = new FakeTranscriptStore();
+    const deps = buildSessionDeps({ tts, transcriptStore: store });
+    const session = new VoiceCallSession(deps);
+
+    for (let i = 0; i < 3; i += 1) session.handleMedia(mulawToBase64(toneFrame()));
+    for (let i = 0; i < 4; i += 1) session.handleMedia(mulawToBase64(silenceFrame));
+
+    const recovered = await waitFor(() => tts.calls.length === 2);
+    assert(recovered, 'tras un error de Cartesia se intenta una disculpa breve de recuperación');
+    assert(
+      tts.calls[1] === VOICE_TTS_ERROR_REPLY,
+      'la disculpa de recuperación usa el mensaje VOICE_TTS_ERROR_REPLY'
+    );
+    assert(session.getStats().stopped === false, 'la llamada sigue abierta tras recuperarse del error');
+
+    // Si la recuperación TAMBIÉN falla, no debe reintentar indefinidamente:
+    // se cuelga de forma segura tras el segundo intento.
+    let closedReason: string | undefined;
+    const tts2 = new FailingTtsProvider(true, 2);
+    const deps2 = buildSessionDeps({
+      tts: tts2,
+      close: (_code, reason) => {
+        closedReason = reason;
+      },
+    });
+    const session2 = new VoiceCallSession(deps2);
+
+    for (let i = 0; i < 3; i += 1) session2.handleMedia(mulawToBase64(toneFrame()));
+    for (let i = 0; i < 4; i += 1) session2.handleMedia(mulawToBase64(silenceFrame));
+
+    const gaveUp = await waitFor(() => session2.getStats().stopped === true);
+    assert(gaveUp, 'si la recuperación también falla, la llamada se cuelga en vez de quedar muda');
+    assert(
+      tts2.calls.length === 2,
+      'no hay un tercer intento de síntesis tras la recuperación fallida (sin loop infinito)'
+    );
+    assert(closedReason === 'tts_error', 'el cierre por doble falla de TTS se marca con el motivo tts_error');
+  }
+
+  section('🤐 Silencio total del paciente (reinsistencia y colgado)');
+  {
+    const tts = new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE));
+    const deps = buildSessionDeps({
+      tts,
+      config: { ...TEST_CONFIG, silenceRepromptMs: 100, maxReprompts: 1 },
+    });
+    const session = new VoiceCallSession(deps);
+
+    // El paciente nunca dice nada: silencio sostenido desde el inicio.
+    for (let i = 0; i < 8; i += 1) session.handleMedia(mulawToBase64(silenceFrame));
+
+    const reprompted = await waitFor(() => tts.calls.includes(VOICE_SILENCE_REPROMPT_REPLY));
+    assert(
+      reprompted,
+      'tras el silencio configurado (VOICE_SILENCE_REPROMPT_MS) se reinsiste preguntando si sigue en la línea'
+    );
+
+    await waitFor(() => !session.isSpeaking);
+
+    // Sigue sin responder tras la reinsistencia: se agota maxReprompts y cuelga
+    // en vez de dejar la llamada abierta hasta maxCallMs.
+    for (let i = 0; i < 8; i += 1) session.handleMedia(mulawToBase64(silenceFrame));
+
+    const hungUp = await waitFor(() => session.getStats().stopped === true);
+    assert(
+      hungUp,
+      'si el paciente sigue sin responder tras agotar las reinsistencias, se despide y cuelga'
+    );
+    assert(
+      tts.calls.filter((text) => text === VOICE_SILENCE_REPROMPT_REPLY).length === 1,
+      'con VOICE_MAX_REPROMPTS=1 solo se reinsiste una vez antes de colgar'
+    );
+
+    // El bot hablando o un turno en curso no deben disparar la reinsistencia.
+    const busyDeps = buildSessionDeps({
+      tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
+      config: { ...TEST_CONFIG, silenceRepromptMs: 40, maxReprompts: 3 },
+    });
+    const busySession = new VoiceCallSession(busyDeps);
+    for (let i = 0; i < 3; i += 1) busySession.handleMedia(mulawToBase64(toneFrame()));
+    // Silencio dentro de la ventana normal de cierre de utterance: no debe
+    // contarse como "silencio total del paciente".
+    for (let i = 0; i < 2; i += 1) busySession.handleMedia(mulawToBase64(silenceFrame));
+    assert(
+      !(busyDeps.tts as FakeTtsProvider).calls.includes(VOICE_SILENCE_REPROMPT_REPLY),
+      'la reinsistencia no dispara mientras hay una utterance en curso'
+    );
+  }
+
+  section('📟 Tono DTMF 0: transferencia inmediata a recepción humana');
+  {
+    let handoverCalled = false;
+    const store = new FakeTranscriptStore();
+    const deps = buildSessionDeps({
+      transcriptStore: store,
+      onHumanHandover: async () => {
+        handoverCalled = true;
+        return true;
+      },
+    });
+    const session = new VoiceCallSession(deps);
+
+    session.handleDtmf('0');
+
+    const transferred = await waitFor(() => handoverCalled);
+    assert(
+      transferred,
+      "presionar '0' activa el mismo flujo de transferencia a recepción que requiresHumanHandover"
+    );
+    assert(session.getStats().handoverRequested, 'el handover por DTMF queda marcado en las estadísticas');
+    assert(store.handovers.length === 1, 'el handover por DTMF se registra en la conversación');
+
+    // Otras teclas no hacen nada.
+    let otherKeyHandoverCalled = false;
+    const otherKeyDeps = buildSessionDeps({
+      onHumanHandover: async () => {
+        otherKeyHandoverCalled = true;
+        return true;
+      },
+    });
+    const otherKeySession = new VoiceCallSession(otherKeyDeps);
+    otherKeySession.handleDtmf('5');
+    await tick(20);
+    assert(!otherKeyHandoverCalled, "una tecla distinta de '0' no dispara ninguna acción");
+
+    // Presionar '0' dos veces no duplica la transferencia (idempotente).
+    let handoverCount = 0;
+    const doublePressDeps = buildSessionDeps({
+      onHumanHandover: async () => {
+        handoverCount += 1;
+        return true;
+      },
+    });
+    const doublePressSession = new VoiceCallSession(doublePressDeps);
+    doublePressSession.handleDtmf('0');
+    doublePressSession.handleDtmf('0');
+    await waitFor(() => handoverCount >= 1);
+    await tick(30);
+    assert(handoverCount === 1, "presionar '0' dos veces no duplica la transferencia a recepción");
   }
 
   console.log('\n========================================================');

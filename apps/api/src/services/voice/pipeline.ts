@@ -5,6 +5,22 @@ import type { TranscriptStore, TranscriptTurn } from './transcriptStore.js';
 import { silentVoiceLogger, type VoiceLogger } from './types.js';
 
 /**
+ * Limpia el texto del agente antes de sintetizarlo por voz. El mismo texto
+ * sirve para WhatsApp/texto ("$850 MXN", "**Fecha:**"), pero leído en voz
+ * alta Cartesia interpreta "$" como "dólares" y deja el "MXN" suelto (suena
+ * "850 dólares M-X-N"); el markdown de negritas también se lee literal.
+ */
+export function sanitizeForSpeech(text: string): string {
+  return text
+    .replace(/\$\s*([\d.,]+)(?:\s*MXN)?/gi, '$1 pesos')
+    .replace(/\bMXN\b/gi, 'pesos')
+    .replace(/\*\*/g, '')
+    .replace(/(?<!\d)\*(?!\d)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Orquestador del ciclo conversacional de una llamada telefónica:
  *
  *   audio del paciente (mu-law 8 kHz)
@@ -37,6 +53,7 @@ export interface VoiceAgentResponse {
   appointmentBooked?: unknown;
   requiresHumanHandover?: boolean;
   triageAlert?: unknown;
+  shouldEndCall?: boolean;
 }
 
 export interface VoiceAgent {
@@ -75,6 +92,10 @@ export interface VoicePipelineConfig {
   markTimeoutMs: number;
   shutdownDrainMs: number;
   hangupOnHandover: boolean;
+  /** Silencio total (sin utterance en curso, con el bot callado) antes de reinsistir. */
+  silenceRepromptMs: number;
+  /** Reinsistencias máximas antes de despedirse y colgar por silencio. */
+  maxReprompts: number;
 }
 
 export const VOICE_FALLBACK_REPLY =
@@ -84,6 +105,11 @@ export const VOICE_MAX_TURNS_REPLY =
 export const VOICE_HANDOVER_REPLY =
   'Le comunico con nuestro equipo de recepción. Le pido permanecer en la línea un momento, por favor.';
 export const VOICE_FAREWELL_REPLY = 'Gracias por llamar. Hasta luego.';
+/** Se usa cuando Cartesia falla a media respuesta, para no dejar la línea muda. */
+export const VOICE_TTS_ERROR_REPLY =
+  'Disculpe, tuve un problema técnico. ¿Podría repetir su pregunta, por favor?';
+/** Reinsistencia cuando el paciente deja de hablar por completo. */
+export const VOICE_SILENCE_REPROMPT_REPLY = '¿Hola? ¿Sigue en la línea?';
 
 function envNumber(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const parsed = Number(env[name]);
@@ -110,18 +136,24 @@ export function resolveVoicePipelineConfig(
   return {
     mode: envMode(env),
     language: env.VOICE_LANGUAGE || env.DEEPGRAM_LANGUAGE || 'es',
-    speechRmsThreshold: Number(env.VOICE_SPEECH_RMS_THRESHOLD) || 0.02,
+    // 0.02 resultó demasiado sensible en llamadas reales: clics de teclado y
+    // ruido de fondo del micrófono del teléfono lo cruzaban y el bot se
+    // interrumpía solo (o abría una "utterance" sin voz real que Deepgram
+    // nunca podía transcribir). 0.04 sigue detectando voz normal.
+    speechRmsThreshold: Number(env.VOICE_SPEECH_RMS_THRESHOLD) || 0.04,
     silenceMs: envNumber(env, 'VOICE_SILENCE_MS', 700),
     minSpeechMs: envNumber(env, 'VOICE_MIN_SPEECH_MS', 250),
     maxUtteranceMs: envNumber(env, 'VOICE_MAX_UTTERANCE_MS', 15000),
     maxTurns: envNumber(env, 'VOICE_MAX_TURNS', 30),
     maxCallMs: envNumber(env, 'VOICE_MAX_CALL_MS', 15 * 60 * 1000),
     bargeInEnabled: envBool(env, 'VOICE_BARGE_IN', true),
-    bargeInFrames: envNumber(env, 'VOICE_BARGE_IN_FRAMES', 5),
+    bargeInFrames: envNumber(env, 'VOICE_BARGE_IN_FRAMES', 8),
     paceAudio: envBool(env, 'VOICE_PACE_AUDIO', true),
     markTimeoutMs: envNumber(env, 'VOICE_MARK_TIMEOUT_MS', 20000),
     shutdownDrainMs: envNumber(env, 'VOICE_DRAIN_TIMEOUT_MS', 5000),
     hangupOnHandover: envBool(env, 'VOICE_HANGUP_ON_HANDOVER', true),
+    silenceRepromptMs: envNumber(env, 'VOICE_SILENCE_REPROMPT_MS', 8000),
+    maxReprompts: envNumber(env, 'VOICE_MAX_REPROMPTS', 2),
     ...overrides,
   };
 }
@@ -215,6 +247,11 @@ export class VoiceCallSession {
   private handoverRequested = false;
   private appointmentBooked = false;
   private readonly startedAt: number;
+  /** Milisegundos de silencio total (bot callado, sin utterance) acumulados. */
+  private silenceSinceActivityMs = 0;
+  private repromptCount = 0;
+  /** true mientras un turno está en cola/procesándose (STT ya cerró, agente y TTS en vuelo). */
+  private busy = false;
 
   constructor(deps: VoiceCallSessionDeps) {
     this.deps = deps;
@@ -336,7 +373,20 @@ export class VoiceCallSession {
     }
 
     if (!this.utterance) {
-      if (!speech) return;
+      if (!speech) {
+        // Solo cuenta como "silencio total" cuando el bot no está hablando y
+        // no hay un turno en vuelo (STT/agente/TTS): de lo contrario la
+        // latencia normal del agente podría disparar una reinsistencia falsa.
+        if (this.speaking || this.busy || this.stopped) {
+          this.silenceSinceActivityMs = 0;
+        } else {
+          this.silenceSinceActivityMs += frameMs;
+          this.checkSilenceReprompt();
+        }
+        return;
+      }
+      this.silenceSinceActivityMs = 0;
+      this.repromptCount = 0;
       this.utterance = {
         session: this.stt.openSession({
           language: this.config.language,
@@ -351,6 +401,8 @@ export class VoiceCallSession {
         durationMs: 0,
       };
       this.utteranceCount += 1;
+    } else {
+      this.silenceSinceActivityMs = 0;
     }
 
     const utterance = this.utterance;
@@ -371,6 +423,33 @@ export class VoiceCallSession {
     }
   }
 
+  /**
+   * Si el paciente no ha dicho nada (ni hay turno en curso) durante
+   * `silenceRepromptMs`, se le pregunta si sigue en la línea. Tras agotar
+   * `maxReprompts` intentos sin respuesta, se despide y cuelga en vez de
+   * dejar la llamada abierta hasta `maxCallMs`.
+   */
+  private checkSilenceReprompt(): void {
+    if (this.silenceSinceActivityMs < this.config.silenceRepromptMs) return;
+    this.silenceSinceActivityMs = 0;
+    this.repromptCount += 1;
+
+    if (this.repromptCount > this.config.maxReprompts) {
+      this.logger.info('Silencio total del paciente agotó las reinsistencias; se cuelga', {
+        callSid: this.callSid,
+        repromptCount: this.repromptCount,
+      });
+      void this.endCall('silence_timeout');
+      return;
+    }
+
+    this.logger.info('Silencio total del paciente; se reinsiste', {
+      callSid: this.callSid,
+      repromptCount: this.repromptCount,
+    });
+    void this.speak(VOICE_SILENCE_REPROMPT_REPLY);
+  }
+
   private async finishUtterance(): Promise<void> {
     const utterance = this.utterance;
     if (!utterance) return;
@@ -383,7 +462,12 @@ export class VoiceCallSession {
 
     let transcript = '';
     try {
+      const sttStartedAt = this.now();
       transcript = (await utterance.session.finalize()).trim();
+      this.logger.info('Latencia STT (Deepgram finalize)', {
+        callSid: this.callSid,
+        durationMs: this.now() - sttStartedAt,
+      });
     } catch (error) {
       this.logger.warn('No se pudo transcribir el turno de voz', {
         callSid: this.callSid,
@@ -404,13 +488,62 @@ export class VoiceCallSession {
   }
 
   private enqueueTurn(transcript: string, options: { repeat: boolean }): void {
+    this.busy = true;
     this.queue = this.queue
       .then(() => this.processTurn(transcript, options))
       .catch((error) => {
         this.logger.error('Error procesando un turno de voz', error, {
           callSid: this.callSid,
         });
+      })
+      .finally(() => {
+        this.busy = false;
       });
+  }
+
+  /** Procesa el tono DTMF '0': transferencia inmediata a recepción humana. */
+  handleDtmf(digit?: string): void {
+    if (this.stopped || !digit || digit !== '0') return;
+    this.logger.info('El paciente presionó 0: se solicita transferencia a recepción', {
+      callSid: this.callSid,
+    });
+    this.busy = true;
+    this.queue = this.queue
+      .then(() => this.triggerHumanHandover())
+      .catch((error) => {
+        this.logger.error('Error procesando la transferencia por DTMF', error, {
+          callSid: this.callSid,
+        });
+      })
+      .finally(() => {
+        this.busy = false;
+      });
+  }
+
+  /**
+   * Flujo único de transferencia a recepción humana, compartido entre el
+   * handover que pide el agente (`requiresHumanHandover`) y el tono DTMF '0'.
+   * Idempotente: si ya se solicitó handover en esta llamada, no repite nada.
+   */
+  private async triggerHumanHandover(transcriptForRecord = ''): Promise<void> {
+    if (this.handoverRequested || this.stopped) return;
+    this.handoverRequested = true;
+    await this.deps.transcriptStore?.markHandover(this.turnPayload(transcriptForRecord));
+
+    if (!this.config.hangupOnHandover) return;
+
+    await this.speak(VOICE_HANDOVER_REPLY);
+    if (this.deps.onHumanHandover) {
+      try {
+        await this.deps.onHumanHandover();
+      } catch (error) {
+        this.logger.warn('No se pudo transferir la llamada a recepción', {
+          callSid: this.callSid,
+          err: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    await this.endCall('handover', false);
   }
 
   private turnPayload(content: string): TranscriptTurn {
@@ -447,7 +580,12 @@ export class VoiceCallSession {
       channel: 'PHONE_CALL',
     };
 
+    const agentStartedAt = this.now();
     const response = await this.agent.processMessage(transcript, context, [...this.history]);
+    this.logger.info('Latencia del agente (LLM + herramientas)', {
+      callSid: this.callSid,
+      durationMs: this.now() - agentStartedAt,
+    });
     const reply = (response?.replyText ?? '').trim();
 
     this.history.push(
@@ -476,28 +614,23 @@ export class VoiceCallSession {
     }
 
     if (response?.requiresHumanHandover) {
-      this.handoverRequested = true;
-      await this.deps.transcriptStore?.markHandover(this.turnPayload(transcript));
-      if (this.config.hangupOnHandover) {
-        await this.speak(VOICE_HANDOVER_REPLY);
-        if (this.deps.onHumanHandover) {
-          try {
-            await this.deps.onHumanHandover();
-          } catch (error) {
-            this.logger.warn('No se pudo transferir la llamada a recepción', {
-              callSid: this.callSid,
-              err: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-        await this.endCall('handover', false);
-      }
+      await this.triggerHumanHandover(transcript);
+    }
+
+    // La despedida ya se dijo como parte de `reply`; no hace falta otra frase
+    // de cierre genérica, solo colgar.
+    if (response?.shouldEndCall && !this.stopped) {
+      await this.endCall('farewell', false);
     }
   }
 
-  private async speak(text: string, options: { force?: boolean } = {}): Promise<void> {
+  private async speak(
+    text: string,
+    options: { force?: boolean; isRecoveryAttempt?: boolean } = {}
+  ): Promise<void> {
     const force = options.force === true;
-    const clean = text.replace(/\s+/g, ' ').trim();
+    const isRecoveryAttempt = options.isRecoveryAttempt === true;
+    const clean = sanitizeForSpeech(text);
     if (!clean) return;
 
     if (!this.tts.isConfigured) {
@@ -514,45 +647,112 @@ export class VoiceCallSession {
     this.speaking = true;
     this.loudDuringPlayback = 0;
 
-    let audio: Buffer;
+    const ttsStartedAt = this.now();
+    let firstChunkAt: number | null = null;
+
+    // Cola de tramas de 20ms (160 bytes) que se va llenando a medida que
+    // llega audio de Cartesia por WebSocket, para poder mandarlo a Twilio a
+    // ritmo real sin esperar la respuesta completa (antes esto era la
+    // principal fuente de silencio muerto: ~6s con el REST /tts/bytes).
+    const frames: Buffer[] = [];
+    let remainder = Buffer.alloc(0);
+    let streamEnded = false;
+    let streamError: Error | null = null;
+    let waiter: (() => void) | null = null;
+
+    const wake = () => {
+      if (waiter) {
+        const resolveWaiter = waiter;
+        waiter = null;
+        resolveWaiter();
+      }
+    };
+
+    const streamPromise = this.tts
+      .synthesizeStream(clean, {
+        signal: controller.signal,
+        onChunk: (chunk) => {
+          if (firstChunkAt === null) firstChunkAt = this.now();
+          const data = Buffer.concat([remainder, chunk]);
+          const cut = Math.floor(data.length / TWILIO_FRAME_BYTES) * TWILIO_FRAME_BYTES;
+          for (const frame of chunkMulaw(data.subarray(0, cut))) frames.push(frame);
+          remainder = data.subarray(cut);
+          wake();
+        },
+      })
+      .catch((error: unknown) => {
+        streamError = error instanceof Error ? error : new Error(String(error));
+      })
+      .finally(() => {
+        if (remainder.length > 0) {
+          for (const frame of chunkMulaw(remainder)) frames.push(frame);
+          remainder = Buffer.alloc(0);
+        }
+        streamEnded = true;
+        wake();
+      });
+
     try {
-      audio = await this.tts.synthesize(clean, { signal: controller.signal });
-    } catch (error) {
+      while (true) {
+        if (token !== this.playbackToken || (!force && this.stopped)) {
+          this.speaking = false;
+          controller.abort();
+          await streamPromise;
+          return;
+        }
+
+        const frame = frames.shift();
+        if (frame) {
+          this.deps.send({
+            event: 'media',
+            streamSid: this.streamSid,
+            media: { payload: frame.toString('base64') },
+          });
+          if (this.config.paceAudio) {
+            await this.sleep(TWILIO_FRAME_MS);
+          }
+          continue;
+        }
+
+        if (streamEnded) break;
+        await new Promise<void>((resolve) => {
+          waiter = resolve;
+        });
+      }
+    } finally {
+      if (firstChunkAt !== null) {
+        this.logger.info('Latencia TTS (Cartesia, primer audio)', {
+          callSid: this.callSid,
+          durationMs: firstChunkAt - ttsStartedAt,
+          totalDurationMs: this.now() - ttsStartedAt,
+          replyCharacters: clean.length,
+        });
+      }
+    }
+
+    if (streamError) {
       this.speaking = false;
       this.synthesisController = null;
-      if (
-        token !== this.playbackToken ||
-        (error instanceof Error && error.name === 'AbortError')
-      ) {
-        this.logger.debug('Síntesis cancelada por interrupción del paciente', {
-          callSid: this.callSid,
-        });
+      this.logger.error('No se pudo sintetizar la respuesta de voz', streamError, {
+        callSid: this.callSid,
+        isRecoveryAttempt,
+      });
+
+      // Antes esto dejaba la llamada en silencio total si Cartesia fallaba a
+      // media respuesta. Se intenta una disculpa breve una sola vez: si ESE
+      // intento también falla (`isRecoveryAttempt`), no se reintenta de nuevo
+      // (evita un loop infinito) y se cuelga de forma segura sin más TTS.
+      if (isRecoveryAttempt) {
+        await this.endCall('tts_error', false);
         return;
       }
-      this.logger.error('No se pudo sintetizar la respuesta de voz', error, {
-        callSid: this.callSid,
-      });
+      await this.speak(VOICE_TTS_ERROR_REPLY, { force, isRecoveryAttempt: true });
       return;
     }
 
     if (token !== this.playbackToken) {
       this.speaking = false;
       return;
-    }
-
-    for (const frame of chunkMulaw(audio)) {
-      if (token !== this.playbackToken || (!force && this.stopped)) {
-        this.speaking = false;
-        return;
-      }
-      this.deps.send({
-        event: 'media',
-        streamSid: this.streamSid,
-        media: { payload: frame.toString('base64') },
-      });
-      if (this.config.paceAudio) {
-        await this.sleep(TWILIO_FRAME_MS);
-      }
     }
 
     const markName = `voice-${this.turnCount}-${token}`;

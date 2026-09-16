@@ -162,6 +162,7 @@ class DeepgramSttSession implements SttSession {
   private closed = false;
   private pendingAudio: Buffer[] = [];
   private finals: string[] = [];
+  private receivedFinal = false;
   private resolveFinal: ((text: string) => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -199,6 +200,10 @@ class DeepgramSttSession implements SttSession {
 
     this.socket.on('close', () => {
       this.opened = false;
+      // Deepgram puede cerrar el socket sin mandar ningún Results final
+      // cuando no hubo nada que transcribir; eso también es una respuesta
+      // definitiva (transcripción vacía), no un motivo para seguir esperando.
+      this.receivedFinal = true;
       this.resolvePendingFinal();
     });
   }
@@ -215,12 +220,17 @@ class DeepgramSttSession implements SttSession {
       if (payload.type !== 'Results') return;
 
       const transcript = payload.channel?.alternatives?.[0]?.transcript ?? '';
-      if (!transcript) return;
 
       if (payload.is_final) {
-        this.finals.push(transcript);
+        // Un resultado final "vacío" (nada más que transcribir tras el
+        // CloseStream) también cuenta como respuesta definitiva de Deepgram:
+        // antes se descartaba silenciosamente y la llamada se quedaba
+        // esperando los 6s completos del timeout aunque Deepgram ya hubiera
+        // contestado que no había nada.
+        if (transcript) this.finals.push(transcript);
+        this.receivedFinal = true;
       }
-      this.config.onPartial?.(transcript);
+      if (transcript) this.config.onPartial?.(transcript);
       this.resolvePendingFinal();
     } catch (error) {
       this.config.logger?.warn('Respuesta ilegible de Deepgram', {
@@ -235,7 +245,7 @@ class DeepgramSttSession implements SttSession {
 
   private resolvePendingFinal(): void {
     if (!this.resolveFinal) return;
-    if (this.finals.length === 0 && !this.failed && !this.closed) return;
+    if (this.finals.length === 0 && !this.failed && !this.closed && !this.receivedFinal) return;
     const resolve = this.resolveFinal;
     this.resolveFinal = null;
     if (this.timer) {

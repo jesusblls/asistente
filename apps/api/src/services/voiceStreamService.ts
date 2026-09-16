@@ -74,6 +74,7 @@ interface TwilioStreamMessage {
   };
   media?: { payload?: string };
   mark?: { name?: string };
+  dtmf?: { digit?: string };
 }
 
 /** Mensaje de seguimiento post-llamada (mismo texto que la versión anterior). */
@@ -93,8 +94,11 @@ async function resolveTenantFromDatabase(params: {
     if (fromStream) return fromStream;
   }
 
+  // Ver nota equivalente en webhooks.ts::resolveTenantByPhone: aceptamos
+  // cualquier E.164 válido, no solo +52, para poder probar con números de
+  // otros países mientras se consigue uno mexicano para producción.
   const normalized = normalizeMexicanPhone(params.toPhone);
-  if (!/^\+52\d{10}$/.test(normalized)) return null;
+  if (!/^\+\d{8,15}$/.test(normalized)) return null;
 
   return db.tenant.findFirst({
     where: { isActive: true, phoneE164: normalized },
@@ -261,9 +265,15 @@ export class VoiceStreamService {
             session?.handleMark(message.mark?.name);
             break;
 
-          case 'dtmf':
-            logger.debug('DTMF recibido durante la llamada', { callSid: session?.callSid });
+          case 'dtmf': {
+            const digit = message.dtmf?.digit;
+            logger.debug('DTMF recibido durante la llamada', { callSid: session?.callSid, digit });
+            // '0' activa exactamente el mismo flujo de transferencia a
+            // recepción humana que usa `requiresHumanHandover`; otras teclas
+            // se ignoran (no hace falta responder).
+            session?.handleDtmf(digit);
             break;
+          }
 
           case 'stop': {
             const active = session;
