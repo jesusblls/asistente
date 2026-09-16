@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-16] feat(web): asistente de configuración inicial
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `7a61054`
 
 ### Qué se hizo
 Con el registro público ya funcionando, quedaba el hueco que lo hacía inútil:
@@ -83,7 +83,7 @@ panel vacío. Suites: API 11/11, agente 20/20, estrés 44/44, y
 
 ## [2026-09-16] feat(api): aplicar los cupos del plan contratado
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `e8a6452`
 
 ### Qué se hizo
 El commit del modelo de planes dejó los cupos definidos pero sin aplicar. Aquí
@@ -139,7 +139,7 @@ API 11/11 (79/79 de voz tras corregir el fallo abierto), agente 20/20, estrés
 
 ## [2026-09-16] feat(api): editar especialistas, tratamientos y FAQs
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `46f51ab`
 
 ### Qué se hizo
 El panel solo sabía **crear y borrar**. No existía ninguna ruta de edición, y
@@ -203,7 +203,7 @@ quedó persistido. Suites: API 11/11, estrés 44/44.
 
 ## [2026-09-16] fix(api): persistir el horario capturado del especialista
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `5c99bbb`
 
 ### Qué se hizo
 **El horario que capturaba la clínica se tiraba a la basura, en silencio.** El
@@ -268,7 +268,7 @@ como "Mar - Sáb: 09:00 - 18:00". Suites: API 11/11, agente 20/20.
 
 ## [2026-09-16] feat(auth): registro público con prueba de 14 días
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `eca66d9`
 
 ### Qué se hizo
 **No existía forma de crear una cuenta.** `POST /auth/register` devolvía 404,
@@ -335,7 +335,7 @@ Valle". Builds de API y web limpios; suites de la API en verde (10/10).
 
 ## [2026-09-16] fix(api): responder en español al limitar peticiones
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `61d5118`
 
 ### Qué se hizo
 Al probar el alta de una clínica desde el navegador, el limitador de
@@ -368,7 +368,7 @@ Rebasando a propósito el límite de `/auth/login` (10/minuto) la API responde
 
 ## [2026-09-16] feat(db): dar respaldo real a los planes de suscripción
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `25167d5`
 
 ### Qué se hizo
 Una auditoría del producto desde la perspectiva del cliente que paga reveló
