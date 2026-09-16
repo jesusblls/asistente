@@ -10,6 +10,27 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] refactor(web): optimizar altura, jerarquía y blur del navbar
+
+**Autor:** Antigravity (Gemini 3.8 Flash)
+
+### Qué se hizo
+- Rediseño y refinamiento del `Navbar` (`apps/web/src/components/landing/Navbar.tsx`) para mejorar la ergonomía visual y jerarquía en la landing page:
+  1. **Altura optimizada:** Reducción de la altura excesiva de `h-20` (80px) a una medida más moderna y esbelta de `h-16` / `h-[68px]`, liberando área útil de pantalla y evitando sensación de pesadez.
+  2. **Efecto de cristal dinámico:** Se agregó detección reactiva de scroll (`isScrolled`) para que en el tope de página el navbar sea sutil y translúcido (`bg-white/70 backdrop-blur-xs`), y al desplazarse se eleve con un desenfoque más nítido (`bg-white/90 backdrop-blur-md border-slate-200/90 shadow-xs`).
+  3. **Jerarquía equilibrada de acciones:** Se reorganizaron los tres elementos de la derecha en una escala clara: pastilla sutil para la línea telefónica demo (+52 55), botón secundario discreto para *Acceso Clínica*, y botón principal destacado para *Probar Simulador*.
+  4. **Experiencia móvil:** Cierre automático y bloqueo del scroll de fondo (`body.style.overflow`) cuando el menú lateral está abierto.
+
+### Archivos tocados
+- `apps/web/src/components/landing/Navbar.tsx`
+- `BITACORA.md`
+
+### Verificación
+- Build de Next.js 16 (`npm --workspace=@asistente/web run build`) verificado exitoso con 0 errores.
+- Detector mecánico Impeccable (`impeccable detect`) verificado con 0 hallazgos.
+
+---
+
 ## [2026-09-16] fix(web): evitar scroll automático en simulador interactivo
 
 **Autor:** Antigravity (Gemini 3.8 Flash)
