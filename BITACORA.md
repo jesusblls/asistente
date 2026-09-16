@@ -10,6 +10,27 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] fix(web): eliminar saltos de línea y espaciar el navbar
+
+**Autor:** Antigravity (Gemini 3.8 Flash)
+
+### Qué se hizo
+- Se resolvió el problema visual donde los textos y botones del Navbar se apretaban y rompían en dos líneas ("Calculadora \n ROI", "+52 (55) 4912- \n 8830", "Acceso \n Clínica", "Probar \n Simulador") en pantallas de laptops y resoluciones medianas:
+  1. **Regla estricta de no-wrap:** Se añadió `whitespace-nowrap` a todos los enlaces y botones del encabezado, impidiendo cualquier corte o salto de línea vertical.
+  2. **Desahogo de espacio horizontal:** Se removió la pastilla fija del teléfono del bloque de acciones principal para resoluciones estándar (solo visible en pantallas ultra-anchas `2xl`), dejando únicamente los 2 botones esenciales (*Acceso Clínica* y *Probar Simulador*).
+  3. **Simplificación de etiquetas de navegación:** Enlaces concisos (*Simulador*, *Soluciones*, *Calculadora*, *Precios*, *Testimonios*, *FAQ*) que entran con holgura y espacio visual limpio.
+  4. **Punto de quiebre responsivo:** La barra colapsa de forma limpia a menú móvil por debajo de `xl` (`1280px`), garantizando que en ninguna pantalla se vea amontonada.
+
+### Archivos tocados
+- `apps/web/src/components/landing/Navbar.tsx`
+- `BITACORA.md`
+
+### Verificación
+- Build de Next.js 16 (`npm --workspace=@asistente/web run build`) verificado exitoso con 0 errores.
+- Detector mecánico Impeccable (`impeccable detect`) verificado con 0 hallazgos.
+
+---
+
 ## [2026-09-16] refactor(web): optimizar altura, jerarquía y blur del navbar
 
 **Autor:** Antigravity (Gemini 3.8 Flash)
