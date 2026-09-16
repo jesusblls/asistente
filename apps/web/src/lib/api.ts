@@ -141,6 +141,38 @@ export async function loginRequest(params: {
   return data;
 }
 
+/**
+ * Alta autoservicio de una clínica nueva con prueba gratuita.
+ * Devuelve una sesión ya iniciada: el prospecto entra directo al asistente
+ * de configuración en vez de tener que volver a capturar sus credenciales.
+ */
+export async function registerRequest(params: {
+  clinicName: string;
+  phoneE164: string;
+  adminName: string;
+  email: string;
+  password: string;
+}): Promise<{
+  token: string;
+  user: AuthUserInfo;
+  tenant: AuthTenantInfo;
+  trialEndsAt: string;
+  onboardingStep: string | null;
+}> {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'No se pudo crear la cuenta');
+  }
+  return data;
+}
+
 export async function logoutRequest(): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/auth/logout`, {

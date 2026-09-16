@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, LogIn, Loader2 } from 'lucide-react';
 import { loginRequest, setSession } from '../../lib/api';
@@ -110,6 +111,13 @@ export default function LoginPage() {
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
             {isSubmitting ? 'Verificando...' : 'Entrar al panel'}
           </button>
+
+          <p className="text-center text-xs text-slate-500">
+            ¿Tu clínica todavía no tiene cuenta?{' '}
+            <Link href="/registro" className="font-semibold text-teal-700 hover:text-teal-800">
+              Pruébalo gratis 14 días
+            </Link>
+          </p>
         </form>
       </div>
     </main>

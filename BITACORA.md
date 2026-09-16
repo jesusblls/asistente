@@ -10,6 +10,73 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(auth): registro público con prueba de 14 días
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+**No existía forma de crear una cuenta.** `POST /auth/register` devolvía 404,
+`/api/signup` devolvía 404, y `POST /api/tenants` exige sesión iniciada más
+estar en la allowlist `PLATFORM_ADMIN_EMAILS`. La única alta posible era que
+un administrador de plataforma la hiciera a mano contra la API.
+
+Mientras tanto la landing prometía lo contrario en dos lugares distintos:
+los tres botones de precios decían "Comenzar Prueba de 14 Días" / "Probar
+Clínica Pro Gratis" y apuntaban a `/dashboard`, que redirige a `/login`,
+donde el prospecto no tiene credenciales — un callejón sin salida; y el FAQ
+afirmaba "Puedes activar tu prueba gratuita de 14 días sin ingresar ninguna
+tarjeta de crédito". Ninguna de las dos cosas era cierta.
+
+Se agregó el alta autoservicio completa: `POST /auth/register` (única ruta
+pública que escribe en base de datos) crea la clínica y su usuario ADMIN en
+una transacción, con `planSlug: 'trial'`, `subscriptionStatus: 'TRIALING'` y
+`trialEndsAt` a 14 días, y devuelve una sesión ya iniciada para que el
+prospecto no tenga que volver a capturar sus credenciales. Del lado web, la
+página `/registro` y los CTA de precios y del menú apuntando a ella.
+
+Dos decisiones que vale la pena dejar escritas:
+
+1. **El correo debe ser único en toda la plataforma, no solo dentro de la
+   clínica.** El esquema permite el mismo correo en dos clínicas
+   (`@@unique([tenantId, email])`), pero `/auth/login` resuelve la sesión por
+   correo y exige `tenantSlug` cuando encuentra más de uno. Permitir el
+   duplicado en el alta habría dejado a **ambas** cuentas sin poder entrar con
+   el formulario normal, y el dueño de la primera ni siquiera sabría por qué.
+   Se responde 409 antes de crear nada.
+2. **La clínica nace vacía, sin doctores ni servicios de ejemplo.** El alta
+   por `POST /api/tenants` sí siembra un doctor y dos tratamientos genéricos;
+   aquí no, a propósito: datos de relleno que nadie revisa son peores que una
+   pantalla vacía, porque el agente de IA los tomaría por reales y le cotizaría
+   a un paciente una limpieza a un precio inventado. Por eso el tenant nace con
+   `onboardingStep: 'clinica'`.
+
+Además se endurecieron las validaciones de la ruta pública: contraseña de al
+menos 10 caracteres, formato de correo, teléfono mexicano E.164 y un límite
+de 5 altas por hora y por IP.
+
+### Archivos tocados
+- `apps/api/src/routes/auth.ts` — `POST /auth/register` y `/auth/me` ampliado con el estado de plan y onboarding (el panel los necesita en el mismo viaje que la sesión, para decidir a dónde mandar al usuario sin una segunda petición).
+- `apps/web/src/lib/api.ts` — `registerRequest()`.
+- `apps/web/src/app/registro/page.tsx` (nuevo) — formulario de alta con la propuesta de valor al lado.
+- `apps/web/src/app/login/page.tsx` — enlace a `/registro` para quien todavía no tiene cuenta.
+- `apps/web/src/components/landing/Pricing.tsx` — los tres CTA apuntan a `/registro` en vez de a `/dashboard`.
+- `apps/web/src/components/landing/Navbar.tsx` — botón primario "Prueba gratis" (escritorio y móvil); el simulador pasa a secundario.
+
+### Verificación
+Contra la API en vivo: alta correcta (201 con sesión y `trialEndsAt` a 14
+días), correo duplicado 409, contraseña corta 400, correo mal formado 400 y
+teléfono inválido 400. Después del alta, `/auth/login` entra con esas mismas
+credenciales y `/auth/me` reporta `trial`/`TRIALING`, 14 días restantes y
+`onboarding.step: "clinica"`. Prueba completa en el navegador real: se llenó
+`/registro` y la sesión aterrizó en el panel como "Consultorio Dental del
+Valle". Builds de API y web limpios; suites de la API en verde (10/10).
+
+### Pendientes derivados
+- El alta aterriza en el panel, que para una clínica recién creada está vacío; el asistente de configuración inicial entra en el commit siguiente y pasa a ser el destino del registro.
+- Los cupos del plan de prueba todavía no se aplican en las rutas.
+
+---
+
 ## [2026-09-16] fix(api): responder en español al limitar peticiones
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`

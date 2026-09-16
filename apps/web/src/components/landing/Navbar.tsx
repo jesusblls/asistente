@@ -113,14 +113,22 @@ export function Navbar() {
               <span>Acceso Clínica</span>
             </Link>
 
-            {/* Simulator Primary Button */}
+            {/* Simulator Secondary Button */}
             <a
               href="#demo"
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition-all active:scale-95 whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors whitespace-nowrap"
             >
-              <Sparkles className="w-4 h-4 text-teal-200 shrink-0" />
+              <Sparkles className="w-4 h-4 text-teal-600 shrink-0" />
               <span>Probar Simulador</span>
             </a>
+
+            {/* Signup Primary Button */}
+            <Link
+              href="/registro"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition-all active:scale-95 whitespace-nowrap"
+            >
+              <span>Prueba gratis</span>
+            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -179,6 +187,14 @@ export function Navbar() {
             >
               <LayoutDashboard className="w-4 h-4 text-teal-600" />
               <span>Acceso al Dashboard de tu Clínica</span>
+            </Link>
+
+            <Link
+              href="/registro"
+              onClick={() => setMobileMenuOpen(false)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition-colors"
+            >
+              <span>Crear cuenta · Prueba gratis</span>
             </Link>
 
             <a

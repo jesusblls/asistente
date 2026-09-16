@@ -36,7 +36,7 @@ export function Pricing() {
         'Facturación fiscal CFDI 4.0 mensual',
       ],
       ctaText: 'Comenzar Prueba de 14 Días',
-      ctaHref: '/dashboard',
+      ctaHref: '/registro',
     },
     {
       name: 'Clínica Pro',
@@ -59,7 +59,7 @@ export function Pricing() {
         'Soporte técnico prioritario por WhatsApp en México',
       ],
       ctaText: 'Probar Clínica Pro Gratis',
-      ctaHref: '/dashboard',
+      ctaHref: '/registro',
     },
     {
       name: 'Cadenas & Hospitales',
@@ -82,7 +82,7 @@ export function Pricing() {
         'Facturación CFDI 4.0 mensual automática',
       ],
       ctaText: 'Contactar a Asesor Clínico',
-      ctaHref: '/dashboard',
+      ctaHref: '/registro',
     },
   ];
 
