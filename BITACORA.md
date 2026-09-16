@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-16] feat(web): página para contratar el plan
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `8b61408`
 
 ### Qué se hizo
 La pantalla donde la clínica contrata: plan actual con su consumo, selector de
@@ -61,7 +61,7 @@ API 12/12, agente 20/20, estrés 44/44, e2e 5/5, build sin errores.
 
 ## [2026-09-16] feat(payments): cobro autoservicio con Mercado Pago
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `552c363`
 
 ### Qué se hizo
 Era el hueco más grande que quedaba del flujo SaaS: una clínica cuya prueba
