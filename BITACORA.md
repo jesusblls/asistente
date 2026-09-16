@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-16] fix(web): no expulsar al login al recargar el panel
 
-**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5 · **Commit:** `b653405`
 
 ### Qué se hizo
 Recargar (F5) cualquier pantalla del panel, o abrirla desde un favorito,
