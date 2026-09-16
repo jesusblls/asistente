@@ -10,6 +10,39 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] fix(api): responder en español al limitar peticiones
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Al probar el alta de una clínica desde el navegador, el limitador de
+peticiones cortó el intento y la pantalla mostró literalmente
+`Rate limit exceeded, retry in 58 minutes` — el mensaje por defecto de
+`@fastify/rate-limit`, en inglés, dentro de un producto que atiende a
+consultorios mexicanos y está íntegramente en español. Era el único texto de
+la API que no estaba traducido, y aparece justo en el peor momento: cuando
+alguien ya se topó con una pared.
+
+Se agregó un `errorResponseBuilder` con el texto en español y la espera
+formateada con singular/plural correctos ("1 minuto" vs "3 minutos"), en vez
+del `context.after` del plugin, que también viene en inglés.
+
+El detalle que costó un intento: el plugin **lanza** como error lo que
+devuelve el builder, así que el texto tiene que ir en `message` y no en
+`error`. Al ponerlo solo en `error`, `registerErrorHandler` armaba su
+respuesta desde `error.message` (indefinido) y el panel recibía un `{}` vacío
+— un 429 sin explicación, peor que el mensaje en inglés.
+
+### Archivos tocados
+- `apps/api/src/server.ts` — `errorResponseBuilder` del limitador y helper `formatRetryDelay`.
+
+### Verificación
+Rebasando a propósito el límite de `/auth/login` (10/minuto) la API responde
+`{"error":"Demasiados intentos. Vuelve a intentarlo en 1 minuto."}` con HTTP
+429. Suites de la API en verde (10/10).
+
+---
+
 ## [2026-09-16] feat(db): dar respaldo real a los planes de suscripción
 
 **Autor:** Claude Opus 5 · **Commit:** `pendiente`

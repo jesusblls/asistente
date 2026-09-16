@@ -45,6 +45,18 @@ function resolveCorsOrigins(): string[] {
   return ['http://localhost:3001', 'http://127.0.0.1:3001'];
 }
 
+/** Espera restante del limitador, en español y redondeada hacia arriba. */
+function formatRetryDelay(ttlMs: number): string {
+  const seconds = Math.max(1, Math.ceil(ttlMs / 1000));
+  if (seconds < 60) return `${seconds} ${seconds === 1 ? 'segundo' : 'segundos'}`;
+
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`;
+
+  const hours = Math.ceil(minutes / 60);
+  return `${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+}
+
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
   assertProductionEnv();
   const server = fastify({
@@ -95,6 +107,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   await server.register(rateLimit, {
     max: Number(process.env.RATE_LIMIT_MAX || 300),
     timeWindow: '1 minute',
+    // El mensaje por defecto del plugin está en inglés y llegaba tal cual a la
+    // pantalla del personal de la clínica ("Rate limit exceeded, retry in 58
+    // minutes"). El plugin lanza lo que devuelve este builder como error, así
+    // que el texto debe ir en `message`: es de ahí de donde el manejador de
+    // errores arma el `{ error }` que consume el panel.
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Demasiados intentos. Vuelve a intentarlo en ${formatRetryDelay(context.ttl)}.`,
+    }),
   });
   await server.register(cors, { origin: resolveCorsOrigins() });
   await server.register(formBody);
