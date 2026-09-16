@@ -8,6 +8,7 @@ import {
   Inbox,
   Calendar,
   Users,
+  Contact,
   Settings,
   Sparkles,
   ExternalLink,
@@ -139,6 +140,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     { href: '/dashboard', label: 'Resumen General', icon: LayoutDashboard },
     { href: '/dashboard/inbox', label: 'Bandeja Omnicanal', icon: Inbox, badge: 'WhatsApp' },
     { href: '/dashboard/calendar', label: 'Agenda y Citas', icon: Calendar },
+    { href: '/dashboard/patients', label: 'Pacientes', icon: Contact },
     { href: '/dashboard/team', label: 'Doctores y Servicios', icon: Users },
     { href: '/dashboard/settings', label: 'Canales y Telefonía (+52)', icon: Settings },
     // En vivo solo ADMIN puede consultar la bitácora; en Demo se muestra a

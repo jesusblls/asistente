@@ -257,6 +257,52 @@ async function runStressTestSuite() {
       'Endpoint GET /api/appointments respeta estrictamente el scope del tenantId'
     );
 
+    // Verificar aislamiento en API REST (/api/patients)
+    const patientA = await db.patient.findFirst({ where: { tenantId: tenantA.id, phoneE164: '+525512345001' } });
+    const patientB = await db.patient.findFirst({ where: { tenantId: tenantB.id, phoneE164: '+525512345002' } });
+
+    const apiPatientsResA = await app.inject({
+      method: 'GET',
+      url: `/api/patients?tenantId=${tenantA.id}`,
+    });
+    const apiPatientsA = apiPatientsResA.json();
+    assert(
+      apiPatientsA.length === 1 &&
+        apiPatientsA[0].id === patientA?.id &&
+        apiPatientsA[0].appointmentsCount === 1,
+      'Endpoint GET /api/patients respeta el scope del tenantId y cuenta sus citas'
+    );
+
+    const apiPatientsCrossRes = await app.inject({
+      method: 'GET',
+      url: `/api/patients?tenantId=${tenantB.id}`,
+    });
+    assert(
+      apiPatientsCrossRes.statusCode === 403,
+      'Clínica A no puede listar pacientes de la Clínica B con el token de A'
+    );
+
+    const apiPatientDetailCrossRes = await app.inject({
+      method: 'GET',
+      url: `/api/patients/${patientB?.id}`,
+    });
+    assert(
+      apiPatientDetailCrossRes.statusCode === 404,
+      'Clínica A no puede abrir el expediente de un paciente de la Clínica B'
+    );
+
+    const apiPatientDetailRes = await app.inject({
+      method: 'GET',
+      url: `/api/patients/${patientA?.id}`,
+    });
+    const apiPatientDetail = apiPatientDetailRes.json();
+    assert(
+      apiPatientDetailRes.statusCode === 200 &&
+        apiPatientDetail.appointments?.length === 1 &&
+        apiPatientDetail.appointments[0].id === apptA.id,
+      'Endpoint GET /api/patients/:id devuelve el expediente completo del paciente propio'
+    );
+
     // Verificar que un doctor de la Clínica B no puede ser consultado con el tenantId de Clínica A
     const leakSlots = await SchedulerService.getAvailableSlots({
       tenantId: tenantA.id,
