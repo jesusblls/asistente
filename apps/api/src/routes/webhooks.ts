@@ -8,7 +8,7 @@ import {
   maskPhone,
   verifyMercadoPagoSignature,
   verifyMetaSignature,
-  verifyTwilioSignature,
+  verifyVoiceWebhookSignature,
 } from '../lib/webhookSecurity.js';
 import { webhookActor } from '../lib/audit.js';
 
@@ -60,8 +60,12 @@ function resolvePublicHost(request: FastifyRequest): string {
 }
 
 async function resolveTenantByPhone(phone: string) {
+  // El "To" que manda Twilio ya llega en E.164 real; normalizeMexicanPhone solo
+  // reescribe formatos locales mexicanos y deja intacto cualquier otro país, así
+  // que aquí solo validamos la forma E.164 en general (no solo +52) para poder
+  // dar de alta clínicas de prueba con números de otros países.
   const normalized = normalizeMexicanPhone(phone);
-  if (!/^\+52\d{10}$/.test(normalized)) return null;
+  if (!/^\+\d{8,15}$/.test(normalized)) return null;
   return db.tenant.findFirst({ where: { isActive: true, phoneE164: normalized } });
 }
 
@@ -249,13 +253,15 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     const url = `${proto}://${host}${request.url}`;
     const body = (request.body ?? {}) as Record<string, unknown>;
 
-    verifyTwilioSignature({
+    verifyVoiceWebhookSignature({
       url,
       body,
-      signature: request.headers['x-twilio-signature'] as string | undefined,
+      twilioSignature: request.headers['x-twilio-signature'] as string | undefined,
+      signalWireSignature: request.headers['x-signalwire-signature'] as string | undefined,
     });
 
     const to = typeof body.To === 'string' ? body.To : '';
+    const from = typeof body.From === 'string' ? body.From : '';
     const tenant = await resolveTenantByPhone(to);
     if (!tenant) {
       throw new HttpError(404, 'Número telefónico no asociado a ninguna clínica activa');
@@ -273,12 +279,20 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       ? `\n      <Parameter name="authToken" value="${escapeXml(streamToken)}" />`
       : '';
 
+    // El "From" ya viene confirmado en el webhook; se manda explícito como
+    // Parameter en vez de confiar en que el evento `start` del WebSocket lo
+    // replique igual en todos los proveedores (SignalWire no lo garantiza
+    // como Twilio, y sin identidad de canal el agente no puede agendar).
+    const fromParam = from
+      ? `\n      <Parameter name="from" value="${escapeXml(from)}" />`
+      : '';
+
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Mia-Neural" language="es-MX">${escapeXml(welcome)}</Say>
   <Connect>
     <Stream url="wss://${host}/voice/stream">
-      <Parameter name="tenantId" value="${escapeXml(tenant.id)}" />${authTokenParam}
+      <Parameter name="tenantId" value="${escapeXml(tenant.id)}" />${fromParam}${authTokenParam}
     </Stream>
   </Connect>
 </Response>`;

@@ -101,6 +101,59 @@ export function verifyTwilioSignature(params: {
 }
 
 /**
+ * Verifica X-SignalWire-Signature. Misma fórmula HMAC-SHA1 que Twilio (URL +
+ * parámetros ordenados) — la API de compatibilidad de SignalWire firma igual
+ * que Twilio, solo cambian el nombre del header y el secreto ("Signing Key",
+ * no el API Token de las llamadas REST).
+ */
+export function verifySignalWireSignature(params: {
+  url: string;
+  body: Record<string, unknown>;
+  signature?: string;
+  signingKey?: string;
+}): void {
+  const signingKey = params.signingKey ?? process.env.SIGNALWIRE_SIGNING_KEY;
+  if (!signingKey) {
+    return missingSecret('Webhook de SignalWire no configurado: falta SIGNALWIRE_SIGNING_KEY');
+  }
+  if (!params.signature) {
+    if (devSkipEnabled()) return;
+    throw new HttpError(401, 'Firma de SignalWire ausente');
+  }
+
+  const expected = computeTwilioSignature(params.url, params.body, signingKey);
+  if (!safeEqual(expected, params.signature)) {
+    throw new HttpError(401, 'Firma de SignalWire inválida');
+  }
+}
+
+/**
+ * Verifica la llamada de voz entrante venga de Twilio o de SignalWire: se
+ * detecta el proveedor por cuál header de firma llegó y se valida con el
+ * secreto correspondiente. Ambos proveedores pueden convivir mientras se
+ * completa la migración de uno al otro.
+ */
+export function verifyVoiceWebhookSignature(params: {
+  url: string;
+  body: Record<string, unknown>;
+  twilioSignature?: string;
+  signalWireSignature?: string;
+}): void {
+  if (params.signalWireSignature) {
+    return verifySignalWireSignature({
+      url: params.url,
+      body: params.body,
+      signature: params.signalWireSignature,
+    });
+  }
+  return verifyTwilioSignature({
+    url: params.url,
+    body: params.body,
+    signature: params.twilioSignature,
+  });
+}
+
+/**
  * Verifica la firma x-signature de Mercado Pago.
  * Manifiesto oficial: id:<data.id>;request-id:<x-request-id>;ts:<ts>;
  */
