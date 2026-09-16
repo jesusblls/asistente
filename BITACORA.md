@@ -10,6 +10,29 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] fix(web): evitar scroll automático en simulador interactivo
+
+**Autor:** Antigravity (Gemini 3.8 Flash)
+
+### Qué se hizo
+- Se corrigió el comportamiento molesto donde la página entera se desplazaba (*scrolleaba*) automáticamente hacia abajo al entrar al sitio o al interactuar con el simulador.
+- **Causa raíz:** `InteractiveDemo.tsx` utilizaba `messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })` dentro de un `useEffect` dependiente de `[messages, isTyping]`. En los navegadores, `Element.scrollIntoView()` no solo desplaza el contenedor interno, sino también todos los elementos contenedores ancestros hasta el `window`/`document.documentElement`, forzando a la ventana a saltar hacia abajo desde el Hero hacia el simulador en el montaje inicial y en cada interacción.
+- **Solución:**
+  1. Se eliminó la llamada a `scrollIntoView()` global de la ventana y el nodo vacío `messagesEndRef`.
+  2. Se asoció una referencia directa al contenedor de mensajes interno (`chatContainerRef`).
+  3. El desplazamiento automático ahora se realiza de forma estrictamente acotada al contenedor (`chatContainerRef.current.scrollTo({ top: scrollHeight })`), sin alterar jamás la posición del scroll de la página exterior.
+  4. Se añadió una guarda `isInitialMount` para que durante la carga o recarga inicial de la página no ocurra ningún scroll prematuro.
+
+### Archivos tocados
+- `apps/web/src/components/landing/InteractiveDemo.tsx`
+- `BITACORA.md`
+
+### Verificación
+- Build de Next.js 16 (`npm --workspace=@asistente/web run build`) verificado exitoso.
+- Detector Impeccable (`.agents/skills/impeccable/scripts/impeccable detect --json`) con 0 hallazgos.
+
+---
+
 ## [2026-09-16] feat(web): rediseño completo de la landing page bajo estándar Impeccable
 
 **Autor:** Antigravity (Gemini 3.8 Flash)

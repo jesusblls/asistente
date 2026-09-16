@@ -94,7 +94,8 @@ export function InteractiveDemo() {
   const [callDuration, setCallDuration] = useState(24);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
   const clinic = CLINIC_PRESETS[specialty];
 
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -111,14 +112,15 @@ export function InteractiveDemo() {
     },
   ]);
 
-  // Reset messages when specialty changes
-  useEffect(() => {
+  const handleSelectSpecialty = (key: SpecialtyKey) => {
+    if (key === specialty) return;
+    setSpecialty(key);
     setMessages([
       {
         id: `msg-spec-${Date.now()}`,
         sender: 'AI',
-        text: CLINIC_PRESETS[specialty].greeting,
-        timestamp: '11:42 AM',
+        text: CLINIC_PRESETS[key].greeting,
+        timestamp: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
         triage: {
           level: 'INFO',
           title: 'AsistentePro Activo (+52)',
@@ -126,11 +128,20 @@ export function InteractiveDemo() {
         },
       }
     ]);
-  }, [specialty]);
+  };
 
-  // Scroll to bottom
+  // Scroll to bottom ONLY inside the inner chat container, NEVER scrolling the whole page
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
   }, [messages, isTyping]);
 
   // Call duration counter
@@ -336,7 +347,7 @@ export function InteractiveDemo() {
             <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-xl border border-slate-700 text-xs">
               <button
                 type="button"
-                onClick={() => setSpecialty('DENTAL')}
+                onClick={() => handleSelectSpecialty('DENTAL')}
                 className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
                   specialty === 'DENTAL' ? 'bg-teal-600 text-white font-bold' : 'text-slate-400 hover:text-white'
                 }`}
@@ -345,7 +356,7 @@ export function InteractiveDemo() {
               </button>
               <button
                 type="button"
-                onClick={() => setSpecialty('MEDICINA')}
+                onClick={() => handleSelectSpecialty('MEDICINA')}
                 className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
                   specialty === 'MEDICINA' ? 'bg-teal-600 text-white font-bold' : 'text-slate-400 hover:text-white'
                 }`}
@@ -354,7 +365,7 @@ export function InteractiveDemo() {
               </button>
               <button
                 type="button"
-                onClick={() => setSpecialty('DERMA')}
+                onClick={() => handleSelectSpecialty('DERMA')}
                 className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
                   specialty === 'DERMA' ? 'bg-teal-600 text-white font-bold' : 'text-slate-400 hover:text-white'
                 }`}
@@ -481,7 +492,7 @@ export function InteractiveDemo() {
             )}
 
             {/* Chat Messages List */}
-            <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 text-sm bg-slate-900">
+            <div ref={chatContainerRef} className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 text-sm bg-slate-900">
               {messages.map((msg) => (
                 <div
                   key={msg.id}
@@ -582,8 +593,6 @@ export function InteractiveDemo() {
                   </div>
                 </div>
               )}
-
-              <div ref={messagesEndRef} />
             </div>
 
             {/* Input Form */}
