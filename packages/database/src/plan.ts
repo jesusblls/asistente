@@ -44,6 +44,8 @@ export interface TenantPlanFields {
   planSlug: string;
   subscriptionStatus: string;
   trialEndsAt: Date | null;
+  /** Hasta cuándo está pagado el servicio; null si nunca hubo un cobro. */
+  currentPeriodEnd?: Date | null;
 }
 
 export function isPlanSlug(value: string): value is PlanSlug {
@@ -67,8 +69,20 @@ export function resolveTenantPlan(
 
   const trialExpired =
     status === 'TRIALING' && trialEndsAt !== null && trialEndsAt.getTime() <= now.getTime();
-  const isSuspended =
-    trialExpired || status === 'CANCELED' || status === 'EXPIRED' || status === 'PAST_DUE';
+
+  // Periodo ya pagado. Manda sobre el estado de la suscripción: quien cancela
+  // a mitad del mes pagó ese mes completo, y cortarle el servicio al momento
+  // sería cobrar de más y entregar de menos. Lo mismo vale para un cobro que
+  // falló: Mercado Pago reintenta durante días, y dejar sin línea telefónica a
+  // una clínica al primer rechazo de la tarjeta es desproporcionado mientras
+  // el periodo que ya pagó siga vigente.
+  const periodEnd = tenant.currentPeriodEnd ?? null;
+  const pagadoHastaHoy = periodEnd !== null && periodEnd.getTime() > now.getTime();
+
+  const suscripcionCaida =
+    status === 'CANCELED' || status === 'EXPIRED' || status === 'PAST_DUE';
+
+  const isSuspended = trialExpired || (suscripcionCaida && !pagadoHastaHoy);
 
   const trialDaysLeft =
     status === 'TRIALING' && trialEndsAt
@@ -107,7 +121,12 @@ export class PlanLimitError extends Error {
 async function loadPlanState(tenantId: string, now: Date): Promise<TenantPlanState> {
   const tenant = await db.tenant.findUnique({
     where: { id: tenantId },
-    select: { planSlug: true, subscriptionStatus: true, trialEndsAt: true },
+    select: {
+      planSlug: true,
+      subscriptionStatus: true,
+      trialEndsAt: true,
+      currentPeriodEnd: true,
+    },
   });
   if (!tenant) throw new Error('Clínica no encontrada');
   return resolveTenantPlan(tenant, now);
@@ -290,7 +309,11 @@ export async function assertCanTakeCall(tenantId: string, now: Date = new Date()
 /** Resumen de plan y consumo para el panel. */
 export async function getPlanSummary(tenantId: string, now: Date = new Date()) {
   const state = await loadPlanState(tenantId, now);
-  const [doctors, appointments, voiceSeconds] = await Promise.all([
+  const [suscripcion, doctors, appointments, voiceSeconds] = await Promise.all([
+    db.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { billingCycle: true, currentPeriodEnd: true, mpPreapprovalId: true },
+    }),
     db.doctor.count({ where: { tenantId, isActive: true } }),
     countAppointmentsThisPeriod(tenantId, now),
     getUsage(tenantId, 'VOICE_SECONDS', now),
@@ -303,6 +326,10 @@ export async function getPlanSummary(tenantId: string, now: Date = new Date()) {
     trialEndsAt: state.trialEndsAt?.toISOString() ?? null,
     trialDaysLeft: state.trialDaysLeft,
     isSuspended: state.isSuspended,
+    billingCycle: suscripcion.billingCycle,
+    currentPeriodEnd: suscripcion.currentPeriodEnd?.toISOString() ?? null,
+    /** Solo si existe, nunca el id: el panel no necesita la referencia de cobro. */
+    tieneSuscripcion: suscripcion.mpPreapprovalId !== null,
     period: usagePeriod(now),
     limits: state.limits,
     usage: {

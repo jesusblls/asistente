@@ -27,6 +27,17 @@ model Tenant {
   /// Fin de la prueba gratuita. Null en cuentas que nunca estuvieron en prueba.
   trialEndsAt           DateTime?
 
+  /// MONTHLY | ANNUAL. Null mientras la clínica no ha contratado.
+  billingCycle          String?
+  /// Id de la suscripción (preapproval) en Mercado Pago. Único: dos clínicas
+  /// no pueden compartir la misma autorización de cobro.
+  mpPreapprovalId       String?           @unique
+  /// Hasta cuándo está pagado el servicio. Lo extiende cada cobro autorizado.
+  currentPeriodEnd      DateTime?
+  /// Último cobro procesado, para que un reenvío del webhook de Mercado Pago
+  /// no extienda el periodo dos veces.
+  lastPaymentId         String?
+
   /// Paso del asistente de configuración inicial; null cuando ya terminó.
   /// Sin esto la IA atendería pacientes con horarios y precios inventados.
   onboardingStep        String?

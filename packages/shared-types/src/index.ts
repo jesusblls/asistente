@@ -282,3 +282,31 @@ export const TRIAL_DURATION_DAYS = 14;
 
 /** Métricas de consumo que se acumulan en `UsageCounter`. */
 export type UsageMetric = 'VOICE_SECONDS';
+
+/** Periodicidad del cobro de la suscripción. */
+export type BillingCycle = 'MONTHLY' | 'ANNUAL';
+
+/** Planes que una clínica puede contratar: `trial` no se vende. */
+export const PLANES_CONTRATABLES = ['consultorio', 'clinica-pro', 'cadenas'] as const;
+
+export function esPlanContratable(slug: string): slug is PlanSlug {
+  return (PLANES_CONTRATABLES as readonly string[]).includes(slug);
+}
+
+/**
+ * Importe que se cobra de una sola vez, en pesos.
+ *
+ * El precio anual del catálogo está expresado **por mes facturado
+ * anualmente** —así lo anuncia la landing ("MXN / mes · Facturado
+ * anualmente")—, así que el cargo real es ese precio por doce. Calcularlo en
+ * un solo lugar evita que la cifra que se cobra y la que se anuncia se
+ * separen.
+ */
+export function importeDelCiclo(plan: PlanDefinition, ciclo: BillingCycle): number {
+  return ciclo === 'ANNUAL' ? plan.priceAnnualMxn * 12 : plan.priceMonthlyMxn;
+}
+
+/** Meses que cubre un cobro del ciclo. */
+export function mesesDelCiclo(ciclo: BillingCycle): number {
+  return ciclo === 'ANNUAL' ? 12 : 1;
+}

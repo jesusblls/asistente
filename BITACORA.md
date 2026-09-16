@@ -10,6 +10,90 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(payments): cobro autoservicio con Mercado Pago
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Era el hueco más grande que quedaba del flujo SaaS: una clínica cuya prueba
+vencía quedaba suspendida **sin forma de pagar desde el producto**;
+`subscriptionStatus` solo se movía a mano en base de datos. Ahora puede
+contratar sola con la API de *preapproval* (suscripción recurrente) de Mercado
+Pago: autoriza una vez y Mercado Pago cobra por su cuenta cada periodo,
+avisando por webhook.
+
+La plataforma **nunca ve ni toca datos de tarjeta**: se crea la suscripción y
+se devuelve el `init_point`, la página alojada por Mercado Pago, donde ocurre
+la captura. Por aquí solo viajan el plan y el correo de quien contrata.
+
+Cinco decisiones que vale la pena dejar escritas:
+
+1. **Son dos flujos de dinero en direcciones opuestas y no comparten
+   credencial.** `MERCADOPAGO_ACCESS_TOKEN` cobra anticipos de pacientes *a
+   favor de la clínica*; el nuevo `MERCADOPAGO_PLATFORM_ACCESS_TOKEN` cobra
+   mensualidades *a favor de la plataforma*. En producción no hay respaldo
+   automático del segundo al primero, a propósito: si alguien dejara solo el
+   de anticipos, las mensualidades de todas las clínicas entrarían a la cuenta
+   de una clínica, y eso no se nota hasta conciliar.
+2. **Crear el link no es haber cobrado.** El checkout guarda el preapproval y
+   el plan pretendido pero **no** activa nada; el estado cambia solo cuando
+   Mercado Pago confirma. Activar al crear el link regalaría el servicio a
+   quien abandone el checkout a la mitad — por eso `pending` no mapea a ningún
+   estado.
+3. **Los cobros son idempotentes por `lastPaymentId`.** Mercado Pago reintenta
+   las notificaciones que no recibieron 200; sin esa guarda, cada reintento
+   regalaría un mes de servicio.
+4. **El periodo pagado manda sobre el estado de la suscripción.** Quien cancela
+   a medio mes pagó ese mes completo: `resolveTenantPlan` ahora considera
+   `currentPeriodEnd` y no suspende mientras siga vigente. Lo mismo con un
+   cobro fallido: Mercado Pago reintenta durante días, y dejar sin línea
+   telefónica a una clínica al primer rechazo de la tarjeta es
+   desproporcionado. Cortar al cancelar sería además cobrar un mes y entregar
+   menos.
+5. **Sin credencial en producción se falla ruidosamente.** En desarrollo se
+   genera un link claramente simulado para poder recorrer el flujo; en
+   producción se lanza error. Un link simulado en producción sería un cobro que
+   nunca ocurre: la clínica creería haber contratado y el servicio se le
+   cortaría igual.
+
+El importe anual se calcula en un solo lugar (`importeDelCiclo`) como el precio
+del catálogo × 12, porque la landing anuncia el precio anual **por mes
+facturado anualmente** ("MXN / mes · Facturado anualmente"). Tenerlo en una
+sola función evita que la cifra que se cobra y la que se anuncia se separen.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma` y `migrations/0004_tenant_subscription/` (nueva) — `billingCycle`, `mpPreapprovalId` (único), `currentPeriodEnd`, `lastPaymentId`.
+- `packages/shared-types/src/index.ts` — `BillingCycle`, `PLANES_CONTRATABLES`, `importeDelCiclo`, `mesesDelCiclo`.
+- `packages/database/src/plan.ts` — el periodo pagado manda sobre el estado; `getPlanSummary` expone la suscripción.
+- `packages/ai-agent/src/payment/subscriptionService.ts` (nuevo) — alta, sincronización, cobros y cancelación.
+- `apps/api/src/routes/admin/subscription.ts` (nuevo) — `GET /api/subscription`, `POST /api/subscription/checkout`, `POST /api/subscription/cancel`.
+- `apps/api/src/routes/webhooks.ts` — enruta `subscription_preapproval` y `subscription_authorized_payment` sin tocar el camino de los anticipos.
+- `apps/api/src/subscription-test-suite.ts` (nuevo) — 28 pruebas.
+- `.env.example` — las dos credenciales, con la advertencia de por qué son distintas, y `APP_PUBLIC_URL`.
+
+### Verificación
+**No hay credenciales de Mercado Pago en este entorno**, así que la suite
+sustituye `fetch` y ejercita los caminos reales del servicio contra respuestas
+representativas de su API: 28 pruebas en verde, incluidas las que protegen
+dinero — que el cargo mensual sea el anunciado, que el anual sea ese precio ×
+12, que un reenvío del webhook **no** regale otro mes, que un cobro adelantado
+encadene desde el periodo vigente sin quitarle días a la clínica, que un cobro
+rechazado no extienda nada, y que cancelar conserve el servicio hasta el fin
+del periodo pagado y lo suspenda después. El enrutamiento del webhook se probó
+con firma real contra el servidor en memoria: una notificación de suscripción
+va al cobro de la plataforma y no a un anticipo, y sin firma se rechaza con
+401. Contra la API en vivo se comprobaron el resumen con los importes de los
+tres planes, la contratación (link con `simulado: true` por no haber
+credencial), y los rechazos de plan y ciclo inválidos y de sesión ausente.
+Suites: API 12/12, agente 20/20, estrés 44/44.
+
+### Pendientes derivados
+- **Falta una prueba real contra Mercado Pago.** Requiere crear la aplicación, obtener el token de la cuenta de la plataforma y el secreto del webhook, y exponer la API con un túnel. Hasta entonces la integración está verificada solo contra respuestas simuladas.
+- No hay gestión de morosidad más allá de lo que hace Mercado Pago: cuando el periodo pagado vence con la suscripción pausada, la cuenta se suspende sin aviso previo por correo.
+- No se emite CFDI por la suscripción, pese a que la landing lo ofrece en los planes.
+
+---
+
 ## [2026-09-16] fix(web): no expulsar al login al recargar el panel
 
 **Autor:** Claude Opus 5 · **Commit:** `b653405`

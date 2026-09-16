@@ -8,6 +8,7 @@ import { patientRoutes } from './patients.js';
 import { faqRoutes } from './faqs.js';
 import { planRoutes } from './plan.js';
 import { onboardingRoutes } from './onboarding.js';
+import { subscriptionRoutes } from './subscription.js';
 import { auditRoutes } from './audit.js';
 
 export async function adminPlugin(fastify: FastifyInstance) {
@@ -23,6 +24,7 @@ export async function adminPlugin(fastify: FastifyInstance) {
   await fastify.register(faqRoutes);
   await fastify.register(planRoutes);
   await fastify.register(onboardingRoutes);
+  await fastify.register(subscriptionRoutes);
   await fastify.register(auditRoutes);
 }
 
@@ -37,4 +39,5 @@ export { patientRoutes } from './patients.js';
 export { faqRoutes } from './faqs.js';
 export { planRoutes } from './plan.js';
 export { onboardingRoutes } from './onboarding.js';
+export { subscriptionRoutes } from './subscription.js';
 export { auditRoutes } from './audit.js';

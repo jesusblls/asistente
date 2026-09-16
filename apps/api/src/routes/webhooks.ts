@@ -1,6 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db, decryptCredentials } from '@asistente/database';
-import { normalizeMexicanPhone, MercadoPagoService } from '@asistente/ai-agent';
+import {
+  normalizeMexicanPhone,
+  MercadoPagoService,
+  SubscriptionService,
+} from '@asistente/ai-agent';
 import { WhatsAppService } from '../services/whatsappService.js';
 import { enqueueMetaInbound } from '../services/queue/handlers.js';
 import { HttpError } from '../lib/http.js';
@@ -302,7 +306,12 @@ export async function webhookRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * 4. Webhook de Mercado Pago (anticipos No-Show Shield en MXN).
+   * 4. Webhook de Mercado Pago.
+   *
+   * Por aquí entran dos flujos de dinero que van en direcciones opuestas y no
+   * deben confundirse: los **anticipos de pacientes** a favor de la clínica
+   * (`payment`) y las **mensualidades de la clínica** a favor de la plataforma
+   * (`subscription_*`). Mercado Pago los distingue con `type`.
    */
   fastify.post('/webhooks/mercadopago', async (request: FastifyRequest, reply: FastifyReply) => {
     const body = (request.body ?? {}) as Record<string, any>;
@@ -312,6 +321,21 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       requestId: request.headers['x-request-id'] as string | undefined,
       signatureHeader: request.headers['x-signature'] as string | undefined,
     });
+
+    const tipo = String(body?.type || body?.topic || '');
+    const dataId = body?.data?.id ? String(body.data.id) : '';
+
+    // Cambio de estado de una suscripción (autorizada, pausada, cancelada).
+    if (tipo === 'subscription_preapproval') {
+      const estado = await SubscriptionService.syncFromPreapproval(dataId);
+      return reply.status(200).send({ success: true, tipo, estado });
+    }
+
+    // Cobro periódico de una suscripción ya autorizada.
+    if (tipo === 'subscription_authorized_payment') {
+      const aplicado = await SubscriptionService.handleAuthorizedPayment(dataId);
+      return reply.status(200).send({ success: true, tipo, aplicado });
+    }
 
     const updated = await MercadoPagoService.processPaymentWebhook(
       body,
