@@ -10,6 +10,69 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] fix(web): no expulsar al login al recargar el panel
+
+**Autor:** Claude Opus 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Recargar (F5) cualquier pantalla del panel, o abrirla desde un favorito,
+expulsaba al login **con la sesión perfectamente válida**. El usuario volvía a
+capturar sus credenciales para entrar al mismo lugar donde ya estaba.
+
+**Cómo se explotaba / cómo fallaba.** `AuthGuard` resolvía la sesión con
+`useSyncExternalStore(emptySubscribe, () => isAuthenticated(), () => false)`.
+Al cargar la página, el subárbol del panel **se remonta una vez después de
+hidratar**, y en ese remontaje React vuelve a tomar el `getServerSnapshot` —que
+devuelve `false`— aunque `localStorage` tenga la sesión intacta. El `useEffect`
+leía ese `false` y ejecutaba `router.replace('/login')` antes de que el valor
+real del cliente volviera a aplicar.
+
+La secuencia quedó probada instrumentando los renders en un navegador real:
+
+```
+render authed=true   localStorage=true    ← hidrata bien
+efecto authed=true
+render authed=false  localStorage=true    ← el remontaje toma el snapshot del servidor
+efecto authed=false  → REDIRIGE A LOGIN
+render authed=true   localStorage=true    ← vuelve a true, pero ya redirigió
+```
+
+**Por qué la corrección lo cierra.** El problema de fondo era confundir "no hay
+sesión" con "todavía no se sabe si hay sesión". Ahora el estado tiene tres
+valores (`verificando` | `autenticado` | `anonimo`): un remontaje devuelve a
+`verificando`, nunca a `anonimo`, y la redirección solo se dispara sobre un
+negativo comprobado en el cliente. Se eliminó `useSyncExternalStore` porque la
+sesión no es una fuente externa que cambie sola, es un dato que se lee una vez
+al montar; leerlo en un efecto y guardarlo en estado es inmune a cómo React
+decida reevaluar snapshots.
+
+Se descartó explícitamente que fuera un 401: `redirectToLogin()` llama a
+`clearSession()`, y tras el rebote las llaves de sesión seguían en
+`localStorage`, así que ese camino nunca se ejecutó.
+
+### Archivos tocados
+- `apps/web/src/components/auth/AuthGuard.tsx` — modelo de tres estados en lugar del booleano con snapshot de servidor.
+- `apps/web/e2e/login.spec.ts` — dos pruebas nuevas: recargar y entrar por URL directa conservan el panel; sin sesión se sigue redirigiendo al login.
+
+### Verificación
+En un navegador real, con el código anterior: iniciar sesión, F5, y aterrizar
+en `/login`. Con la corrección: F5 mantiene `/dashboard` con el encabezado del
+panel visible, y los enlaces directos a `/dashboard/patients` y
+`/dashboard/audit` abren donde deben. La contraparte también se comprobó:
+borrando la sesión de `localStorage`, `/dashboard` sigue redirigiendo a
+`/login` sin mostrar el panel ni un instante. Suites: e2e 5/5, API 11/11,
+agente 20/20, estrés 44/44, y `npm run build --workspaces` sin errores.
+
+**Límite conocido de la cobertura automática:** las pruebas e2e nuevas **no**
+reproducen este fallo. Se ejecutaron a propósito contra el código defectuoso y
+pasaban igual, incluso estrangulando la CPU 20x: el remontaje que lo dispara
+ocurre en un navegador real pero no en el Chromium de Playwright. Quedan como
+cobertura del camino del usuario, no como garantía contra esta regresión
+concreta, y así está anotado en el propio archivo de pruebas para que nadie
+confíe de más en ellas.
+
+---
+
 ## [2026-09-16] feat(web): avisar cuando la prueba está por vencer
 
 **Autor:** Claude Opus 5 · **Commit:** `d23445a`

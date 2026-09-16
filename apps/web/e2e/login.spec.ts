@@ -94,6 +94,52 @@ test('credenciales inválidas muestran el error y no abren el panel', async ({ p
   await expect(page).toHaveURL(/\/login/);
 });
 
+test('recargar el panel no expulsa al login con la sesión válida', async ({ page }) => {
+  await page.goto('/login');
+
+  await fillWhenHydrated(page, 'Correo electrónico', email);
+  await fillWhenHydrated(page, 'Contraseña', password);
+  await page.getByRole('button', { name: 'Entrar al panel' }).click();
+  await page.waitForURL('**/dashboard', { timeout: 15_000 });
+
+  // Cubre el comportamiento que rompía el bug de `AuthGuard`: al recargar, el
+  // subárbol del panel se remonta y la versión anterior tomaba entonces el
+  // `getServerSnapshot` de `useSyncExternalStore` (`false`), redirigiendo al
+  // login con la sesión intacta.
+  //
+  // ADVERTENCIA para quien toque esto: esta prueba **no** reproduce aquel
+  // fallo. El remontaje que lo dispara ocurre en un navegador real pero no en
+  // el Chromium de Playwright (se comprobó ejecutándola contra el código
+  // defectuoso: pasaba igual, incluso con la CPU estrangulada 20x). Queda como
+  // cobertura del camino del usuario —recargar y entrar por URL directa—, no
+  // como garantía contra esa regresión concreta; esa se verificó a mano
+  // instrumentando los renders.
+  await page.reload();
+
+  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(
+    page.getByRole('heading', { name: 'Panel de Recepción Inteligente' })
+  ).toBeVisible();
+
+  // La sesión debe seguir intacta: un rebote por 401 habría llamado a
+  // clearSession() y borrado estas llaves.
+  const sesionLocal = await page.evaluate(() => localStorage.getItem('asistente_auth_user'));
+  expect(sesionLocal).toBeTruthy();
+
+  // Entrar directo por URL (favorito o enlace compartido) debe funcionar igual.
+  await page.goto('/dashboard/patients');
+  await expect(page).toHaveURL(/\/dashboard\/patients/);
+});
+
+test('sin sesión, el panel sigue redirigiendo al login', async ({ page }) => {
+  // La contraparte del caso anterior: el arreglo no debe abrir el panel a
+  // quien no ha iniciado sesión.
+  await page.goto('/dashboard');
+
+  await page.waitForURL('**/login', { timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'Inicia sesión' })).toBeVisible();
+});
+
 test('el cierre de sesión invalida la cookie httpOnly y redirige al login', async ({ page }) => {
   await page.goto('/login');
 
