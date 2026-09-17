@@ -79,7 +79,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       );
     }
     if (method === 'PUT') {
-      return new Response(JSON.stringify({ id: mock.siguientePreapprovalId, status: 'cancelled' }), {
+      const nuevoStatus = body?.status === 'authorized' ? 'authorized' : 'cancelled';
+      mock.preapprovalStatus = nuevoStatus;
+      return new Response(JSON.stringify({ id: mock.siguientePreapprovalId, status: nuevoStatus }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -276,6 +278,73 @@ async function run() {
       !rechazado && trasRechazo.currentPeriodEnd?.getTime() === dosPeriodos.currentPeriodEnd?.getTime(),
       'Un cobro rechazado no extiende el servicio'
     );
+
+    // ---------------------------------------------------------------------
+    console.log('\n▶ Morosidad, período de gracia (3 días) y Dunning');
+    // ---------------------------------------------------------------------
+    assert(
+      trasRechazo.subscriptionStatus === 'PAST_DUE',
+      'Un cobro rechazado marca el estatus en PAST_DUE'
+    );
+    assert(
+      trasRechazo.pastDueSince !== null,
+      'Se registra la fecha exacta de entrada en morosidad (pastDueSince)'
+    );
+    assert(
+      trasRechazo.gracePeriodEndsAt !== null,
+      'Se otorga un período de gracia de 3 días naturales (gracePeriodEndsAt)'
+    );
+    const diasGracia = Math.round(
+      (trasRechazo.gracePeriodEndsAt!.getTime() - Date.now()) / 86_400_000
+    );
+    assert(
+      diasGracia >= 2 && diasGracia <= 4,
+      `El período de gracia es de aproximadamente 3 días (otorgó ${diasGracia} días)`
+    );
+    assert(
+      trasRechazo.lastPaymentError !== null,
+      'Se almacena el motivo legible del rechazo bancario'
+    );
+
+    // Verificamos registro en SubscriptionCharge
+    const cargos = await SubscriptionService.getChargesHistory(clinica.id);
+    assert(cargos.length >= 2, 'El historial de cargos registra tanto cobros aprobados como fallidos');
+    const cargoRechazado = cargos.find((c) => c.status === 'REJECTED');
+    assert(
+      cargoRechazado !== undefined && cargoRechazado.mpPaymentId === 'pago-003',
+      'El cargo rechazado queda registrado con su ID de Mercado Pago y status REJECTED'
+    );
+
+    // En período de gracia, la clínica NO se suspende (IA y telefonía siguen activas)
+    const estadoEnGracia = resolveTenantPlan(trasRechazo);
+    assert(
+      !estadoEnGracia.isSuspended && estadoEnGracia.graceDaysLeft !== null && estadoEnGracia.graceDaysLeft > 0,
+      'Durante el período de gracia la clínica NO está suspendida (protege a pacientes y citas)'
+    );
+
+    // Al expirar el período de gracia (4 días después), la clínica sí se suspende
+    const estadoGraciaVencida = resolveTenantPlan({
+      ...trasRechazo,
+      gracePeriodEndsAt: new Date(Date.now() - 86_400_000),
+      currentPeriodEnd: new Date(Date.now() - 86_400_000),
+    });
+    assert(
+      estadoGraciaVencida.isSuspended,
+      'Al vencer el período de gracia, la clínica morosa sí se suspende'
+    );
+
+    // Reintento de cobro
+    mock.preapprovalStatus = 'authorized';
+    mock.siguientePreapprovalId = 'preapproval-mp-123';
+    const reintento = await SubscriptionService.retryPayment(clinica.id, ACTOR);
+    assert(
+      reintento.reintentado === true,
+      'El reintento de cobro solicita la reactivación a Mercado Pago'
+    );
+
+    // HealthCheck periódico de dunning
+    const health = await SubscriptionService.runHealthCheck();
+    assert(typeof health.procesadas === 'number', 'El healthcheck de dunning escanea y procesa clínicas');
 
     // ---------------------------------------------------------------------
     console.log('\n▶ Ciclo anual');

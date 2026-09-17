@@ -1,5 +1,5 @@
 import { db } from '@asistente/database';
-import { OmnichannelAgent } from '@asistente/ai-agent';
+import { OmnichannelAgent, SubscriptionService } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
 import { WhatsAppService } from '../whatsappService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
@@ -216,10 +216,29 @@ async function processVoiceFollowUp(payload: VoicePostCallPayload): Promise<void
   if (!delivered) throw new Error('Meta no aceptó el seguimiento post-llamada');
 }
 
+async function processBillingDunningCheck(_payload: unknown, context: JobContext): Promise<void> {
+  context.logger.info('Iniciando chequeo periódico de morosidad y suscripciones (Dunning)');
+  const res = await SubscriptionService.runHealthCheck();
+  context.logger.info('Chequeo de suscripciones completado', res);
+
+  // Auto-reprogramar el siguiente escaneo periódico para dentro de 6 horas
+  const delayMs = 6 * 60 * 60 * 1000;
+  const nextDateKey = new Date(Date.now() + delayMs).toISOString().slice(0, 13);
+  await jobQueue
+    .enqueue({
+      type: 'BILLING_DUNNING_CHECK',
+      delayMs,
+      dedupeKey: `billing-check:${nextDateKey}`,
+      payload: {},
+    })
+    .catch(() => {});
+}
+
 export const jobHandlers: JobHandlerMap = {
   META_INBOUND_MESSAGE: processMetaInbound,
   WHATSAPP_SEND: processWhatsAppSend,
   VOICE_POST_CALL_FOLLOWUP: processVoiceFollowUp,
+  BILLING_DUNNING_CHECK: processBillingDunningCheck,
 };
 
 function envNumber(name: string, fallback: number): number {
@@ -282,4 +301,12 @@ export async function drainQueue(): Promise<number> {
 /** Arranca el worker dentro del proceso de la API. */
 export function startQueueWorker(): void {
   jobQueue.start();
+  // Encolar chequeo inicial al arrancar el worker
+  jobQueue
+    .enqueue({
+      type: 'BILLING_DUNNING_CHECK',
+      dedupeKey: `billing-check-init-${new Date().toISOString().slice(0, 10)}`,
+      payload: {},
+    })
+    .catch(() => {});
 }

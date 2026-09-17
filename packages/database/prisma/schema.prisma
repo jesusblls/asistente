@@ -38,6 +38,12 @@ model Tenant {
   /// no extienda el periodo dos veces.
   lastPaymentId         String?
 
+  /// Control de morosidad y período de gracia (Dunning).
+  pastDueSince          DateTime?
+  gracePeriodEndsAt     DateTime?
+  lastPaymentError      String?
+  lastBillingNoticeSentAt DateTime?
+
   /// Paso del asistente de configuración inicial; null cuando ya terminó.
   /// Sin esto la IA atendería pacientes con horarios y precios inventados.
   onboardingStep        String?
@@ -55,6 +61,7 @@ model Tenant {
   channelConfigs        ChannelConfig[]
   faqItems              FaqItem[]
   usageCounters         UsageCounter[]
+  subscriptionCharges   SubscriptionCharge[]
 }
 
 /// Consumo acumulado por clínica y periodo, para aplicar los cupos del plan.
@@ -314,4 +321,28 @@ model AuditLog {
   @@index([tenantId, patientId, createdAt])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, actorId, createdAt])
+}
+
+/// Historial completo de cargos y cobros periódicos de la suscripción SaaS.
+model SubscriptionCharge {
+  id              String    @id @default(cuid())
+  tenantId        String
+  mpPaymentId     String?
+  mpPreapprovalId String?
+  amountMxn       Float
+  status          String    // PENDING | APPROVED | REJECTED | REFUNDED
+  statusDetail    String?   // cc_rejected_insufficient_amount, accredited, etc.
+  failureReason   String?   // Explicación amigable en español mexicano para la clínica
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  paymentMethod   String?
+  lastFourDigits  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([mpPaymentId])
+  @@index([status])
 }

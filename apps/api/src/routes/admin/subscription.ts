@@ -130,4 +130,46 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  /**
+   * Reintenta reactivar una suscripción en morosidad trasfondear la tarjeta.
+   */
+  fastify.post(
+    '/api/subscription/retry',
+    { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      requireRole(request, ['ADMIN']);
+      const user = requireAuthUser(request);
+
+      const resultado = await SubscriptionService.retryPayment(
+        user.tenantId,
+        actorFromRequest(request)
+      );
+
+      return reply.send(resultado);
+    }
+  );
+
+  /**
+   * Historial de cargos y cobros periódicos de la clínica.
+   */
+  fastify.get('/api/subscription/history', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requireAuthUser(request);
+    const cargos = await SubscriptionService.getChargesHistory(user.tenantId);
+
+    return reply.send({
+      cargos: cargos.map((c) => ({
+        id: c.id,
+        amountMxn: c.amountMxn,
+        status: c.status,
+        statusDetail: c.statusDetail,
+        failureReason: c.failureReason,
+        paymentMethod: c.paymentMethod,
+        lastFourDigits: c.lastFourDigits,
+        periodStart: c.periodStart?.toISOString() ?? null,
+        periodEnd: c.periodEnd?.toISOString() ?? null,
+        createdAt: c.createdAt.toISOString(),
+      })),
+    });
+  });
 }

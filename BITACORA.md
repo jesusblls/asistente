@@ -10,6 +10,73 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(payments): morosidad, periodo de gracia y reintentos de cobro
+
+**Autor:** Gemini 3.8 Flash (Antigravity)
+
+### Qué se hizo
+Se implementó el sistema completo de cobranza inteligente, gestión de morosidad (*dunning*), período de gracia y reintentos de pago para las suscripciones recurrentes de Mercado Pago:
+
+1. **Modelo de datos relacional y migración 0005 (`packages/database`):**
+   - Nuevo modelo `SubscriptionCharge` en `schema.prisma` para registrar cada intento de cobro (aprobado, rechazado o pendiente) con su ID de Mercado Pago, monto en MXN, período cubierto, método/tarjeta y motivo legible de fallo.
+   - Nuevos campos de control en `Tenant`: `pastDueSince`, `gracePeriodEndsAt`, `lastPaymentError` y `lastBillingNoticeSentAt`.
+   - Migración versionada `0005_subscription_charges_dunning` aplicada exitosamente en Supabase.
+
+2. **Reglas de negocio y período de gracia (`packages/database/src/plan.ts`):**
+   - Período de gracia de 3 días naturales en morosidad (`PAST_DUE`).
+   - Para no perjudicar la atención de pacientes, la IA, telefonía y WhatsApp siguen operando normalmente durante los 3 días de gracia. La suspensión ocurre automáticamente al 4º día.
+   - Actualización de `getPlanSummary` para exponer días de gracia restantes (`graceDaysLeft`), fecha límite y motivo bancario del fallo.
+
+3. **Servicio de Dunning Multicanal (`packages/ai-agent/src/payment/dunningService.ts`):**
+   - Notificaciones empáticas y formales en español mexicano adaptadas al contexto clínico para 5 eventos: `PAYMENT_FAILED`, `GRACE_REMINDER`, `SUBSCRIPTION_SUSPENDED`, `PAYMENT_RECOVERED` y `TRIAL_EXPIRING`.
+   - Despacho idempotente a WhatsApp oficial de la clínica mediante la tabla de trabajos (`Job` con tipo `WHATSAPP_SEND` y `dedupeKey`).
+   - Registro extensible para Email transaccional y eventos trazables en `AuditLog` (NOM-024).
+   - Control estricto de cadencia: límite de 1 aviso cada 20 horas para evitar saturación al usuario.
+
+4. **Sincronización, reintentos y salud en `SubscriptionService` (`packages/ai-agent`):**
+   - Catálogo de traducción de motivos de rechazo bancario de Mercado Pago (`cc_rejected_insufficient_amount`, `cc_rejected_bad_filled_security_code`, etc.).
+   - `handleAuthorizedPayment`: captura de cobros rechazados, fijación del período de gracia, registro del cargo y despacho del aviso. Al aprobarse un cobro, restablece la suscripción a `ACTIVE`, limpia la morosidad y envía confirmación `PAYMENT_RECOVERED`.
+   - Método `retryPayment` para reactivar la suscripción ante Mercado Pago si el cliente ya fondeó su tarjeta.
+   - Método `runHealthCheck` para auditoría recurrente de vencimientos, integrada a la cola durable (`BILLING_DUNNING_CHECK`) cada 6 horas.
+
+5. **Endpoints REST Administrativos (`apps/api`):**
+   - `POST /api/subscription/retry`: reintento seguro con rate limit.
+   - `GET /api/subscription/history`: historial de cargos con detalles bancarios y montos.
+
+6. **Frontend Web Next.js (`apps/web`):**
+   - Banner prioritario en todo el panel (`TrialBanner.tsx`) activo durante morosidad y suspensión.
+   - Pantalla de suscripción (`/dashboard/suscripcion`):
+     - Alerta visual destacada en morosidad con motivo bancario, días de gracia y fecha límite.
+     - Botón "Reintentar cobro ahora" con retroalimentación inmediata.
+     - Botón "Cambiar tarjeta bancaria" para checkout alojado en Mercado Pago.
+     - Sección "Historial de facturación y cobros" con tabla clínica responsiva, insignias de estado y motivos legibles de rechazo.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma` — modelo `SubscriptionCharge` y campos en `Tenant`.
+- `packages/database/prisma/migrations/0005_subscription_charges_dunning/migration.sql` — migración SQL.
+- `packages/database/src/plan.ts` — regla de 3 días de gracia y campos en resumen de plan.
+- `packages/ai-agent/src/payment/dunningService.ts` (nuevo) — servicio de notificaciones y cadencia.
+- `packages/ai-agent/src/payment/subscriptionService.ts` — reintentos, auditoría, salud y traducción de rechazos.
+- `packages/ai-agent/src/index.ts` — exportación de `DunningNotificationService`.
+- `apps/api/src/services/queue/queue.ts` y `handlers.ts` — job `BILLING_DUNNING_CHECK`.
+- `apps/api/src/routes/admin/subscription.ts` — endpoints `/retry` e `/history`.
+- `apps/api/src/services/voiceStreamService.ts` — inyección de verificación de límites y consumo de voz.
+- `apps/api/src/run-suites.ts` — soporte multiplataforma Windows (`shell: true`).
+- `apps/api/src/subscription-test-suite.ts` — 39 pruebas de suscripciones, morosidad y reintentos.
+- `apps/api/src/voice-test-suite.ts` — 79 pruebas de pipeline de voz.
+- `apps/web/src/components/dashboard/TrialBanner.tsx` — aviso flotante de morosidad y gracia.
+- `apps/web/src/app/dashboard/suscripcion/page.tsx` — UI de morosidad, reintento e historial de cobros.
+- `BITACORA.md` — registro del cambio.
+
+### Verificación
+- `npx tsx apps/api/src/subscription-test-suite.ts`: 39/39 pruebas pasando contra base de datos Supabase.
+- `npx tsx apps/api/src/voice-test-suite.ts`: 79/79 pruebas pasando.
+- `npx tsx apps/api/src/run-suites.ts`: 12/12 suites de API pasando.
+- `npx tsx packages/ai-agent/src/test-suite.ts`: 20/20 pruebas unitarias pasando.
+- `npm run build`: compilación limpia y exitosa de los 6 workspaces del monorepo.
+
+---
+
 ## [2026-09-16] fix(infra): orden de compilación de shared-types antes de database en script build
 
 **Autor:** Gemini 3.8 Flash (Antigravity)

@@ -34,6 +34,7 @@ for (const suite of suites) {
     stdio: 'inherit',
     env: process.env,
     cwd: join(here, '..', '..'),
+    shell: true,
   });
 
   if (result.status !== 0) failedSuites.push(suite);

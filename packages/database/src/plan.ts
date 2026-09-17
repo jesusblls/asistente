@@ -33,7 +33,11 @@ export interface TenantPlanState {
   trialEndsAt: Date | null;
   /** Días completos que faltan para que expire la prueba; null si no hay prueba. */
   trialDaysLeft: number | null;
-  /** True cuando la prueba venció o la suscripción dejó de estar vigente. */
+  /** Fin del período de gracia (3 días naturales tras vencer el período pagado en morosidad). */
+  gracePeriodEndsAt: Date | null;
+  /** Días restantes del período de gracia en morosidad; null si no está en gracia. */
+  graceDaysLeft: number | null;
+  /** True cuando la prueba venció o la suscripción dejó de estar vigente fuera de gracia. */
   isSuspended: boolean;
   /** Cupos ya considerando la suspensión: es lo que se debe aplicar. */
   limits: PlanLimits;
@@ -46,6 +50,8 @@ export interface TenantPlanFields {
   trialEndsAt: Date | null;
   /** Hasta cuándo está pagado el servicio; null si nunca hubo un cobro. */
   currentPeriodEnd?: Date | null;
+  /** Fin del período de gracia en morosidad. */
+  gracePeriodEndsAt?: Date | null;
 }
 
 export function isPlanSlug(value: string): value is PlanSlug {
@@ -79,14 +85,27 @@ export function resolveTenantPlan(
   const periodEnd = tenant.currentPeriodEnd ?? null;
   const pagadoHastaHoy = periodEnd !== null && periodEnd.getTime() > now.getTime();
 
-  const suscripcionCaida =
-    status === 'CANCELED' || status === 'EXPIRED' || status === 'PAST_DUE';
+  // Período de gracia: 3 días naturales tras vencer el período pagado en morosidad.
+  // Durante este lapso, la IA y las llamadas siguen activas para proteger a los pacientes.
+  const gracePeriodEndsAt = tenant.gracePeriodEndsAt ?? null;
+  const enGracia =
+    status === 'PAST_DUE' &&
+    gracePeriodEndsAt !== null &&
+    gracePeriodEndsAt.getTime() > now.getTime();
 
-  const isSuspended = trialExpired || (suscripcionCaida && !pagadoHastaHoy);
+  const isSuspended =
+    trialExpired ||
+    ((status === 'CANCELED' || status === 'EXPIRED') && !pagadoHastaHoy) ||
+    (status === 'PAST_DUE' && !pagadoHastaHoy && !enGracia);
 
   const trialDaysLeft =
     status === 'TRIALING' && trialEndsAt
       ? Math.max(0, Math.ceil((trialEndsAt.getTime() - now.getTime()) / 86_400_000))
+      : null;
+
+  const graceDaysLeft =
+    enGracia && gracePeriodEndsAt
+      ? Math.max(0, Math.ceil((gracePeriodEndsAt.getTime() - now.getTime()) / 86_400_000))
       : null;
 
   return {
@@ -94,6 +113,8 @@ export function resolveTenantPlan(
     status,
     trialEndsAt,
     trialDaysLeft,
+    gracePeriodEndsAt,
+    graceDaysLeft,
     isSuspended,
     limits: isSuspended ? SUSPENDED_LIMITS : plan.limits,
   };
@@ -126,6 +147,7 @@ async function loadPlanState(tenantId: string, now: Date): Promise<TenantPlanSta
       subscriptionStatus: true,
       trialEndsAt: true,
       currentPeriodEnd: true,
+      gracePeriodEndsAt: true,
     },
   });
   if (!tenant) throw new Error('Clínica no encontrada');
@@ -312,7 +334,14 @@ export async function getPlanSummary(tenantId: string, now: Date = new Date()) {
   const [suscripcion, doctors, appointments, voiceSeconds] = await Promise.all([
     db.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { billingCycle: true, currentPeriodEnd: true, mpPreapprovalId: true },
+      select: {
+        billingCycle: true,
+        currentPeriodEnd: true,
+        mpPreapprovalId: true,
+        pastDueSince: true,
+        gracePeriodEndsAt: true,
+        lastPaymentError: true,
+      },
     }),
     db.doctor.count({ where: { tenantId, isActive: true } }),
     countAppointmentsThisPeriod(tenantId, now),
@@ -325,6 +354,10 @@ export async function getPlanSummary(tenantId: string, now: Date = new Date()) {
     status: state.status,
     trialEndsAt: state.trialEndsAt?.toISOString() ?? null,
     trialDaysLeft: state.trialDaysLeft,
+    gracePeriodEndsAt: state.gracePeriodEndsAt?.toISOString() ?? null,
+    graceDaysLeft: state.graceDaysLeft,
+    pastDueSince: suscripcion.pastDueSince?.toISOString() ?? null,
+    lastPaymentError: suscripcion.lastPaymentError ?? null,
     isSuspended: state.isSuspended,
     billingCycle: suscripcion.billingCycle,
     currentPeriodEnd: suscripcion.currentPeriodEnd?.toISOString() ?? null,

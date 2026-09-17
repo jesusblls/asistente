@@ -518,6 +518,8 @@ async function runVoiceTests(): Promise<void> {
         resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
         transcriptStore: new FakeTranscriptStore(),
         config: TEST_CONFIG,
+        assertCanTakeCall: async () => undefined,
+        recordVoiceUsage: async () => undefined,
       });
       socket.emit(
         'message',
@@ -548,6 +550,8 @@ async function runVoiceTests(): Promise<void> {
       resolveTenant: async () => null,
       transcriptStore: new FakeTranscriptStore(),
       config: TEST_CONFIG,
+      assertCanTakeCall: async () => undefined,
+      recordVoiceUsage: async () => undefined,
     });
     orphan.emit(
       'message',
@@ -566,6 +570,8 @@ async function runVoiceTests(): Promise<void> {
       resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
       transcriptStore: new FakeTranscriptStore(),
       config: TEST_CONFIG,
+      assertCanTakeCall: async () => undefined,
+      recordVoiceUsage: async () => undefined,
     });
     disabled.emit(
       'message',
@@ -593,6 +599,8 @@ async function runVoiceTests(): Promise<void> {
       },
       config: TEST_CONFIG,
       sleep: async () => undefined,
+      assertCanTakeCall: async () => undefined,
+      recordVoiceUsage: async () => undefined,
     });
 
     socket.emit('message', JSON.stringify({ event: 'connected' }));
@@ -633,6 +641,8 @@ async function runVoiceTests(): Promise<void> {
       resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
       transcriptStore: new FakeTranscriptStore(),
       config: TEST_CONFIG,
+      assertCanTakeCall: async () => undefined,
+      recordVoiceUsage: async () => undefined,
     });
     malformed.emit('message', 'esto-no-es-json');
     await tick(10);

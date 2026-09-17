@@ -18,6 +18,10 @@ interface PlanResumen {
   status: string;
   trialEndsAt: string | null;
   trialDaysLeft: number | null;
+  gracePeriodEndsAt?: string | null;
+  graceDaysLeft?: number | null;
+  pastDueSince?: string | null;
+  lastPaymentError?: string | null;
   isSuspended: boolean;
 }
 
@@ -86,14 +90,17 @@ export function TrialBanner() {
 
   const suspendida = plan.isSuspended;
   const enPrueba = plan.status === 'TRIALING';
+  const morosa = plan.status === 'PAST_DUE';
 
   // Una suscripción de paga y vigente no necesita aviso de ningún tipo.
-  if (!suspendida && !enPrueba) return null;
+  if (!suspendida && !enPrueba && !morosa) return null;
 
   const dias = plan.trialDaysLeft ?? 0;
-  const critico = suspendida || dias <= DIAS_CRITICOS;
+  const diasGracia = plan.graceDaysLeft ?? 0;
+  // En morosidad o suspensión el aviso siempre es crítico y no se descarta.
+  const critico = suspendida || morosa || dias <= DIAS_CRITICOS;
 
-  // El aviso crítico no se puede quitar: con la prueba vencida el panel
+  // El aviso crítico no se puede quitar: con la prueba vencida o pago pendiente el panel
   // rechaza las acciones que importan, y esconder el porqué solo convierte
   // el bloqueo en un misterio.
   if (!critico && descartado) return null;
@@ -105,16 +112,18 @@ export function TrialBanner() {
 
   const estilos = suspendida
     ? 'bg-red-50 border-red-200 text-red-900'
-    : dias <= DIAS_CRITICOS
+    : morosa
       ? 'bg-amber-50 border-amber-300 text-amber-900'
-      : dias <= DIAS_ADVERTENCIA
-        ? 'bg-amber-50 border-amber-200 text-amber-900'
-        : 'bg-teal-50 border-teal-200 text-teal-900';
+      : dias <= DIAS_CRITICOS
+        ? 'bg-amber-50 border-amber-300 text-amber-900'
+        : dias <= DIAS_ADVERTENCIA
+          ? 'bg-amber-50 border-amber-200 text-amber-900'
+          : 'bg-teal-50 border-teal-200 text-teal-900';
 
-  const Icono = suspendida ? AlertTriangle : Clock;
+  const Icono = suspendida || morosa ? AlertTriangle : Clock;
   const colorIcono = suspendida
     ? 'text-red-600'
-    : dias <= DIAS_ADVERTENCIA
+    : morosa || dias <= DIAS_ADVERTENCIA
       ? 'text-amber-600'
       : 'text-teal-600';
 
@@ -129,13 +138,26 @@ export function TrialBanner() {
         {suspendida ? (
           <span className="min-w-0">
             <strong>
-              {plan.status === 'TRIALING'
-                ? 'Tu prueba gratuita terminó'
-                : 'Tu suscripción no está activa'}
+              {morosa
+                ? 'Servicio suspendido por falta de pago'
+                : plan.status === 'TRIALING'
+                  ? 'Tu prueba gratuita terminó'
+                  : 'Tu suscripción no está activa'}
             </strong>
             <span className="hidden sm:inline">
-              : no puedes dar de alta especialistas, agendar citas ni recibir llamadas hasta
-              activar un plan. Tus datos siguen intactos.
+              : {morosa
+                ? 'el período de gracia ha expirado. Reactiva tu método de pago para reanudar la recepción de llamadas y mensajes.'
+                : 'no puedes dar de alta especialistas, agendar citas ni recibir llamadas hasta activar un plan. Tus datos siguen intactos.'}
+            </span>
+          </span>
+        ) : morosa ? (
+          <span className="min-w-0">
+            <strong>Cobro de suscripción rechazado:</strong>
+            <span>
+              {' '}te {diasGracia === 1 ? 'queda 1 día' : `quedan ${diasGracia} días`} de período de gracia.
+            </span>
+            <span className="hidden sm:inline">
+              {' '}La IA y telefonía siguen activas, pero se suspenderán si no regularizas el pago.
             </span>
           </span>
         ) : (
@@ -162,10 +184,14 @@ export function TrialBanner() {
         <Link
           href="/dashboard/suscripcion"
           className={`inline-flex items-center gap-1 font-bold underline whitespace-nowrap ${
-            suspendida ? 'text-red-700 hover:text-red-900' : 'text-teal-700 hover:text-teal-900'
+            suspendida
+              ? 'text-red-700 hover:text-red-900'
+              : morosa
+                ? 'text-amber-800 hover:text-amber-950'
+                : 'text-teal-700 hover:text-teal-900'
           }`}
         >
-          Ver planes
+          {morosa ? 'Regularizar pago' : 'Ver planes'}
           <ArrowRight className="w-3 h-3" />
         </Link>
 

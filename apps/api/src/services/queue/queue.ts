@@ -20,7 +20,11 @@ import { createLogger, incrementCounter, recordTiming, type Logger } from '@asis
  * inyectable, lo que permite probarlo sin red.
  */
 
-export type JobType = 'META_INBOUND_MESSAGE' | 'WHATSAPP_SEND' | 'VOICE_POST_CALL_FOLLOWUP';
+export type JobType =
+  | 'META_INBOUND_MESSAGE'
+  | 'WHATSAPP_SEND'
+  | 'VOICE_POST_CALL_FOLLOWUP'
+  | 'BILLING_DUNNING_CHECK';
 
 export type JobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'DEAD';
 
