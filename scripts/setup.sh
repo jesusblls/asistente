@@ -124,6 +124,21 @@ else
   success "Archivo .env existente detectado. Se mantienen tus configuraciones."
 fi
 
+# `apps/api` y `packages/database` leen su propio `.env`, no el de la raíz:
+# npm ejecuta los scripts de cada workspace con el directorio de ese paquete
+# como cwd, y tanto `dotenv/config` (apps/api) como la carga de Prisma
+# (packages/database) resuelven el archivo relativo a esa ubicación. Sin esta
+# copia, `npm run db:seed` falla más adelante con
+# "Environment variable not found: DATABASE_URL" aunque el .env de la raíz
+# esté perfectamente configurado — se verificó reproduciendo el fallo en un
+# clon limpio antes de agregar este paso.
+for workspace_env in apps/api/.env packages/database/.env; do
+  if [ ! -f "$workspace_env" ]; then
+    cp .env "$workspace_env"
+    success "Copiado .env -> ${workspace_env} (necesario porque ese paquete corre con su propio directorio como cwd)."
+  fi
+done
+
 # ------------------------------------------------------------------------------
 # 4. Verificación de Base de Datos (PostgreSQL)
 # ------------------------------------------------------------------------------
@@ -229,6 +244,16 @@ npm run db:generate
 
 info "Aplicando migraciones SQL..."
 npm run db:migrate
+
+# db:seed importa @asistente/database, que a su vez importa
+# @asistente/observability y @asistente/shared-types por su nombre de
+# paquete (resuelven a dist/, no a su código fuente): sin compilarlos antes,
+# falla con "Cannot find module .../dist/index.js" en un clon que nunca ha
+# corrido `npm run build`. db:generate y db:migrate no lo necesitan porque
+# usan la CLI de Prisma directamente, no el árbol de módulos del paquete.
+info "Compilando los paquetes base (requeridos por el seed)..."
+npm run build --workspace=packages/observability
+npm run build --workspace=packages/shared-types
 
 info "Poblando datos semilla (Clínica modelo Polanco + Admin)..."
 npm run db:seed

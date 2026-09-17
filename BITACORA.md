@@ -10,6 +10,82 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-17] fix(db): que `npm run setup` funcione en un clon nuevo
+
+**Autor:** Claude Sonnet 5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El usuario preguntó si el proyecto correría en otra máquina. En vez de asumirlo,
+cloné el repositorio en un directorio limpio y corrí `npm run setup` de
+verdad, contra una base de datos PostgreSQL aislada para no tocar la de
+desarrollo real. **Fallaba en dos puntos distintos**, siempre en el mismo
+paso: `npm run db:seed`.
+
+**Fallo 1 — `Cannot find module '.../@asistente/observability/package.json'`.**
+`db:seed` importa `@asistente/database`, que a su vez importa
+`@asistente/observability` y `@asistente/shared-types` **por su nombre de
+paquete** — eso resuelve a `dist/index.js`, no a su código fuente. El script
+corría `db:generate` → `db:migrate` → `db:seed` sin compilar nada primero. En
+la máquina de desarrollo original esto nunca se notó porque esos paquetes ya
+llevaban compilados de sesiones anteriores; en un clon nuevo, no.
+
+**Fallo 2 — tras compilar esos dos paquetes, `Environment variable not found:
+DATABASE_URL`,** pese a que `packages/database/.env` (creado a mano para esta
+prueba) tenía la variable correcta. Se reprodujo aislado: `@prisma/client`
+solo auto-carga `.env` en algunas rutas de importación y no en otras —
+importar `@asistente/database` por su nombre (resuelve a `dist/`, ya
+compilado) sí encontraba la variable; importar `./index.js` en relativo desde
+`src/` (que es exactamente lo que hace `seed.ts`) no. El comportamiento
+depende de una carga interna de Prisma que no está pensada para que el propio
+paquete la use como su única fuente de variables de entorno.
+
+**La causa raíz de fondo, en ambos casos:** `apps/api` y `packages/database`
+leen su **propio** `.env` — no el de la raíz — porque npm ejecuta los scripts
+de cada workspace con el directorio de ese paquete como `cwd`, y tanto
+`dotenv/config` como la carga interna de Prisma resuelven el archivo relativo
+a esa ubicación. `scripts/setup.sh` solo creaba el `.env` de la raíz.
+
+### La corrección
+1. `packages/database/src/client.ts` carga `dotenv/config` explícitamente, en
+   vez de depender del comportamiento implícito e inconsistente de Prisma.
+   Deja de importar por lo que resulte accidentalmente cierto según cómo se
+   invoque el paquete.
+2. `scripts/setup.sh` copia el `.env` generado también a `apps/api/.env` y
+   `packages/database/.env` cuando no existen — antes solo creaba el de la
+   raíz, dejando sin variables a los dos paquetes que en realidad las
+   necesitan.
+3. `scripts/setup.sh` compila `packages/observability` y
+   `packages/shared-types` antes de `db:seed`. `db:generate`/`db:migrate` no
+   lo necesitaban porque usan la CLI de Prisma directamente, no el árbol de
+   módulos del paquete — por eso el fallo aparecía justo en el seed y en
+   ningún paso anterior.
+
+### Archivos tocados
+- `packages/database/src/client.ts` — carga explícita de `dotenv/config`.
+- `packages/database/package.json` — `dotenv` como dependencia declarada (antes llegaba solo colgada de `apps/api`, sin garantía de estar disponible).
+- `scripts/setup.sh` — copia los `.env` por workspace; compila `observability`/`shared-types` antes de sembrar.
+
+### Verificación
+Clon limpio del repositorio en un directorio aparte, apuntado a una base de
+datos PostgreSQL aislada (nunca a la de desarrollo real) mediante un `.env`
+pre-creado con esa URL — así `npm run setup` ejercitó su rama real de "ya
+existe `.env`" y, con la corrección ya aplicada, generó por sí solo
+`apps/api/.env` y `packages/database/.env`. El script corrió de punta a
+punta sin ninguna intervención manual: hooks, instalación, generación de
+Prisma, migraciones (las 4), compilación de `observability`/`shared-types`,
+seed completo (clínica modelo, administrador, 2 doctores, 5 servicios, 4
+FAQs) y `npm run build` completo del monorepo (13 rutas de Next.js
+generadas). Las tres suites (API 12/12, agente 20/20, estrés 44/44) también
+pasaron dentro del clon, usando esa misma base de datos aislada. Contra el
+proyecto real (no el clon): mismas tres suites en verde tras el cambio, sin
+regresión.
+
+### Pendientes derivados
+- El chequeo de conectividad de PostgreSQL en el paso 4 del script es una simple prueba TCP: confirma que *algo* escucha en el puerto, no que el rol/base de datos que el script asume (`asistente` / `asistente_dev_secret_2026` / `asistente_dev`) exista de verdad ahí. En una máquina con un PostgreSQL nativo ya corriendo bajo otro usuario, esto podría dar un falso positivo y fallar más adelante en `db:migrate` con un error de autenticación en vez de la guía clara que da la rama de Docker. No se reprodujo este caso concreto (en esta máquina esas credenciales ya existían de una configuración previa), así que queda como sospecha razonada, no como hallazgo confirmado.
+- El README (Opción B, setup manual paso a paso) tiene el mismo hueco: dice "copia `.env.example` a `.env`" sin mencionar que `apps/api` y `packages/database` necesitan su propia copia. No se tocó en este commit por mantenerlo enfocado en el script; si alguien sigue el camino manual, se topará con el mismo fallo hasta que se documente ahí también.
+
+---
+
 ## [2026-09-16] feat(infra): script automatizado de setup y compose de desarrollo
 
 **Autor:** Gemini 3.8 Flash (Antigravity) · **Commit:** `0d8f161`
