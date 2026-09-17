@@ -59,20 +59,43 @@ asistente/
 - **npm** v10+
 - **PostgreSQL** 14+ corriendo localmente (`brew install postgresql@16 && brew services start postgresql@16`, luego `createdb asistente_dev`)
 
-### 1. Clonar e Instalar Dependencias
+### ⚡ Opción A: Setup Automatizado en 1 Paso (Recomendado)
+
+Si tienes Node.js (v20+) y PostgreSQL (o Docker):
+
+```bash
+npm run setup
+```
+
+Este script verifica tu sistema, crea `.env` con secretos criptográficos autogenerados (`JWT_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`), configura git hooks, instala dependencias, levanta la base de datos si usas Docker (`docker-compose.dev.yml`), corre las migraciones de Prisma y puebla la clínica modelo de Polanco con su administrador.
+
+Si prefieres usar PostgreSQL y Redis vía Docker en desarrollo:
+```bash
+# Levantar PostgreSQL 16 y Redis 7 con puertos expuestos (5432 y 6379)
+npm run dev:db
+
+# Para apagarlos cuando termines:
+npm run dev:db:down
+```
+
+---
+
+### 🛠️ Opción B: Setup Manual Paso a Paso
+
+#### 1. Clonar e Instalar Dependencias
 ```bash
 # Instalar dependencias en todos los paquetes y apps
 npm install
 ```
 
-### 2. Configurar Variables de Entorno
+#### 2. Configurar Variables de Entorno
 Copia el archivo de ejemplo a `.env` y ajusta `DATABASE_URL` a tu PostgreSQL local:
 ```bash
 cp .env.example .env
 ```
-> **Nota:** Para desarrollo local, no es indispensable contar de inmediato con API keys de Gemini o Twilio; el sistema incluye un **motor heurístico inteligente de 13 intenciones** y simulador de WhatsApp/Voz que funciona 100% offline.
+> **Nota:** Para desarrollo local, no es indispensable contar de inmediato con API keys de DeepSeek o Twilio; el sistema incluye un **motor heurístico inteligente de 13 intenciones** y simulador de WhatsApp/Voz que funciona 100% offline.
 
-### 3. Inicializar y Poblar la Base de Datos
+#### 3. Inicializar y Poblar la Base de Datos
 ```bash
 # Generar el cliente de Prisma
 npm run db:generate

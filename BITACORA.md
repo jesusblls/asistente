@@ -10,6 +10,56 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] feat(infra): script automatizado de setup y compose de desarrollo
+
+**Autor:** Gemini 3.8 Flash (Antigravity) · **Commit:** `pendiente`
+
+### Qué se hizo
+Se creó un flujo de preparación ("setup") en 1 solo paso para permitir que
+cualquier desarrollador o máquina nueva corra la plataforma sin fricción:
+
+1. **Script interactivo y portable (`scripts/setup.sh`):**
+   - Valida versiones mínimas requeridas de Node.js (>= 20) y npm (>= 10).
+   - Configura de forma automática los git hooks (`git config core.hooksPath .githooks`).
+   - Si no existe `.env`, lo crea desde `.env.example` y autogenera secretos criptográficos
+     de alta entropía (`JWT_SECRET` de 64 caracteres hex y `CREDENTIALS_ENCRYPTION_KEY` AES-256
+     de 32 bytes base64) para evitar fallos de seguridad o configuraciones incompletas.
+   - Comprueba la disponibilidad del puerto de PostgreSQL (5432) y, si no está activo pero
+     Docker está presente, arranca el contenedor de base de datos automáticamente.
+   - Ejecuta `npm install`, genera el cliente de Prisma (`db:generate`), corre las
+     migraciones versionadas de base de datos (`db:migrate`) y puebla la clínica modelo
+     con su administrador de inicio (`db:seed`).
+   - Imprime un resumen visual con credenciales por defecto, URLs locales y comandos de arranque.
+
+2. **Docker Compose para desarrollo local (`docker-compose.dev.yml`):**
+   - Servicios de PostgreSQL 16 y Redis 7 con puertos expuestos (`5432` y `6379`), volumen
+     persistente y healthchecks dedicados. Esto permite desarrollar en cualquier SO sin instalar
+     servicios globales a nivel del sistema operativo.
+
+3. **Comandos en `package.json` y documentación en `README.md`:**
+   - `"setup"`: `bash scripts/setup.sh`
+   - `"dev:db"` / `"dev:db:down"`: levantar y apagar PostgreSQL y Redis de desarrollo.
+   - `"dev:api"` y `"dev:web"`: accesos directos para levantar Fastify (puerto 3000) y Next.js (puerto 3001).
+   - Actualización del README destacando la Opción A (setup automatizado) y Opción B (paso a paso).
+
+### Archivos tocados
+- `scripts/setup.sh` (nuevo) — script ejecutable de bootstrap y validación integral.
+- `docker-compose.dev.yml` (nuevo) — definición de PostgreSQL 16 y Redis 7 para desarrollo local.
+- `package.json` — comandos `setup`, `dev:db`, `dev:db:down`, `dev:api` y `dev:web`.
+- `README.md` — documentación del setup automatizado vs manual.
+- `BITACORA.md` — registro del cambio.
+
+### Verificación
+- Ejecución directa de `./scripts/setup.sh`: validación de Node v25, npm v11, detección de `.env`,
+  conexión exitosa a PostgreSQL 5432, generación de Prisma client, validación de migraciones al día
+  y seed exitoso en 13 segundos.
+- Compilación del monorepo (`npm run build`): paquetes de observabilidad, database, shared-types,
+  ai-agent, api y web (Next.js con Turbopack) sin errores.
+- Suite de pruebas unitarias (`npm test --workspace=@asistente/ai-agent`): 20/20 pruebas pasando.
+- Verificación del formato del hook de commits con `.githooks/commit-msg`.
+
+---
+
 ## [2026-09-16] feat(web): página para contratar el plan
 
 **Autor:** Claude Opus 5 · **Commit:** `8b61408`

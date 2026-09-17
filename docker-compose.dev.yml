@@ -1,0 +1,44 @@
+# Entorno de desarrollo local: Postgres y Redis listos con 1 comando.
+# Uso:
+#   npm run dev:db
+#   # o directamente:
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Para detenerlos:
+#   npm run dev:db:down
+#   # o:
+#   docker compose -f docker-compose.dev.yml down
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: asistente-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: asistente
+      POSTGRES_PASSWORD: asistente_dev_secret_2026
+      POSTGRES_DB: asistente_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asistente -d asistente_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: asistente-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_dev_data:
