@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-09-16] feat(infra): script automatizado de setup y compose de desarrollo
 
-**Autor:** Gemini 3.8 Flash (Antigravity) · **Commit:** `pendiente`
+**Autor:** Gemini 3.8 Flash (Antigravity) · **Commit:** `0d8f161`
 
 ### Qué se hizo
 Se creó un flujo de preparación ("setup") en 1 solo paso para permitir que
