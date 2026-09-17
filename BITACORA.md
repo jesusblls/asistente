@@ -10,6 +10,22 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-09-16] fix(infra): orden de compilación de shared-types antes de database en script build
+
+**Autor:** Gemini 3.8 Flash (Antigravity)
+
+### Qué se hizo
+- Se corrigió el orden de compilación en `"build"` dentro del `package.json` raíz del monorepo: ahora `@asistente/shared-types` se compila antes de `@asistente/database`. Dado que `@asistente/database` importa tipos y enumeraciones de `@asistente/shared-types` (como `PLANS` en `src/plan.ts`), un clon limpio fallaba en la compilación con `TS2307` si `database` se procesaba antes que `shared-types`.
+
+### Archivos tocados
+- `package.json` — orden de workspaces en el script `"build"`.
+- `BITACORA.md` — registro del cambio.
+
+### Verificación
+- `npm run build`: compilación exitosa secuencial de `observability`, `shared-types`, `database` (con Prisma generate), `ai-agent`, `api` (Fastify) y `web` (Next.js con Turbopack) con código de salida 0.
+
+---
+
 ## [2026-09-16] feat(infra): script automatizado de setup y compose de desarrollo
 
 **Autor:** Gemini 3.8 Flash (Antigravity) · **Commit:** `0d8f161`
