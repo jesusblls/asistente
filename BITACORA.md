@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] fix(seguridad): ignorar respaldos de archivos .env
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `1e30233`
 
 ### Qué se hizo
 Al activar las integraciones reales en producción respaldé
