@@ -10,6 +10,65 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] feat(web): publicar aviso de privacidad y términos
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La plataforma recibía registros públicos y trataba datos de salud de
+pacientes sin aviso de privacidad ni términos: los enlaces del pie de página
+apuntaban a `#faq`. La LFPDPPP exige el aviso antes de recabar datos, y sin
+términos aceptados no había base para el papel de encargado de la plataforma
+frente a los datos de los pacientes.
+
+- `/privacidad` (aviso integral) y `/terminos`. Distinguen los dos papeles:
+  **responsable** de los datos de las clínicas y su personal; **encargado**
+  de los de los pacientes, que pertenecen a cada clínica y que ella debe
+  informar con su propio aviso.
+- **El contenido sale del código, no de una plantilla.** Datos recabados según
+  `schema.prisma`; proveedores según las integraciones reales (OVHcloud,
+  DeepSeek, Deepgram, Cartesia, Meta, Twilio/SignalWire, Mercado Pago,
+  Resend) con su país; cookies (una sola de sesión, sin analítica de
+  terceros: se verificó que no hay); reglas comerciales (prueba sin cargo
+  automático, suspensión, cancelación con acceso hasta el fin del periodo)
+  según `plan.ts` y `subscription.ts`. El servidor está en **Canadá** (se
+  verificó la IP del VPS: OVH, Quebec) y DeepSeek procesa en **China**: ambas
+  son transferencias internacionales y se declaran.
+- **No se inventaron datos de identidad.** Razón social, domicilio y correo
+  de privacidad viven vacíos en `apps/web/src/lib/legal.ts`. Mientras falten,
+  el documento lo dice arriba y resalta cada hueco, en vez de publicar un
+  domicilio ficticio como si fuera real.
+- El registro exige marcar la aceptación, y la API exige
+  `acceptedLegalVersion` igual a `LEGAL_VERSION` (nuevo, en `shared-types`):
+  si el texto cambia y alguien envía un formulario viejo en caché, se
+  rechaza en vez de registrar la aceptación de un texto que ya no aplica. La
+  versión aceptada queda en la auditoría del alta de la clínica, como prueba.
+- El pie de página enlaza a las páginas reales.
+
+### Archivos tocados
+- `packages/shared-types/src/index.ts` — `LEGAL_VERSION`.
+- `apps/api/src/routes/auth.ts` — aceptación obligatoria en `/auth/register`.
+- `apps/api/src/register-test-suite.ts` — suite nueva.
+- `apps/web/src/app/privacidad/`, `apps/web/src/app/terminos/`, `apps/web/src/components/legal/LegalDocument.tsx`, `apps/web/src/lib/legal.ts`.
+- `apps/web/src/app/registro/page.tsx`, `apps/web/src/lib/api.ts`, `apps/web/src/components/landing/Footer.tsx`.
+
+### Verificación
+- Suite de registro 4/4: sin aceptación → 400, versión vieja → 400 con
+  mensaje de recargar, versión vigente → 201, versión en la auditoría.
+- `npm run build` limpio (las 4 páginas nuevas salen estáticas); `npm test`
+  14/14 suites; lint de web sin errores nuevos.
+- En el navegador: ambas páginas con el aviso de datos pendientes; la
+  casilla del registro, en vista de teléfono (375 px) sin scroll horizontal.
+
+### Pendientes derivados
+- **Llenar razón social, domicilio y correo de privacidad** en `apps/web/src/lib/legal.ts`.
+- **Revisión por un abogado** antes de considerar definitivos ambos textos.
+- **DeepSeek procesa datos de salud en China.** Es legal declarándolo, pero es lo primero que objetaría una clínica grande o un abogado; valorar un proveedor con procesamiento en EE.UU. o México.
+- El pie de página publica un teléfono, una dirección en Masaryk 101 y la razón social "AsistentePro Clínicas S.A.P.I. de C.V." que parecen de ejemplo. Si no son reales, hay que quitarlos.
+- El pie de página y la landing siguen anunciando facturación CFDI 4.0, que no existe en el código.
+
+---
+
 ## [2026-10-07] feat(auth): recuperar la contraseña por correo
 
 **Autor:** Claude Opus 5.5 · **Commit:** `e538cb7`

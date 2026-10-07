@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, Sparkles, Loader2, Check } from 'lucide-react';
+import { LEGAL_VERSION } from '@asistente/shared-types';
 import { registerRequest, setSession } from '../../lib/api';
 
 const TRIAL_DAYS = 14;
@@ -23,6 +24,7 @@ export default function RegistroPage() {
   const [adminName, setAdminName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -36,6 +38,10 @@ export default function RegistroPage() {
       setError(`La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`);
       return;
     }
+    if (!acceptedLegal) {
+      setError('Para crear la cuenta debes aceptar los Términos de Servicio y el Aviso de Privacidad');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -45,6 +51,7 @@ export default function RegistroPage() {
         adminName: adminName.trim(),
         email: email.trim(),
         password,
+        acceptedLegalVersion: LEGAL_VERSION,
       });
       setSession(session.token, session.user, session.tenant);
       // La cuenta nace vacía: sin doctores, horarios ni precios la IA no tiene
@@ -194,6 +201,27 @@ export default function RegistroPage() {
                   : `Al menos ${MIN_PASSWORD_LENGTH} caracteres.`}
               </p>
             </div>
+
+            <label className="flex items-start gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                required
+                checked={acceptedLegal}
+                onChange={(event) => setAcceptedLegal(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span>
+                Acepto los{' '}
+                <Link href="/terminos" target="_blank" className="font-semibold text-teal-700 hover:text-teal-800 underline">
+                  Términos de Servicio
+                </Link>{' '}
+                y el{' '}
+                <Link href="/privacidad" target="_blank" className="font-semibold text-teal-700 hover:text-teal-800 underline">
+                  Aviso de Privacidad
+                </Link>
+, y autorizo a AsistentePro a tratar los datos de mis pacientes como encargado, por cuenta de mi clínica.
+              </span>
+            </label>
 
             {error && (
               <div

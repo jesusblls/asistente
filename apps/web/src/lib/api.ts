@@ -152,6 +152,7 @@ export async function registerRequest(params: {
   adminName: string;
   email: string;
   password: string;
+  acceptedLegalVersion: string;
 }): Promise<{
   token: string;
   user: AuthUserInfo;

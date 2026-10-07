@@ -170,12 +170,12 @@ export function Footer() {
         <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-6 gap-y-2">
             <span>© 2026 AsistentePro Clínicas S.A.P.I. de C.V.</span>
-            <a href="#faq" className="hover:text-teal-400 transition-colors">
+            <Link href="/privacidad" className="hover:text-teal-400 transition-colors">
               Aviso de Privacidad (LFPDPPP)
-            </a>
-            <a href="#faq" className="hover:text-teal-400 transition-colors">
+            </Link>
+            <Link href="/terminos" className="hover:text-teal-400 transition-colors">
               Términos de Servicio
-            </a>
+            </Link>
             <a href="#faq" className="hover:text-teal-400 transition-colors">
               Cumplimiento NOM-004-SSA3
             </a>

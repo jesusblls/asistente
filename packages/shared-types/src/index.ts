@@ -280,6 +280,14 @@ export const PLAN_SLUGS = Object.keys(PLANS) as PlanSlug[];
 /** Días de prueba que se otorgan al registrarse sin tarjeta. */
 export const TRIAL_DURATION_DAYS = 14;
 
+/**
+ * Versión vigente de los Términos de Servicio y el Aviso de Privacidad.
+ * El registro exige que el cliente envíe exactamente esta versión, y queda
+ * en la auditoría del alta: es la prueba de qué texto aceptó cada clínica.
+ * Cambiarla obliga a que el formulario de registro se actualice con ella.
+ */
+export const LEGAL_VERSION = '2026-10-07';
+
 /** Métricas de consumo que se acumulan en `UsageCounter`. */
 export type UsageMetric = 'VOICE_SECONDS';
 

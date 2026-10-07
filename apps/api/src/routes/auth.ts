@@ -9,7 +9,7 @@ import {
   recordAudit,
   resolveTenantPlan,
 } from '@asistente/database';
-import { TRIAL_DURATION_DAYS } from '@asistente/shared-types';
+import { LEGAL_VERSION, TRIAL_DURATION_DAYS } from '@asistente/shared-types';
 import { HttpError, requireString, requireMexicanPhone } from '../lib/http.js';
 import { actorFromRequest } from '../lib/audit.js';
 import { AUTH_COOKIE_NAME, getAuthCookieOptions, type AuthUser } from '../lib/auth.js';
@@ -33,8 +33,9 @@ const loginSchema = {
 const registerSchema = {
   body: {
     type: 'object',
-    required: ['clinicName', 'phoneE164', 'adminName', 'email', 'password'],
+    required: ['clinicName', 'phoneE164', 'adminName', 'email', 'password', 'acceptedLegalVersion'],
     properties: {
+      acceptedLegalVersion: { type: 'string', maxLength: 40 },
       clinicName: { type: 'string', minLength: 1, maxLength: 200 },
       phoneE164: { type: 'string', minLength: 1, maxLength: 30 },
       adminName: { type: 'string', minLength: 1, maxLength: 200 },
@@ -121,6 +122,15 @@ export async function authRoutes(fastify: FastifyInstance, options: AuthRoutesOp
       const email = requireString(body.email, 'Email', 200).toLowerCase();
       const password = requireString(body.password, 'Contraseña', 200);
 
+      // Se compara contra la versión vigente, no basta con "aceptó algo": si
+      // el texto cambió y el formulario quedó en caché con la versión vieja,
+      // la clínica estaría aceptando un documento que ya no aplica.
+      if (body.acceptedLegalVersion !== LEGAL_VERSION) {
+        throw new HttpError(
+          400,
+          'Debes aceptar los Términos de Servicio y el Aviso de Privacidad vigentes. Recarga la página e inténtalo de nuevo.'
+        );
+      }
       if (!EMAIL_PATTERN.test(email)) {
         throw new HttpError(400, 'El correo electrónico no tiene un formato válido');
       }
@@ -184,7 +194,13 @@ export async function authRoutes(fastify: FastifyInstance, options: AuthRoutesOp
             action: 'CREATE',
             entityType: 'TENANT',
             entityId: createdTenant.id,
-            metadata: { name: clinicName, slug, origin: 'SELF_SIGNUP', planSlug: 'trial' },
+            metadata: {
+              name: clinicName,
+              slug,
+              origin: 'SELF_SIGNUP',
+              planSlug: 'trial',
+              acceptedLegalVersion: LEGAL_VERSION,
+            },
           },
           tx
         );
