@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`
 
 ### Qué se hizo
 Tras desplegar `cd0262f` se probó `/auth/register` en producción sin el campo
