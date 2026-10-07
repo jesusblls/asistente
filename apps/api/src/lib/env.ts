@@ -107,6 +107,9 @@ export function validateEnvironment(env: NodeJS.ProcessEnv = process.env): EnvVa
     if (!env.METRICS_TOKEN?.trim()) {
       warnings.push('METRICS_TOKEN no configurado: los endpoints de observabilidad (/metrics y /metrics/prometheus) responderán 404');
     }
+    if (!env.RESEND_API_KEY?.trim()) {
+      warnings.push('RESEND_API_KEY no configurado: los correos de recuperación de contraseña se descartan y nadie puede restablecer su acceso');
+    }
   }
 
   const isValid = missingProductionVars.length === 0;

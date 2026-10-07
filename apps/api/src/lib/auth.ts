@@ -109,10 +109,19 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         isActive: true,
         tenant: { isActive: true },
       },
-      select: { id: true, tenantId: true, role: true, email: true },
+      select: { id: true, tenantId: true, role: true, email: true, sessionsValidFrom: true },
     });
 
     if (!user) {
+      return reply.status(401).send({ error: 'Sesión inválida' });
+    }
+
+    // Restablecer la contraseña corta las sesiones previas: quien la robó y ya
+    // tenía sesión abierta no la conserva hasta que caduque. `iat` va en
+    // segundos; el corte se guarda ya redondeado a un segundo entero (ver
+    // /auth/reset-password).
+    const issuedAt = (claims as AuthUser & { iat?: number }).iat ?? 0;
+    if (user.sessionsValidFrom && issuedAt < user.sessionsValidFrom.getTime() / 1000) {
       return reply.status(401).send({ error: 'Sesión inválida' });
     }
 

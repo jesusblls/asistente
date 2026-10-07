@@ -25,6 +25,9 @@ import {
 export type AuditAction =
   | 'LOGIN'
   | 'LOGIN_FAILED'
+  | 'LOGOUT'
+  | 'PASSWORD_RESET_REQUESTED'
+  | 'PASSWORD_RESET'
   | 'READ'
   | 'LIST'
   | 'CREATE'
@@ -80,7 +83,7 @@ export const CATEGORY_OPTIONS: { value: AuditCategory; label: string }[] = [
 export const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, 'all'>, AuditAction[]> = {
   access: ['READ', 'LIST', 'EXPORT'],
   changes: ['CREATE', 'UPDATE', 'DELETE'],
-  sessions: ['LOGIN', 'LOGIN_FAILED'],
+  sessions: ['LOGIN', 'LOGIN_FAILED', 'LOGOUT', 'PASSWORD_RESET_REQUESTED', 'PASSWORD_RESET'],
 };
 
 export const PERIOD_PHRASE: Record<AuditPeriod, string> = {
@@ -346,6 +349,15 @@ export function describeEvent(event: AuditEvent): EventSentence {
         reason ? LOGIN_FAILURE_LABELS[reason] ?? null : null
       );
     }
+
+    case 'LOGOUT':
+      return sentence('cerró sesión');
+
+    case 'PASSWORD_RESET_REQUESTED':
+      return sentence('pidió un enlace para restablecer su contraseña');
+
+    case 'PASSWORD_RESET':
+      return sentence('restableció su contraseña');
 
     case 'EXPORT': {
       const count = metaNumber(event, 'count');

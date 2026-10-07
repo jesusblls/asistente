@@ -15,6 +15,7 @@ import { registerErrorHandler, registerRawJsonBody } from './lib/http.js';
 import { assertProductionEnv } from './lib/env.js';
 import { jobQueue, startQueueWorker } from './services/queue/handlers.js';
 import { authRoutes } from './routes/auth.js';
+import type { EmailSender } from './services/emailService.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { voiceRoutes } from './routes/voice.js';
 import { adminRoutes } from './routes/admin.js';
@@ -27,6 +28,8 @@ export interface BuildServerOptions {
    * ejercitan webhooks a través de `app.inject` pueden activarlo aquí.
    */
   startQueueWorker?: boolean;
+  /** Reemplaza el envío de correo (pruebas). */
+  sendEmail?: EmailSender;
 }
 
 function resolveCorsOrigins(): string[] {
@@ -123,7 +126,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   await server.register(fastifyWebSocket);
 
   await registerAuth(server);
-  await server.register(authRoutes);
+  await server.register(authRoutes, { sendEmail: options.sendEmail });
 
   server.get('/health', async () => {
     // La salud incluye la profundidad de la cola: si se acumulan trabajos

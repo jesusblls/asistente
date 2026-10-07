@@ -10,6 +10,86 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] feat(auth): recuperar la contraseña por correo
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Quien olvidaba su contraseña no tenía forma de volver a entrar: no había
+flujo de recuperación ni envío de correo de ningún tipo. Con el registro
+autoservicio abierto, la única salida era que alguien cambiara el hash a mano
+en la base de producción.
+
+- `POST /auth/forgot-password` genera un enlace de un solo uso (30 min) y lo
+  manda por correo. **Responde lo mismo exista o no el correo**, y el envío
+  sale sin esperar al proveedor: la latencia de Resend delataría qué cuentas
+  existen. Pausa de 60 s entre enlaces al mismo correo, aparte del rate limit
+  por IP (5/h), para que nadie rotando IPs inunde el buzón de una clínica.
+  Un enlace nuevo invalida los anteriores sin usar.
+- `POST /auth/reset-password` fija la contraseña nueva (mínimo 10, igual que
+  el registro). El enlace se marca usado con `updateMany ... where usedAt:
+  null` dentro de la transacción, para que dos peticiones simultáneas con el
+  mismo enlace no pasen las dos. No inicia sesión: obliga a entrar con la
+  contraseña recién elegida.
+- **Restablecer corta las sesiones abiertas.** Nueva columna
+  `User.sessionsValidFrom`; `authenticate` rechaza todo JWT con `iat`
+  anterior. Sin esto, quien robó la contraseña y ya tenía sesión la
+  conservaba 12 h después del cambio. El corte se redondea al siguiente
+  segundo entero porque `iat` va truncado a segundos: con la hora exacta, una
+  sesión abierta en el mismo segundo del restablecimiento sobrevivía (lo
+  atrapó la prueba).
+- **El token viaja en el fragmento** (`/restablecer#token=...`), no en la
+  query: el navegador no manda el fragmento al servidor, así que no queda en
+  logs de acceso del proxy ni en el encabezado Referer. La página lo quita de
+  la barra de direcciones en cuanto lo lee. En la base solo se guarda su
+  SHA-256: un respaldo filtrado no sirve para usar enlaces vigentes.
+- Correo vía la API HTTP de Resend (`services/emailService.ts`), sin
+  dependencias nuevas; se descartó SMTP porque los VPS suelen tener el puerto
+  25 bloqueado. Sin `RESEND_API_KEY`: en desarrollo el correo se imprime en el
+  log (única forma de probar el flujo sin proveedor); en producción se
+  descarta **sin** imprimirlo, porque el enlace da acceso a la cuenta, y
+  `env.ts` avisa al arrancar.
+- Auditoría: acciones nuevas `PASSWORD_RESET_REQUESTED` y `PASSWORD_RESET`.
+  El panel las muestra en la categoría "Sesiones", junto con `LOGOUT`, que ya
+  se registraba pero el vocabulario del panel no conocía.
+- Web: `/recuperar`, `/restablecer` y el enlace "¿La olvidaste?" en el login.
+  Al probar en el navegador apareció un bug: en desarrollo React corre el
+  efecto dos veces; la primera leía el token y lo borraba de la URL, la
+  segunda no lo encontraba y mostraba "Enlace incompleto". La segunda lectura
+  ya no pisa un token leído. También se relee al cambiar el fragmento, por si
+  se abre un segundo enlace con la página abierta.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma`, `migrations/0005_password_reset/` — `PasswordResetToken`, `User.sessionsValidFrom`.
+- `packages/database/src/audit.ts`, `packages/shared-types/src/auditSensitivity.ts` — acciones nuevas.
+- `apps/api/src/routes/auth.ts` — las dos rutas.
+- `apps/api/src/lib/auth.ts` — corte de sesiones previas.
+- `apps/api/src/services/emailService.ts` — envío y plantilla.
+- `apps/api/src/server.ts` — `sendEmail` inyectable para pruebas.
+- `apps/api/src/lib/env.ts` — aviso sin `RESEND_API_KEY` en producción.
+- `apps/api/src/password-reset-test-suite.ts` — suite nueva.
+- `apps/web/src/app/recuperar/`, `apps/web/src/app/restablecer/`, `login/page.tsx`, `lib/api.ts`, `lib/audit.ts`.
+- `.env.example`, `deploy/.env.production.example` — `RESEND_API_KEY`, `EMAIL_FROM`.
+
+### Verificación
+- La migración se escribió a mano y se comprobó con `prisma migrate diff`
+  de la base migrada contra `schema.prisma`: diff vacío.
+- Suite nueva, 17/17: respuesta idéntica con correo existente e inexistente,
+  hash en base, pausa de 60 s, contraseña corta y token falso → 400, enlace
+  de un solo uso, contraseña vieja → 401, sesión previa → 401, sesión nueva →
+  200, enlace vencido → 400, filas de auditoría.
+- `npm run build` limpio; `npm test` 13/13 suites; `npm run test:stress`
+  44/44; lint de web sin errores nuevos.
+- En el navegador local: login → "¿La olvidaste?" → correo simulado en el
+  log → enlace → contraseñas distintas rechazadas → cambio exitoso → token
+  fuera de la URL; la contraseña vieja da 401 y la nueva 200. La clínica de
+  prueba se borró.
+
+### Pendientes derivados
+- **Crear cuenta en Resend, verificar un dominio** y cargar `RESEND_API_KEY` y `EMAIL_FROM` en producción. Hasta entonces nadie puede recuperar su contraseña en producción.
+
+---
+
 ## [2026-10-07] fix(seguridad): ignorar respaldos de archivos .env
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1e30233`

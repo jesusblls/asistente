@@ -88,10 +88,31 @@ model User {
   role         String   @default("STAFF") // ADMIN, RECEPTIONIST, DOCTOR, STAFF
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
+  /// Las sesiones (JWT) emitidas antes de este instante dejan de valer.
+  /// Se mueve al restablecer la contraseña: quien la robó y ya tenía sesión
+  /// abierta no debe conservarla 12 h más.
+  sessionsValidFrom DateTime?
 
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  passwordResetTokens PasswordResetToken[]
 
   @@unique([tenantId, email])
+}
+
+/// Enlace de un solo uso para restablecer la contraseña. Solo se guarda el
+/// SHA-256 del token: quien lea la base (un respaldo filtrado, por ejemplo)
+/// no puede usar los enlaces vigentes.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model Doctor {

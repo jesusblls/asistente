@@ -173,6 +173,39 @@ export async function registerRequest(params: {
   return data;
 }
 
+/**
+ * Pide el enlace de recuperación. La API responde igual exista o no el
+ * correo, así que el mensaje de éxito no confirma que la cuenta exista.
+ */
+export async function forgotPasswordRequest(email: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'No se pudo enviar el enlace');
+  }
+  return data.message;
+}
+
+export async function resetPasswordRequest(token: string, password: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'No se pudo restablecer la contraseña');
+  }
+}
+
 export async function logoutRequest(): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/auth/logout`, {

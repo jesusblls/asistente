@@ -1,4 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { createHash, randomBytes } from 'node:crypto';
+import { createLogger } from '@asistente/observability';
 import {
   db,
   verifyPassword,
@@ -11,6 +13,9 @@ import { TRIAL_DURATION_DAYS } from '@asistente/shared-types';
 import { HttpError, requireString, requireMexicanPhone } from '../lib/http.js';
 import { actorFromRequest } from '../lib/audit.js';
 import { AUTH_COOKIE_NAME, getAuthCookieOptions, type AuthUser } from '../lib/auth.js';
+import { sendEmail, passwordResetEmail, type EmailSender } from '../services/emailService.js';
+
+const logger = createLogger('auth');
 
 const loginSchema = {
   body: {
@@ -40,12 +45,58 @@ const registerSchema = {
   },
 };
 
+const forgotPasswordSchema = {
+  body: {
+    type: 'object',
+    required: ['email'],
+    properties: { email: { type: 'string', minLength: 1, maxLength: 200 } },
+    additionalProperties: false,
+  },
+};
+
+const resetPasswordSchema = {
+  body: {
+    type: 'object',
+    required: ['token', 'password'],
+    properties: {
+      token: { type: 'string', minLength: 1, maxLength: 200 },
+      password: { type: 'string', minLength: 1, maxLength: 200 },
+    },
+    additionalProperties: false,
+  },
+};
+
+/** Vigencia del enlace de recuperación. */
+const RESET_TOKEN_TTL_MINUTES = 30;
+/**
+ * Pausa mínima entre dos enlaces al mismo correo. El rate limit es por IP;
+ * sin esto, alguien rotando IPs podría inundar el buzón de una clínica.
+ */
+const RESET_REQUEST_COOLDOWN_MS = 60_000;
+
+const FORGOT_PASSWORD_RESPONSE = {
+  ok: true,
+  message:
+    'Si el correo está registrado, te enviamos un enlace para restablecer tu contraseña. Revisa tu bandeja y la carpeta de spam.',
+};
+
+function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+export interface AuthRoutesOptions {
+  /** Inyectable para pruebas; por defecto, el envío real (o simulado sin llave). */
+  sendEmail?: EmailSender;
+}
+
 /** Longitud mínima de contraseña para cuentas creadas desde la web. */
 const MIN_PASSWORD_LENGTH = 10;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export async function authRoutes(fastify: FastifyInstance) {
+export async function authRoutes(fastify: FastifyInstance, options: AuthRoutesOptions = {}) {
+  const deliverEmail = options.sendEmail ?? sendEmail;
+
   /**
    * Alta autoservicio de una clínica con prueba gratuita.
    *
@@ -243,6 +294,171 @@ export async function authRoutes(fastify: FastifyInstance) {
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
         tenant: user.tenant,
       });
+    }
+  );
+
+  /**
+   * Solicitud de enlace para restablecer la contraseña.
+   *
+   * Responde lo mismo exista o no el correo, para no convertir esta ruta en
+   * un directorio de cuentas. El correo sale sin esperar al proveedor: la
+   * latencia de Resend delataría qué correos existen.
+   */
+  fastify.post(
+    '/auth/forgot-password',
+    {
+      schema: forgotPasswordSchema,
+      config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const email = requireString(body.email, 'Email', 200).toLowerCase();
+
+      const users = await db.user.findMany({
+        where: { email, isActive: true, tenant: { isActive: true } },
+        select: { id: true, name: true, email: true, tenantId: true },
+        take: 5,
+      });
+
+      const baseUrl = (process.env.APP_PUBLIC_URL || 'http://localhost:3001').replace(/\/$/, '');
+
+      for (const user of users) {
+        const recent = await db.passwordResetToken.findFirst({
+          where: { userId: user.id, createdAt: { gt: new Date(Date.now() - RESET_REQUEST_COOLDOWN_MS) } },
+          select: { id: true },
+        });
+        if (recent) continue;
+
+        const token = randomBytes(32).toString('base64url');
+        await db.$transaction(async (tx) => {
+          // Un enlace nuevo deja sin efecto los anteriores sin usar: solo el
+          // último correo recibido debe funcionar.
+          await tx.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } });
+          await tx.passwordResetToken.create({
+            data: {
+              userId: user.id,
+              tokenHash: hashResetToken(token),
+              expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60_000),
+            },
+          });
+          await recordAudit(
+            {
+              tenantId: user.tenantId,
+              actor: { ...actorFromRequest(request), email },
+              action: 'PASSWORD_RESET_REQUESTED',
+              entityType: 'SESSION',
+              entityId: user.id,
+            },
+            tx
+          );
+        });
+
+        // El token va en el fragmento (#), no en la query: el navegador no lo
+        // manda al servidor, así que no queda en logs de acceso ni en Referer.
+        const message = passwordResetEmail({
+          to: user.email,
+          name: user.name,
+          resetUrl: `${baseUrl}/restablecer#token=${token}`,
+          expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+        });
+        void deliverEmail(message).catch((error) => {
+          logger.error('No se pudo enviar el correo de recuperación', error, { userId: user.id });
+        });
+      }
+
+      return reply.send(FORGOT_PASSWORD_RESPONSE);
+    }
+  );
+
+  /**
+   * Fija una contraseña nueva con el enlace de un solo uso.
+   *
+   * No inicia sesión: obliga a entrar con la contraseña recién elegida, lo
+   * que de paso confirma que la persona la recuerda.
+   */
+  fastify.post(
+    '/auth/reset-password',
+    {
+      schema: resetPasswordSchema,
+      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const token = requireString(body.token, 'Enlace', 200);
+      const password = requireString(body.password, 'Contraseña', 200);
+
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        throw new HttpError(
+          400,
+          `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`
+        );
+      }
+
+      const record = await db.passwordResetToken.findUnique({
+        where: { tokenHash: hashResetToken(token) },
+        include: {
+          user: { select: { id: true, email: true, role: true, tenantId: true, isActive: true, tenant: { select: { isActive: true } } } },
+        },
+      });
+
+      const invalid =
+        !record ||
+        record.usedAt !== null ||
+        record.expiresAt.getTime() <= Date.now() ||
+        !record.user.isActive ||
+        !record.user.tenant.isActive;
+      if (invalid) {
+        throw new HttpError(400, 'El enlace no es válido o ya venció. Pide uno nuevo.');
+      }
+
+      const passwordHash = await hashPassword(password);
+      const user = record.user;
+
+      await db.$transaction(async (tx) => {
+        // Marcar como usado con la condición `usedAt: null` es lo que impide
+        // que dos peticiones simultáneas con el mismo enlace pasen las dos.
+        const claimed = await tx.passwordResetToken.updateMany({
+          where: { id: record.id, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        if (claimed.count !== 1) {
+          throw new HttpError(400, 'El enlace no es válido o ya venció. Pide uno nuevo.');
+        }
+
+        // `iat` del JWT va truncado a segundos: una sesión abierta en este
+        // mismo segundo tendría `iat` igual al corte y sobreviviría. Se corta
+        // en el siguiente segundo entero para invalidar todo lo emitido hasta
+        // ahora; el costo es que un login dentro de ese mismo segundo tampoco
+        // vale, y nadie escribe su contraseña nueva tan rápido.
+        const sessionsValidFrom = new Date((Math.floor(Date.now() / 1000) + 1) * 1000);
+        await tx.user.update({
+          where: { id: user.id },
+          data: { passwordHash, sessionsValidFrom },
+        });
+        await tx.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } });
+
+        await recordAudit(
+          {
+            tenantId: user.tenantId,
+            actor: {
+              ...actorFromRequest(request),
+              type: 'USER',
+              id: user.id,
+              email: user.email,
+              role: user.role,
+            },
+            action: 'PASSWORD_RESET',
+            entityType: 'SESSION',
+            entityId: user.id,
+          },
+          tx
+        );
+      });
+
+      // La sesión que pudiera traer este navegador ya no vale: se borra para
+      // que el panel no intente usarla.
+      reply.clearCookie(AUTH_COOKIE_NAME, getAuthCookieOptions());
+      return reply.send({ ok: true });
     }
   );
 

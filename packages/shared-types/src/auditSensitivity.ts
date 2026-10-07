@@ -196,6 +196,7 @@ export function auditSensitivityOf(
   context?: AuditScheduleContext
 ): AuditSensitivity | null {
   if (row.action === 'LOGIN_FAILED') return { level: 'critical', label: 'Inicio de sesión fallido' };
+  if (row.action === 'PASSWORD_RESET') return { level: 'warning', label: 'Contraseña restablecida' };
   if (row.action === 'DELETE') {
     return { level: 'critical', label: row.entityType === 'TENANT' ? 'Historial borrado' : 'Borrado' };
   }

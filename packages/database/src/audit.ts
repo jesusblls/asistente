@@ -19,6 +19,8 @@ export const AUDIT_ACTIONS = [
   'LOGIN',
   'LOGIN_FAILED',
   'LOGOUT',
+  'PASSWORD_RESET_REQUESTED',
+  'PASSWORD_RESET',
   'READ',
   'LIST',
   'CREATE',
