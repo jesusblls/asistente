@@ -33,7 +33,11 @@ const loginSchema = {
 const registerSchema = {
   body: {
     type: 'object',
-    required: ['clinicName', 'phoneE164', 'adminName', 'email', 'password', 'acceptedLegalVersion'],
+    // `acceptedLegalVersion` no va en `required` a propósito: un formulario
+    // abierto antes de que existiera el campo no lo manda, y el mensaje
+    // genérico del schema ("el campo es obligatorio") no le dice a nadie que
+    // recargue. La validación real, con mensaje útil, está en el handler.
+    required: ['clinicName', 'phoneE164', 'adminName', 'email', 'password'],
     properties: {
       acceptedLegalVersion: { type: 'string', maxLength: 40 },
       clinicName: { type: 'string', minLength: 1, maxLength: 200 },

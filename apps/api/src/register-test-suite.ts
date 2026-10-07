@@ -43,7 +43,10 @@ async function runRegisterTests() {
 
   try {
     const missing = await app.inject({ method: 'POST', url: '/auth/register', payload: base });
-    assert(missing.statusCode === 400, 'Sin aceptar los documentos legales responde 400');
+    assert(
+      missing.statusCode === 400 && JSON.parse(missing.body).error.includes('Recarga la página'),
+      'Sin aceptar los documentos (formulario viejo) responde 400 y pide recargar'
+    );
 
     const stale = await app.inject({
       method: 'POST',

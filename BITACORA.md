@@ -10,6 +10,32 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Tras desplegar `cd0262f` se probó `/auth/register` en producción sin el campo
+nuevo `acceptedLegalVersion`, como lo mandaría una pestaña con el formulario
+abierto desde antes del deploy. La respuesta fue el mensaje genérico del
+JSON Schema: *"El campo acceptedLegalVersion es obligatorio"*. Ese mensaje
+no le dice a la persona qué hacer.
+
+Se quitó el campo de `required` en el schema (sigue tipado y con
+`maxLength`). La validación real ya estaba en el handler, que compara
+contra `LEGAL_VERSION` y trata la ausencia igual que una versión vieja: pide
+recargar la página. La seguridad no cambia, porque sin el valor exacto el
+alta se sigue rechazando.
+
+### Archivos tocados
+- `apps/api/src/routes/auth.ts` — schema de registro.
+- `apps/api/src/register-test-suite.ts` — la prueba de "sin aceptación" ahora exige el mensaje de recargar.
+
+### Verificación
+Suite de registro 4/4; `npm run build` limpio; `npm test` 14/14 suites.
+
+---
+
 ## [2026-10-07] docs(deploy): documentar cómo actualizar producción
 
 **Autor:** Claude Opus 5.5 · **Commit:** `f6c2e17`
