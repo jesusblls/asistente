@@ -10,9 +10,48 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
-## [2026-10-07] fix(deploy): pasar todo .env.production a la API
+## [2026-10-07] docs(deploy): registrar el redeploy a producción
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Producción (`asistente.144-217-83-25.sslip.io`) corría el commit `79ea799`
+del 15 de septiembre: sin registro, planes, onboarding, cobro ni las
+mejoras de voz (`/registro` y `POST /auth/register` daban 404). Se
+redesplegó a `433b80c` en el VPS compartido (Opción B, `~/apps/asistente`).
+
+Pasos, en este orden para que un fallo en cualquiera no tocara lo que
+estaba sirviendo:
+1. **Respaldo** de la base con `pg_dump` antes de migrar —
+   `~/backups/asistente-pre-redeploy-20261007-183538.sql.gz` (13 tablas) —,
+   porque `0003` y `0004` modifican `Tenant`.
+2. `git merge --ff-only origin/main` y `docker compose ... config` para
+   validar el compose nuevo antes de construir.
+3. `docker compose build api web` con los contenedores viejos aún arriba:
+   si la compilación fallaba, producción no se enteraba.
+4. `up -d --no-deps api web`: Postgres y Redis no se reiniciaron.
+
+### Verificación
+La API aplicó `0003_tenant_plan_usage` y `0004_tenant_subscription` al
+arrancar y quedó escuchando sin errores. Desde fuera, `/`, `/login`,
+`/registro`, `/onboarding` y `/dashboard/suscripcion` responden 200;
+`POST /auth/register` con datos inválidos responde 400 con el mensaje en
+español (antes 404), y `/api/subscription` sin sesión responde 401. La
+clínica existente quedó en `cadenas`/`ACTIVE`, como diseñó la migración, sin
+corte de servicio. Los otros 7 proyectos del VPS (`panel`, `syk`,
+`tickets-elina`, `demo-app`, `monitoring`, `postgres`, `proxy`) siguen
+corriendo. Captura de `/registro` en producción en navegador real.
+
+### Pendientes derivados
+- **Producción sigue en modo simulación**: su `deploy/.env.production` no tiene `DEEPSEEK_API_KEY`, credenciales de SignalWire, `VOICE_STREAM_TOKEN`, `MERCADOPAGO_PLATFORM_ACCESS_TOKEN` ni `APP_PUBLIC_URL`. El código ya las recibe; falta decidir y cargar los valores.
+- `METRICS_TOKEN` sin configurar: `/metrics` responde 404 (advertencia al arrancar).
+- Para revertir: `git checkout 79ea799` en el VPS y reconstruir; las migraciones solo agregan columnas, así que el código viejo funciona sobre la base nueva sin restaurar el respaldo.
+
+---
+
+## [2026-10-07] fix(deploy): pasar todo .env.production a la API
+
+**Autor:** Claude Opus 5.5 · **Commit:** `433b80c`
 
 ### Qué se hizo
 `docker-compose.yml` listaba a mano, una por una, las variables que recibía
@@ -41,9 +80,10 @@ con `:?`, para que su ausencia detenga el despliegue antes de construir.
 - `deploy/.env.production.example` — DeepSeek, SignalWire, `VOICE_STREAM_TOKEN`, cuenta de plataforma de Mercado Pago y `APP_PUBLIC_URL`; fuera `GEMINI_API_KEY`.
 
 ### Verificación
-La validación de `docker compose config` se hace en el VPS antes del
-redeploy (este equipo no tiene el plugin de Compose); ver la entrada del
-redeploy.
+En el VPS, `docker compose ... config` (Compose v5.1.4) confirmó que la API
+recibe por `env_file` las variables del archivo (`CORS_ORIGINS`,
+`META_APP_SECRET`, `PUBLIC_API_HOST`...) y por `environment` las del stack, y
+que la Opción B sigue sin levantar Caddy propio. CI en verde con este commit.
 
 ---
 
