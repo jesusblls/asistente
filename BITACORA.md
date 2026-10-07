@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] feat(web): publicar aviso de privacidad y términos
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `cd0262f`
 
 ### Qué se hizo
 La plataforma recibía registros públicos y trataba datos de salud de
