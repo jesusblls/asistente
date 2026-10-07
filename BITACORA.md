@@ -10,6 +10,43 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] fix(deploy): pasar todo .env.production a la API
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`docker-compose.yml` listaba a mano, una por una, las variables que recibía
+la API. La lista se quedó atrás del código: comparando lo que el código lee
+(`process.env.*`) contra lo que el compose pasaba, la API de producción **no
+recibía** `DEEPSEEK_API_KEY` (la IA habría corrido con el motor heurístico),
+las cuatro de SignalWire (webhooks y transferencia a humano),
+`MERCADOPAGO_PLATFORM_ACCESS_TOKEN` y `APP_PUBLIC_URL` (el cobro), ni
+`VOICE_STREAM_TOKEN` — esta última es de seguridad: sin ella, cualquiera que
+conozca la URL del stream puede abrir una sesión de voz. Seguía pasando
+`GEMINI_API_KEY`, que ya nadie lee. Ningún error lo delataba: cada
+integración simplemente caía en modo simulación.
+
+Como es la segunda vez que esa lista se desfasa, en lugar de agregar líneas
+se cambió el mecanismo: la API recibe todo `deploy/.env.production` con
+`env_file`. En `environment` quedan solo los valores que compone el propio
+stack (red interna de Docker) y `JWT_SECRET`/`CREDENTIALS_ENCRYPTION_KEY`
+con `:?`, para que su ausencia detenga el despliegue antes de construir.
+`environment` tiene precedencia sobre `env_file`, así que `DATABASE_URL`,
+`NODE_ENV`, etc. no se pueden pisar por accidente desde el archivo.
+
+`deploy/.env.production.example` documenta ahora las variables que faltaban.
+
+### Archivos tocados
+- `docker-compose.yml` — `env_file` para la API; lista manual eliminada.
+- `deploy/.env.production.example` — DeepSeek, SignalWire, `VOICE_STREAM_TOKEN`, cuenta de plataforma de Mercado Pago y `APP_PUBLIC_URL`; fuera `GEMINI_API_KEY`.
+
+### Verificación
+La validación de `docker compose config` se hace en el VPS antes del
+redeploy (este equipo no tiene el plugin de Compose); ver la entrada del
+redeploy.
+
+---
+
 ## [2026-10-07] fix(voice): no depender de la base en las pruebas del stream
 
 **Autor:** Claude Opus 5.5 · **Commit:** `94b819a`

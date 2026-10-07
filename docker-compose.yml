@@ -48,6 +48,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Todas las variables de deploy/.env.production llegan a la API tal cual.
+    # Antes se listaban una por una aquí, y la lista se quedó atrás del código
+    # dos veces: la API de producción dejó de recibir DEEPSEEK_API_KEY, las
+    # credenciales de SignalWire, MERCADOPAGO_PLATFORM_ACCESS_TOKEN y
+    # VOICE_STREAM_TOKEN sin que nada lo avisara — simplemente corría en modo
+    # simulación. Con env_file, agregar una variable nueva es solo agregarla
+    # al archivo.
+    env_file:
+      - deploy/.env.production
+    # `environment` gana sobre `env_file`: aquí van solo los valores que
+    # compone el propio stack (red interna de Docker) y las dos variables cuya
+    # ausencia debe detener el despliegue antes de construir nada.
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -57,32 +69,8 @@ services:
       # Detrás de Caddy: sin esto, la auditoría y el rate limit ven la IP del
       # proxy para todo mundo en vez de la del cliente real.
       TRUST_PROXY: "true"
-      # "false" mientras no haya dominio + HTTPS (ver COOKIE_SECURE en
-      # deploy/.env.production.example); por defecto sigue atado a
-      # NODE_ENV=production si se omite esta variable.
-      COOKIE_SECURE: ${COOKIE_SECURE:-}
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.production (32+ caracteres aleatorios)}
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?Define CREDENTIALS_ENCRYPTION_KEY en .env.production (openssl rand -base64 32)}
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
-      PUBLIC_API_HOST: ${PUBLIC_API_HOST:-}
-      PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-}
-      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
-      META_APP_SECRET: ${META_APP_SECRET:-}
-      META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
-      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
-      TWILIO_HUMAN_NUMBER: ${TWILIO_HUMAN_NUMBER:-}
-      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
-      CARTESIA_API_KEY: ${CARTESIA_API_KEY:-}
-      CARTESIA_VOICE_ID: ${CARTESIA_VOICE_ID:-}
-      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
-      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
-      MERCADOPAGO_WEBHOOK_URL: ${MERCADOPAGO_WEBHOOK_URL:-}
     expose:
       - "3000"
 
