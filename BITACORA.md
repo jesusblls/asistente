@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] feat(auth): recuperar la contraseña por correo
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `e538cb7`
 
 ### Qué se hizo
 Quien olvidaba su contraseña no tenía forma de volver a entrar: no había
