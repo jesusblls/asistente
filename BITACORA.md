@@ -10,6 +10,80 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] fix(voice): no depender de la base en las pruebas del stream
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La prueba "sin proveedores configurados el stream se cierra de forma
+explícita" fallaba de forma intermitente — **3 de 6 corridas** aisladas,
+siempre la misma. Al principio lo atribuí a carga del sistema en un clon de
+prueba; era un error de diagnóstico: también fallaba en el proyecto real.
+
+La causa la introduje en `e8a6452`: al aplicar el cupo de voz agregué
+`assertCanTakeCall()` al inicio de cada llamada, y esa función consulta la
+base de datos real. La prueba espera 20 ms a que el stream se cierre; cuando
+la primera conexión de Prisma tardaba más, la aserción corría antes del
+cierre. El propio módulo declara que *todas sus dependencias son
+inyectables para probar el flujo sin red ni llaves reales*, y yo le metí una
+que no lo era.
+
+Ahora la verificación del cupo (`checkCallAllowance`) y el registro de
+minutos (`recordVoiceUsage`) son dependencias inyectables con la
+implementación real como valor por defecto, y la suite usa dobles en
+memoria. Se aprovechó para cubrir lo que nunca se había probado a nivel del
+stream: que un `PlanLimitError` cuelga con motivo `plan_limit_reached`, y que
+un error de infraestructura al verificar el cupo **no** corta la llamada
+(falla abierto, decisión documentada en `e8a6452`).
+
+### Archivos tocados
+- `apps/api/src/services/voiceStreamService.ts` — `checkCallAllowance` y `recordVoiceUsage` inyectables.
+- `apps/api/src/voice-test-suite.ts` — dobles sin base de datos en las 5 conexiones y 2 pruebas nuevas.
+
+### Verificación
+La suite de voz pasó **8 de 8** corridas seguidas (antes fallaba 3 de 6), ahora
+con 81 pruebas. Suites completas: API 12/12, agente 20/20, estrés 44/44.
+
+---
+
+## [2026-10-07] fix(build): compilar shared-types antes que database
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+**El CI de `main` lleva fallando desde el 17 de septiembre**, y un redeploy a
+producción también habría fallado al construir la imagen de la API. Error:
+`src/plan.ts: Cannot find module '@asistente/shared-types'`.
+
+Lo causé en `25167d5`, al hacer que `packages/database` dependa de
+`@asistente/shared-types`: el orden de compilación (`observability →
+database → shared-types → ...`) estaba escrito en tres lugares y en los tres
+compilaba `database` antes que su nueva dependencia. En mi máquina nunca se
+vio porque `shared-types/dist` ya existía de compilaciones anteriores — el
+mismo patrón de "funciona porque ya estaba compilado" que el commit
+`bd842a7` encontró en `npm run setup`.
+
+Se corrigió el orden (`observability → shared-types → database → ai-agent →
+api → web`) en el script `build` de la raíz y en `apps/api/Dockerfile`. En el
+CI, los dos jobs compilaban a mano en el orden viejo antes de llamar a `npm
+run build`; se dejó solo `npm run build`, para que el orden viva en un único
+lugar en vez de tres que pueden volver a separarse.
+
+### Archivos tocados
+- `package.json` — orden del script `build`.
+- `apps/api/Dockerfile` — orden de compilación de la imagen.
+- `.github/workflows/ci.yml` — los dos jobs usan solo `npm run build`.
+
+### Verificación
+Se borraron todos los `dist/` de los paquetes —la condición de un runner de
+CI limpio, que es justo la que ocultaba el error— y `npm run build` compiló
+el monorepo completo. Suites: API 12/12, agente 20/20, estrés 44/44.
+
+### Pendientes derivados
+- Confirmar el primer run verde en GitHub Actions tras el push.
+
+---
+
 ## [2026-09-17] fix(db): que `npm run setup` funcione en un clon nuevo
 
 **Autor:** Claude Sonnet 5 · **Commit:** `pendiente`

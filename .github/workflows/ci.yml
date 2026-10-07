@@ -58,8 +58,6 @@ jobs:
 
       - name: Build packages (Prisma & Workspaces)
         run: |
-          npm run build --workspace=packages/observability
-          npm run build --workspace=@asistente/database
           npm run build
 
       - name: Lint web
@@ -117,8 +115,6 @@ jobs:
 
       - name: Build Database & Packages
         run: |
-          npm run build --workspace=packages/observability
-          npm run build --workspace=@asistente/database
           npm run build
 
       - name: Set up test database

@@ -27,9 +27,11 @@ COPY apps/api apps/api
 
 # Mismo orden que el build raíz: observability y database no dependen de
 # nadie más del monorepo, ai-agent depende de database, api depende de todos.
+# Orden de dependencias: database importa shared-types, así que este
+# tiene que compilarse antes o tsc no encuentra sus tipos.
 RUN npm run build --workspace=packages/observability \
-  && npm run build --workspace=packages/database \
   && npm run build --workspace=packages/shared-types \
+  && npm run build --workspace=packages/database \
   && npm run build --workspace=packages/ai-agent \
   && npm run build --workspace=apps/api
 
