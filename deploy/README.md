@@ -152,5 +152,46 @@ paso 4.
   tar czf /backup/postgres_backup.tar.gz /data` (con los contenedores
   detenidos, o usando `pg_dump` en caliente).
 - **Logs**: `docker compose logs -f api` / `web`.
-- **Actualizar tras cambios**: `git pull` en `~/apps/asistente` y volver a
-  correr el `docker compose ... up -d --build` de la opción que uses.
+
+## Actualizar a una versión nueva
+
+La API aplica las migraciones pendientes sola al arrancar
+(`prisma migrate deploy` en el comando del contenedor). Por eso el respaldo va
+**antes** de levantar la versión nueva, no después. Los ejemplos usan la
+Opción B; en la Opción A cambia los `-f` por `--profile standalone`.
+
+```bash
+cd ~/apps/asistente
+DC="docker compose --env-file deploy/.env.production -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml"
+
+# 1. Respaldo. umask 077: el archivo trae datos de pacientes y hashes de
+#    contraseñas; sin esto queda legible para cualquier usuario del servidor.
+mkdir -p ~/backups
+(umask 077; $DC exec -T postgres pg_dump -U asistente asistente \
+  | gzip > ~/backups/asistente-$(date +%Y%m%d-%H%M%S).sql.gz)
+
+# 2. Código nuevo. Anota el commit actual: es tu punto de rollback.
+git rev-parse --short HEAD
+git fetch origin && git merge --ff-only origin/main
+
+# 3. Construir mientras la versión anterior sigue atendiendo.
+$DC config --quiet && $DC build api web
+
+# 4. Reemplazar solo api y web (Postgres y Redis no se reinician).
+$DC up -d --no-deps api web
+$DC logs --tail 50 api
+```
+
+Revisa en el log que las migraciones se aplicaron y que no hay errores al
+arrancar, y entra al panel.
+
+**Rollback:** `git checkout <commit-anotado>` y repite los pasos 3 y 4. Las
+migraciones de este repositorio solo agregan tablas y columnas, así que la
+versión anterior funciona sobre la base ya migrada. Si alguna migración
+borrara o renombrara algo, restaura el respaldo:
+`gunzip -c ~/backups/<archivo>.sql.gz | $DC exec -T postgres psql -U asistente asistente`.
+
+Si `git pull` responde *"There is no tracking information"*, el clon del
+servidor no tiene rama de seguimiento. Usa el `fetch` + `merge --ff-only` de
+arriba, que además se niega a mezclar si alguien editó archivos a mano en el
+servidor.

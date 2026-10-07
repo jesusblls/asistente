@@ -10,6 +10,45 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] docs(deploy): documentar cómo actualizar producción
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`deploy/README.md` decía solo "`git pull` y volver a correr `up -d
+--build`". En el redeploy de hoy, eso habría fallado o habría sido riesgoso
+de tres formas:
+- `git pull` falla en el clon del VPS (*no tracking information*).
+- La API aplica migraciones sola al arrancar, y el README no pedía respaldo
+  antes.
+- El respaldo que hice salió con permisos `664`: con datos de pacientes,
+  legible por cualquier usuario del servidor.
+
+Se agregó la sección "Actualizar a una versión nueva" con el procedimiento
+que sí funcionó:
+- `pg_dump` con `umask 077`.
+- Anotar el commit actual como punto de rollback.
+- `fetch` + `merge --ff-only`.
+- `build` mientras la versión anterior sigue atendiendo.
+- `up -d --no-deps api web`, sin reiniciar Postgres ni Redis.
+- Rollback y restauración del respaldo.
+
+Se descartó también una sospecha anotada en la revisión anterior:
+`scripts/setup.sh` solo prueba el puerto TCP de Postgres, pero no hace falta
+más. Probado: `prisma migrate deploy` crea la base si no existe, y con
+credenciales malas falla con un P1010 claro.
+
+### Archivos tocados
+- `deploy/README.md` — sección de actualización.
+
+### Verificación
+En el VPS, de solo lectura: `$DC config --quiet` válido; `pg_dump -U
+asistente asistente` produce el volcado (8 KB comprimido); `psql` con el
+mismo usuario responde. `grep` confirma que ninguna migración tiene `DROP`
+ni `RENAME`, que es lo que hace seguro el rollback sin restaurar.
+
+---
+
 ## [2026-10-07] feat(web): publicar aviso de privacidad y términos
 
 **Autor:** Claude Opus 5.5 · **Commit:** `cd0262f`
