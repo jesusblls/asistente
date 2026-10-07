@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] docs(deploy): registrar el redeploy a producción
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `38f8446`
 
 ### Qué se hizo
 Producción (`asistente.144-217-83-25.sslip.io`) corría el commit `79ea799`
