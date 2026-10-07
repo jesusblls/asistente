@@ -1,4 +1,5 @@
 import type { WebSocket as WsSocket } from 'ws';
+import { PlanLimitError } from '@asistente/database';
 import {
   MULAW_SILENCE_BYTE,
   TWILIO_FRAME_BYTES,
@@ -43,6 +44,18 @@ import { buildHumanHandoverTwiml, redirectCallToHuman } from './services/voice/h
 
 let passed = 0;
 let failed = 0;
+
+
+/**
+ * El stream consulta el cupo de voz del plan y registra los minutos al colgar.
+ * Las pruebas usan dobles en memoria: con la base de datos real, una conexión
+ * lenta de Prisma hacía que el cierre llegara después de la aserción y la
+ * suite fallaba de forma intermitente (3 de 6 corridas).
+ */
+const SIN_CUPOS = {
+  checkCallAllowance: async () => undefined,
+  recordVoiceUsage: async () => undefined,
+};
 
 function assert(condition: boolean, label: string): void {
   if (condition) {
@@ -517,6 +530,7 @@ async function runVoiceTests(): Promise<void> {
         tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
         resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
         transcriptStore: new FakeTranscriptStore(),
+        ...SIN_CUPOS,
         config: TEST_CONFIG,
       });
       socket.emit(
@@ -547,6 +561,7 @@ async function runVoiceTests(): Promise<void> {
       tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
       resolveTenant: async () => null,
       transcriptStore: new FakeTranscriptStore(),
+      ...SIN_CUPOS,
       config: TEST_CONFIG,
     });
     orphan.emit(
@@ -565,6 +580,7 @@ async function runVoiceTests(): Promise<void> {
       tts: new FakeTtsProvider(false, Buffer.alloc(0)),
       resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
       transcriptStore: new FakeTranscriptStore(),
+      ...SIN_CUPOS,
       config: TEST_CONFIG,
     });
     disabled.emit(
@@ -588,6 +604,7 @@ async function runVoiceTests(): Promise<void> {
       tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
       resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
       transcriptStore: store,
+      ...SIN_CUPOS,
       notifyFollowUp: () => {
         followUps.push('seguimiento');
       },
@@ -632,11 +649,62 @@ async function runVoiceTests(): Promise<void> {
       tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
       resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
       transcriptStore: new FakeTranscriptStore(),
+      ...SIN_CUPOS,
       config: TEST_CONFIG,
     });
     malformed.emit('message', 'esto-no-es-json');
     await tick(10);
     assert(malformed.closedWith === null, 'un evento ilegible se ignora sin cerrar la llamada');
+
+    // Cupo de voz agotado: se cuelga con un motivo explícito
+    const sinCupo = new FakeTwilioSocket();
+    VoiceStreamService.handleConnection(sinCupo as unknown as WsSocket, {
+      logger: silentVoiceLogger,
+      agent: new FakeAgent(),
+      stt: new FakeSttProvider(true, 'hola'),
+      tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
+      resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
+      transcriptStore: new FakeTranscriptStore(),
+      checkCallAllowance: async () => {
+        throw new PlanLimitError('Se agotaron los minutos de voz', 'clinica-pro', 300, 300);
+      },
+      recordVoiceUsage: async () => undefined,
+      config: TEST_CONFIG,
+    });
+    sinCupo.emit(
+      'message',
+      JSON.stringify({ event: 'start', start: { streamSid: 's6', callSid: 'c6', from: '+528112345678', to: '+528198765432' } })
+    );
+    const cortada = await waitFor(() => sinCupo.closedWith !== null);
+    assert(
+      cortada && sinCupo.closedWith?.reason === 'plan_limit_reached',
+      'con el cupo de voz agotado la llamada se rechaza con motivo plan_limit_reached'
+    );
+
+    // Falla de infraestructura al verificar el cupo: la llamada continúa
+    const baseCaida = new FakeTwilioSocket();
+    VoiceStreamService.handleConnection(baseCaida as unknown as WsSocket, {
+      logger: silentVoiceLogger,
+      agent: new FakeAgent(),
+      stt: new FakeSttProvider(true, 'hola'),
+      tts: new FakeTtsProvider(true, Buffer.alloc(320, MULAW_SILENCE_BYTE)),
+      resolveTenant: async () => ({ id: 'tenant-test', name: 'Clínica Test' }),
+      transcriptStore: new FakeTranscriptStore(),
+      checkCallAllowance: async () => {
+        throw new Error('connection refused');
+      },
+      recordVoiceUsage: async () => undefined,
+      config: TEST_CONFIG,
+    });
+    baseCaida.emit(
+      'message',
+      JSON.stringify({ event: 'start', start: { streamSid: 's7', callSid: 'c7', from: '+528112345678', to: '+528198765432' } })
+    );
+    await tick(20);
+    assert(
+      baseCaida.closedWith === null,
+      'si la verificación del cupo falla por la base de datos, la llamada no se corta (falla abierto)'
+    );
   }
 
   section('⚙️ Configuración y degradación');

@@ -59,6 +59,15 @@ export interface VoiceStreamDependencies {
     callSid: string;
     fromPhone: string;
   }) => Promise<boolean> | boolean;
+  /**
+   * Verifica el cupo de voz del plan antes de contestar. Lanza `PlanLimitError`
+   * para rechazar la llamada. Inyectable para que las pruebas del stream no
+   * dependan de la base de datos: con la real, una conexión lenta de Prisma
+   * hacía que el stream se cerrara después de que la prueba ya había revisado.
+   */
+  checkCallAllowance?: (tenantId: string) => Promise<void>;
+  /** Acumula los segundos de la llamada en el consumo del plan. */
+  recordVoiceUsage?: (tenantId: string, seconds: number) => Promise<void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -89,11 +98,15 @@ export function buildVoiceFollowUpMessage(tenant: VoiceTenant): string {
  * escribir, se registra y se sigue. Perder unos segundos de medición es
  * preferible a dejar una sesión de voz colgada por un error de base de datos.
  */
-async function chargeVoiceUsage(session: VoiceCallSession, logger: VoiceLogger): Promise<void> {
+async function chargeVoiceUsage(
+  session: VoiceCallSession,
+  logger: VoiceLogger,
+  record: (tenantId: string, seconds: number) => Promise<void>
+): Promise<void> {
   try {
     const seconds = Math.round(session.getStats().durationMs / 1000);
     if (seconds <= 0) return;
-    await recordUsage(session.tenant.id, 'VOICE_SECONDS', seconds);
+    await record(session.tenant.id, seconds);
   } catch (error) {
     logger.warn('No se pudo registrar el consumo de voz de la llamada', {
       callSid: session.callSid,
@@ -139,6 +152,10 @@ export class VoiceStreamService {
     const agent = deps.agent ?? new OmnichannelAgent();
     const resolveTenant = deps.resolveTenant ?? resolveTenantFromDatabase;
     const transcriptStore = deps.transcriptStore ?? createPrismaTranscriptStore(logger);
+    const checkCallAllowance = deps.checkCallAllowance ?? ((tenantId: string) => assertCanTakeCall(tenantId));
+    const recordVoiceUsage =
+      deps.recordVoiceUsage ??
+      ((tenantId: string, seconds: number) => recordUsage(tenantId, 'VOICE_SECONDS', seconds));
     const expectedStreamToken = process.env.VOICE_STREAM_TOKEN;
 
     let session: VoiceCallSession | null = null;
@@ -209,7 +226,7 @@ export class VoiceStreamService {
             // es un daño mayor que regalar unos minutos de voz, y un corte de
             // base de datos no es culpa de quien está llamando.
             try {
-              await assertCanTakeCall(tenant.id);
+              await checkCallAllowance(tenant.id);
             } catch (error) {
               if (error instanceof PlanLimitError) {
                 logger.warn('Llamada rechazada por el cupo del plan', {
@@ -331,7 +348,7 @@ export class VoiceStreamService {
             session = null;
             if (active) {
               await active.handleStop();
-              await chargeVoiceUsage(active, logger);
+              await chargeVoiceUsage(active, logger, recordVoiceUsage);
             }
             close(1000, 'call_ended');
             break;
@@ -357,7 +374,7 @@ export class VoiceStreamService {
       if (active) {
         // Una llamada que se cae sin evento 'stop' también consumió minutos:
         // no cobrarla dejaría una vía trivial para rebasar el cupo del plan.
-        void active.handleStop().then(() => chargeVoiceUsage(active, logger));
+        void active.handleStop().then(() => chargeVoiceUsage(active, logger, recordVoiceUsage));
       }
     });
   }
