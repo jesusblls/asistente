@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] fix(voice): no depender de la base en las pruebas del stream
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `94b819a`
 
 ### Qué se hizo
 La prueba "sin proveedores configurados el stream se cierra de forma
@@ -48,7 +48,7 @@ con 81 pruebas. Suites completas: API 12/12, agente 20/20, estrés 44/44.
 
 ## [2026-10-07] fix(build): compilar shared-types antes que database
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `1b02e60`
 
 ### Qué se hizo
 **El CI de `main` lleva fallando desde el 17 de septiembre**, y un redeploy a
