@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-07] docs(deploy): documentar cómo actualizar producción
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `f6c2e17`
 
 ### Qué se hizo
 `deploy/README.md` decía solo "`git pull` y volver a correr `up -d
