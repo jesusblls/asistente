@@ -12,6 +12,11 @@ next-env.d.ts
 # la letra localmente ("cp deploy/.env.production.example
 # deploy/.env.production") deja el archivo con secretos reales sin ignorar.
 .env.production
+# Respaldos de archivos de entorno: traen los mismos secretos que el
+# original, pero ".env" y ".env.production" solo cubren esos nombres exactos.
+# Un `cp .env .env.bak-fecha` antes de editar quedaba sin ignorar.
+.env*.bak*
+*.env.bak*
 *.log
 npm-debug.log*
 yarn-debug.log*

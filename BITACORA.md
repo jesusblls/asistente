@@ -10,6 +10,62 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-07] fix(seguridad): ignorar respaldos de archivos .env
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Al activar las integraciones reales en producción respaldé
+`deploy/.env.production` (VPS) y `apps/api/.env` (local) antes de editarlos,
+con nombres `.env*.bak-<fecha>`. Ambos respaldos aparecieron en
+`git status` como **archivos sin rastrear**: `.gitignore` cubría `.env` y
+`.env.production` solo por nombre exacto. Un `git add -A` los habría subido
+a GitHub con todas las llaves de DeepSeek, Deepgram, Cartesia y SignalWire.
+No se llegó a comitear nada: los dos se movieron fuera del repo antes
+(`~/backups/` en el VPS, `~/asistente-env-backups/` en local, permisos 600).
+
+Se agregaron `.env*.bak*` y `*.env.bak*` a `.gitignore`.
+
+En el mismo pase se corrigió el permiso del respaldo de la base de
+producción hecho en el redeploy: había quedado en `664`, legible por
+cualquier usuario del servidor, con datos de pacientes y hashes de
+contraseñas. Quedó en `600`.
+
+### Activación de integraciones en producción (sin cambio de código)
+Se cargaron en `deploy/.env.production` del VPS, con respaldo previo y
+pasando los valores por stdin de `ssh` (nunca como argumentos ni en salida):
+`DEEPSEEK_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`,
+`CARTESIA_VOICE_ID`, las cuatro de SignalWire, un `VOICE_STREAM_TOKEN`
+nuevo generado con `openssl rand -hex 32`, y `APP_PUBLIC_URL`. Llamadas de
+solo lectura desde **dentro** del contenedor de producción confirmaron:
+DeepSeek 200, Deepgram 200, Cartesia 200.
+
+**SignalWire respondió 401**, y también desde local: el
+`SIGNALWIRE_API_TOKEN` guardado no es un token de API válido (los de
+SignalWire empiezan con `PT`; este no). Además, el `.env` local tenía la
+variable como `SIGNALWIRE_SPACE` en vez de `SIGNALWIRE_SPACE_URL`, que es la
+que lee `handover.ts`: con el nombre equivocado el código nunca detectaba
+SignalWire y caía a Twilio, así que **la transferencia a recepción humana
+nunca funcionó con credenciales reales** y el token malo pasó desapercibido.
+Se agregó la variable con el nombre correcto al `.env` local.
+
+### Archivos tocados
+- `.gitignore` — patrones de respaldos de `.env`.
+
+### Verificación
+`git check-ignore` confirma que `apps/api/.env.bak-x`,
+`deploy/.env.production.bak-<fecha>`, `.env.bak` y
+`packages/database/.env.bak-1` quedan ignorados, y que `.env.example` y
+`deploy/.env.production.example` siguen versionados. `git status` limpio en
+local y en el VPS.
+
+### Pendientes derivados
+- **Generar un token de API de SignalWire válido** (Dashboard → API → Tokens, con permiso de Voz) y cargarlo en local y producción. Sin él, la transferencia a recepción humana no funciona.
+- El número de SignalWire sigue apuntando al túnel local; las llamadas aún no llegan a producción.
+- Mercado Pago sigue sin credenciales.
+
+---
+
 ## [2026-10-07] docs(deploy): registrar el redeploy a producción
 
 **Autor:** Claude Opus 5.5 · **Commit:** `38f8446`
