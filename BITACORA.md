@@ -10,6 +10,25 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] test(web): esperar la firma real en la prueba de la bandeja
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Al integrar los 14 PRs de la revisión en paralelo, `bandeja.spec.ts` (#6)
+falló contra el código de #14. La prueba esperaba la respuesta de recepción
+firmada como "Recepcionista (Recepción)", pero #14 cambió la firma al nombre
+del usuario que contesta, que era justo lo que pedía el plan. Las dos
+unidades corrieron en paralelo y cada una pasaba contra `main` por separado.
+Es un choque de integración, no un bug: la prueba ahora espera el nombre del
+usuario de prueba ("E2E Admin").
+
+### Archivos tocados
+- `apps/web/e2e/bandeja.spec.ts`
+
+### Verificación
+`npm run test:e2e` contra `main` integrado: 13/13.
+
 ## [2026-10-08] fix(deploy): retención aunque falle la copia externa del respaldo
 
 **Autor:** Claude Opus 5.5 · **Commit:** `7632260`

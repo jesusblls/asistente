@@ -119,7 +119,9 @@ test('tomar control pausa la IA y la respuesta de recepción aparece en el hilo'
   // Tras recargar, el hilo se reconstruye desde la API con la respuesta.
   await page.reload();
   await expect(thread.getByText(replyText)).toBeVisible({ timeout: 15_000 });
-  await expect(thread.getByText('Recepcionista (Recepción)')).toBeVisible();
+  // La respuesta va firmada con el nombre de quien la escribió, no con un
+  // genérico "Recepción": así la clínica sabe quién contestó a cada paciente.
+  await expect(thread.getByText('E2E Admin', { exact: true })).toBeVisible();
 
   // --- Devolver a la IA -------------------------------------------------------
   await page.getByRole('button', { name: /Devolver a (la )?IA/ }).click();
