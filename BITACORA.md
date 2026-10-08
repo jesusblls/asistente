@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(web): quitar de la landing lo que no está construido
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `df15228`
 
 ### Qué se hizo
 La landing prometía funciones que no existen en el código, cifras sin
