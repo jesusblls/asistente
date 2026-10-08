@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(web): hacer accesibles los modales de equipo y FAQ
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `4200cd7`
 
 ### Qué se hizo
 Los cuatro modales de `/dashboard/team` (alta/edición de especialista, de
