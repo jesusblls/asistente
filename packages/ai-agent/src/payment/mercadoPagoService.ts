@@ -318,10 +318,10 @@ export class MercadoPagoService {
         return ignored(`pago_no_aprobado:${payment.status || 'desconocido'}`, payment.external_reference);
       }
 
-      const appointmentId = payment.external_reference;
-      if (!appointmentId) {
+      if (!payment.external_reference) {
         return ignored('sin_external_reference');
       }
+      const appointmentId = await this.resolveRescheduledTarget(payment.external_reference);
 
       const appointment = await db.appointment.findUnique({
         where: { id: appointmentId },
@@ -383,6 +383,7 @@ export class MercadoPagoService {
     if (!targetAppointmentId) {
       return ignored('cita_no_identificada');
     }
+    targetAppointmentId = await this.resolveRescheduledTarget(targetAppointmentId);
 
     const exists = await db.appointment.findUnique({
       where: { id: targetAppointmentId },
@@ -393,6 +394,41 @@ export class MercadoPagoService {
     }
 
     return { outcome: 'PAID', ...(await this.markDepositAsPaidOnce(targetAppointmentId, auditActor)) };
+  }
+
+  /**
+   * Si la cita del link de pago se reagendó, devuelve la cita vigente que la
+   * sustituyó (siguiendo la cadena si se reagendó varias veces). Sin esto, el
+   * paciente que paga con el link que ya tenía acreditaría una cita cancelada
+   * y la nueva seguiría pidiendo anticipo hasta liberarse sola.
+   *
+   * Solo se redirige a una cita del mismo paciente y clínica que aún espere el
+   * anticipo; en cualquier otro caso se queda en la original, y el pago se
+   * acredita ahí y se marca para conciliar, como antes.
+   */
+  static async resolveRescheduledTarget(appointmentId: string): Promise<string> {
+    let currentId = appointmentId;
+    for (let hops = 0; hops < 5; hops += 1) {
+      const current = await db.appointment.findUnique({
+        where: { id: currentId },
+        select: { status: true, tenantId: true, patientId: true, rescheduledToId: true },
+      });
+      if (!current || current.status !== 'CANCELLED' || !current.rescheduledToId) break;
+
+      const successor = await db.appointment.findFirst({
+        where: {
+          id: current.rescheduledToId,
+          tenantId: current.tenantId,
+          patientId: current.patientId,
+        },
+        select: { id: true, paymentStatus: true },
+      });
+      // Si la nueva ya está pagada o no pide anticipo, este pago no le
+      // corresponde: se queda en la original para conciliarlo a mano.
+      if (!successor || successor.paymentStatus !== 'DEPOSIT_PENDING') break;
+      currentId = successor.id;
+    }
+    return currentId;
   }
 
   /**

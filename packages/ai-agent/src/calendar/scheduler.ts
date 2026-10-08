@@ -334,6 +334,7 @@ export class SchedulerService {
       // Pago de la cita sustituida: si el anticipo ya se cubrió, viaja a la
       // nueva para no cobrarle dos veces al paciente.
       let replacedPayment: {
+        id: string;
         paymentStatus: string;
         depositAmountMxn: number | null;
         depositPaymentUrl: string | null;
@@ -529,6 +530,15 @@ export class SchedulerService {
           },
           tx
         );
+
+        if (replacedPayment) {
+          // La cita vieja apunta a la nueva: si el paciente paga con el link
+          // de anticipo que ya tenía, el webhook lo acredita a esta.
+          await tx.appointment.update({
+            where: { id: replacedPayment.id },
+            data: { rescheduledToId: appointment.id },
+          });
+        }
 
         return appointment;
       } catch (error) {

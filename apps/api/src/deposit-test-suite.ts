@@ -1,4 +1,5 @@
 import { appointmentSlotKey, db } from '@asistente/database';
+import { SchedulerService } from '@asistente/ai-agent';
 import { buildServer } from './server.js';
 import { drainQueue, jobQueue } from './services/queue/handlers.js';
 import { sweepDeposits } from './services/deposits/depositSweeper.js';
@@ -317,6 +318,55 @@ async function runDepositTests() {
         sentTexts.length === 1 &&
         sentTexts[0].includes('ya se había liberado'),
       'Un pago tardío sobre un horario liberado avisa al paciente que recepción lo contactará'
+    );
+
+    // Reagendar con anticipo pendiente: el link que ya tenía el paciente
+    // apunta a la cita vieja; pagar con él debe acreditar la nueva.
+    console.log('\n🛡️ Reagendado con anticipo pendiente');
+    const nextWeekday = (daysAhead: number) => {
+      const d = new Date(Date.now() + daysAhead * 24 * HOUR);
+      while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setTime(d.getTime() + 24 * HOUR);
+      d.setUTCHours(16, 0, 0, 0); // 10:00 en CDMX
+      return d;
+    };
+    const auditActor = { type: 'AI_AGENT' as const, id: 'test-agent' };
+    const original = await SchedulerService.bookAppointment({
+      tenantId: tenant.id,
+      patientFullName: 'Paciente Anticipo',
+      patientPhone: '+529900003002',
+      doctorId,
+      serviceId: tenant.services[0].id,
+      startTimeIso: nextWeekday(8).toISOString(),
+      auditActor,
+    });
+    const moved = await SchedulerService.bookAppointment({
+      tenantId: tenant.id,
+      patientFullName: 'Paciente Anticipo',
+      patientPhone: '+529900003002',
+      doctorId,
+      serviceId: tenant.services[0].id,
+      startTimeIso: nextWeekday(10).toISOString(),
+      auditActor,
+      replacesAppointmentId: original.id,
+    });
+    const originalAfter = await db.appointment.findUnique({ where: { id: original.id } });
+    assert(
+      originalAfter?.status === 'CANCELLED' && originalAfter.rescheduledToId === moved.id,
+      'La cita reagendada apunta a la que la sustituyó'
+    );
+
+    await postWebhook({
+      type: 'payment',
+      data: { id: 'pay-link-viejo-1' },
+      external_reference: original.id,
+      status: 'approved',
+    });
+    await drainQueue();
+    const movedAfter = await db.appointment.findUnique({ where: { id: moved.id } });
+    const originalPaid = await db.appointment.findUnique({ where: { id: original.id } });
+    assert(
+      movedAfter?.paymentStatus === 'DEPOSIT_PAID' && originalPaid?.paymentStatus === 'DEPOSIT_PENDING',
+      'Pagar con el link de la cita vieja acredita la cita vigente, no la cancelada'
     );
   } finally {
     globalThis.fetch = originalFetch;

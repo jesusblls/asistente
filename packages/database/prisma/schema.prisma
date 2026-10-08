@@ -194,6 +194,10 @@ model Appointment {
   depositAmountMxn   Float?
   depositPaymentUrl  String?
   paymentReferenceId String?
+  /// Cita que sustituyó a esta al reagendar. Un pago hecho con el link de
+  /// anticipo de la cita vieja se acredita a la vigente en vez de quedarse en
+  /// una cita cancelada (y obligar al paciente a pagar dos veces).
+  rescheduledToId    String?
   /// Límite para pagar el anticipo antes de liberar el horario. Solo se llena
   /// cuando el link se envió al paciente automáticamente (ver api/services/deposits).
   depositDeadlineAt     DateTime?

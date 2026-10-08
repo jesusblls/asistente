@@ -10,6 +10,43 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(payments): acreditar el anticipo de una cita reagendada
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Pendiente que dejaron cruzado #10 (reagendado atómico) y #13 (anticipos).
+Al reagendar una cita con anticipo pendiente, la vieja se cancela y la nueva
+nace en `DEPOSIT_PENDING`. Pero el paciente ya tenía en su WhatsApp el link de
+pago de la cita vieja, cuya `external_reference` es el id de esa cita. Si
+pagaba con ese link:
+- el webhook acreditaba la cita **cancelada**;
+- la nueva seguía pidiendo anticipo y el barrido la liberaba al vencer;
+- el paciente terminaba pagando y perdiendo su horario, o pagando dos veces.
+
+Se agregó `Appointment.rescheduledToId` (migración 0008), que el reagendado
+llena en la misma transacción que crea la cita nueva. El webhook resuelve la
+cadena con `resolveRescheduledTarget()` antes de acreditar, y solo redirige a
+una cita del mismo paciente y clínica que siga en `DEPOSIT_PENDING`. Si la
+nueva ya está pagada o no pide anticipo, el pago se queda en la original y se
+marca como tardío, igual que antes, para conciliarlo a mano.
+
+Sin llave foránea a propósito: igual que `paymentReferenceId`, solo sirve
+para redirigir y no debe impedir borrar historial.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma`, `migrations/0008_appointment_rescheduled_to/` — columna nueva.
+- `packages/ai-agent/src/calendar/scheduler.ts` — el reagendado enlaza la cita vieja con la nueva.
+- `packages/ai-agent/src/payment/mercadoPagoService.ts` — `resolveRescheduledTarget()` en las rutas de producción y de desarrollo del webhook.
+- `apps/api/src/deposit-test-suite.ts` — 2 casos nuevos.
+
+### Verificación
+- `prisma migrate diff` de la base migrada contra el esquema: vacío.
+- Suite de anticipos 25/25: la cita vieja apunta a la nueva; un pago con el
+  link viejo deja la nueva en `DEPOSIT_PAID` y la vieja sin acreditar.
+- `npm run build`, `npm test` 20/20 suites, `npm run test:stress` 44/44 y
+  `npm run test:e2e` 13/13 sobre `main` integrado.
+
 ## [2026-10-08] test(web): esperar la firma real en la prueba de la bandeja
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
