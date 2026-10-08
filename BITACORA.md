@@ -602,6 +602,76 @@ recordatorio nuevo no choque con el anterior.
 - El texto y el formato de fecha repiten parte de
   `WhatsAppService.sendAppointmentConfirmation`, y la lectura del
   `phoneNumberId` repite la de `routes/webhooks.ts`; conviene extraer ambos.
+## [2026-10-08] test(web): cubrir con e2e registro, recuperación, agenda y bandeja
+
+**Autor:** Claude Opus 5.5 · **Commit:** `db605fb`
+
+### Qué se hizo
+La suite E2E solo cubría el login. Los flujos de los que depende que una
+clínica nueva funcione —darse de alta y configurarse, recuperar el acceso,
+agendar desde recepción y atender en modo copiloto— no tenían ninguna prueba
+de navegador; un rewrite roto o un formulario que no guarda solo se
+descubría a mano. Se agregaron cuatro specs que recorren la UI real contra el
+API real:
+
+- `registro-onboarding.spec.ts`: sin aceptar los términos no se crea cuenta;
+  con la casilla, `/registro` → `/onboarding` → los 5 pasos (clínica,
+  especialista con horario, tratamiento, FAQs) → `/dashboard`, y se comprueba
+  en la base que todo quedó en la clínica correcta (teléfono normalizado a
+  E.164, precio, 3 FAQs, onboarding terminado).
+- `recuperar-contrasena.spec.ts`: "¿La olvidaste?" → `/recuperar` con el
+  mensaje genérico (con un correo inexistente, para fijar que no delata
+  cuentas); `/restablecer#token=…` con un token sembrado → la contraseña
+  nueva entra y la vieja no; un token ya usado se rechaza. En dev el correo
+  solo se loguea y el token se guarda hasheado, por eso la prueba siembra su
+  `PasswordResetToken` con el sha256 de un token conocido.
+- `calendario.spec.ts`: "Nueva Cita" con el especialista y tratamiento
+  sembrados → aparece en la lista y queda guardada a las 11:00 de CDMX. El
+  navegador corre con `timezoneId: America/Mexico_City` para que el resultado
+  no dependa de la zona de la máquina.
+- `bandeja.spec.ts`: "Tomar control" pausa la IA (persistido, sobrevive a
+  recargar), la respuesta de recepción aparece en el hilo y queda como
+  `HUMAN_STAFF`/`SENT` (envío de WhatsApp simulado), y "Devolver a la IA" lo
+  revierte.
+
+`fixtures.ts` concentra la siembra y limpieza: cada spec crea su propia
+clínica con slug/correo únicos y la borra en `afterAll` (cascada), más los
+`Job` de esa clínica, que no tienen llave foránea a `Tenant`. Las filas de
+`AuditLog` se quedan a propósito: son de solo inserción.
+
+Los selectores son por rol, etiqueta y texto, no por clases, porque otras
+unidades están cambiando la UI de agenda, onboarding y bandeja. El modal de
+cita tiene etiquetas sin `htmlFor`; `fieldByLabel` usa `getByLabel` y, si
+no hay asociación, el control hermano de la etiqueta, para que la prueba
+siga pasando cuando se corrija esa accesibilidad.
+
+No se tocó código de la app ni la configuración de Playwright.
+
+### Archivos tocados
+- `apps/web/e2e/fixtures.ts` (nuevo)
+- `apps/web/e2e/registro-onboarding.spec.ts` (nuevo)
+- `apps/web/e2e/recuperar-contrasena.spec.ts` (nuevo)
+- `apps/web/e2e/calendario.spec.ts` (nuevo)
+- `apps/web/e2e/bandeja.spec.ts` (nuevo)
+
+### Verificación
+- Suite E2E completa (login + las 4 nuevas) contra API y web levantados en
+  puertos alternos: 12/12 en verde. Tras la corrida no quedan clínicas
+  `e2e-*` ni usuarios `@asistente.test` en la base.
+- `tsc --noEmit --strict` sobre `apps/web/e2e/*.ts` limpio; `npm test` en
+  verde.
+
+### Pendientes derivados
+- **Carrera en `/onboarding`:** `cargarEstado` no cancela cargas previas y en
+  dev se observaron 4 `GET /api/onboarding` al entrar; una respuesta tardía
+  reescribe el nombre de la clínica que la persona ya había editado en el
+  paso 1, y se guarda el valor viejo. La prueba espera a `networkidle` antes
+  de capturar. Corrección sugerida: ignorar respuestas de cargas obsoletas
+  (bandera `cancelled`/`AbortController` en el efecto).
+- **Límites de tasa en corridas locales repetidas:** `/auth/register` admite
+  5 altas por hora por IP y `/auth/login` 10 por minuto. La suite completa
+  hace 1 alta y 8 intentos de login; correrla varias veces seguidas contra el
+  mismo API da 429. Reiniciar el API limpia el contador (es en memoria).
 
 ---
 
