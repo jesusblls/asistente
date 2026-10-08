@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(agent): corregir el motor de respaldo del agente
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `a227b2e`
 
 ### Qué se hizo
 Auditoría del motor heurístico (`handleFallbackProcessing`), que atiende cuando
