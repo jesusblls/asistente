@@ -4,7 +4,7 @@ import { HttpError } from './http.js';
 
 const logger = createLogger('webhooks');
 
-function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: string, b: string): boolean {
   const bufferA = Buffer.from(a, 'utf8');
   const bufferB = Buffer.from(b, 'utf8');
   return bufferA.length === bufferB.length && timingSafeEqual(bufferA, bufferB);

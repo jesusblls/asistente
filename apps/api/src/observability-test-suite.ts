@@ -128,6 +128,7 @@ async function runObservabilityTests() {
     process.env.TWILIO_AUTH_TOKEN = 'test-twilio-token';
     process.env.MERCADOPAGO_WEBHOOK_SECRET = 'test-mp-secret';
     process.env.PLATFORM_ADMIN_EMAILS = 'admin@clinica.mx';
+    process.env.VOICE_STREAM_TOKEN = 'v'.repeat(64);
 
     const productionApp = await buildServer({ logger: false });
     await productionApp.ready();
@@ -150,6 +151,7 @@ async function runObservabilityTests() {
     delete process.env.TWILIO_AUTH_TOKEN;
     delete process.env.MERCADOPAGO_WEBHOOK_SECRET;
     delete process.env.PLATFORM_ADMIN_EMAILS;
+    delete process.env.VOICE_STREAM_TOKEN;
     await app.close();
   }
 

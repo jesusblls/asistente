@@ -3,6 +3,7 @@ import { PlanLimitError, assertCanTakeCall, db, recordUsage } from '@asistente/d
 import { OmnichannelAgent, normalizeMexicanPhone } from '@asistente/ai-agent';
 import { createLogger, maskPhone } from '@asistente/observability';
 import { WhatsAppService } from './whatsappService.js';
+import { safeEqual } from '../lib/webhookSecurity.js';
 import { enqueueVoiceFollowUp } from './queue/handlers.js';
 import {
   VoiceCallSession,
@@ -140,6 +141,31 @@ async function resolveTenantFromDatabase(params: {
   });
 }
 
+/**
+ * Decide si el `authToken` recibido en el evento `start` autoriza el stream.
+ *
+ * - Con `VOICE_STREAM_TOKEN` configurado se exige siempre, comparando en
+ *   tiempo constante para no filtrar el secreto carácter a carácter por
+ *   diferencias de latencia.
+ * - Sin token configurado, en producción se rechaza todo (fail-closed): el
+ *   número que llama es la única identidad del paciente ante el agente, y un
+ *   stream abierto permitiría suplantarlo. `env.ts` ya impide arrancar así,
+ *   esto es la segunda línea por si alguien lo salta.
+ * - En desarrollo sin token se acepta, para poder probar la voz en local.
+ */
+export function isStreamTokenAccepted(
+  expectedToken: string | undefined,
+  receivedToken: string | undefined,
+  isProduction: boolean = process.env.NODE_ENV === 'production'
+): boolean {
+  if (!expectedToken) return !isProduction;
+  if (typeof receivedToken !== 'string') return false;
+  // El TwiML manda el valor crudo de la variable y aquí se compara recortado;
+  // recortar también lo recibido evita rechazar llamadas legítimas por un
+  // espacio sobrante en el .env.
+  return safeEqual(expectedToken, receivedToken.trim());
+}
+
 export class VoiceStreamService {
   /**
    * Inicializa la sesión de llamada telefónica desde el WebSocket de Twilio.
@@ -156,7 +182,7 @@ export class VoiceStreamService {
     const recordVoiceUsage =
       deps.recordVoiceUsage ??
       ((tenantId: string, seconds: number) => recordUsage(tenantId, 'VOICE_SECONDS', seconds));
-    const expectedStreamToken = process.env.VOICE_STREAM_TOKEN;
+    const expectedStreamToken = process.env.VOICE_STREAM_TOKEN?.trim();
 
     let session: VoiceCallSession | null = null;
     let closed = false;
@@ -199,7 +225,7 @@ export class VoiceStreamService {
             const from = custom.from || start.from || '';
             const to = custom.to || start.to || '';
 
-            if (expectedStreamToken && custom.authToken !== expectedStreamToken) {
+            if (!isStreamTokenAccepted(expectedStreamToken, custom.authToken)) {
               logger.warn('Se rechaza el stream de voz por token inválido', { callSid, streamSid });
               close(1008, 'invalid_stream_token');
               return;

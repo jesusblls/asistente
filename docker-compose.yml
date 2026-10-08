@@ -58,8 +58,9 @@ services:
     env_file:
       - deploy/.env.production
     # `environment` gana sobre `env_file`: aquí van solo los valores que
-    # compone el propio stack (red interna de Docker) y las dos variables cuya
-    # ausencia debe detener el despliegue antes de construir nada.
+    # compone el propio stack (red interna de Docker) y las variables cuya
+    # ausencia debe detener el despliegue antes de construir nada (env.ts las
+    # exige en producción; mejor fallar aquí que con la API en bucle de reinicio).
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -71,6 +72,7 @@ services:
       TRUST_PROXY: "true"
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.production (32+ caracteres aleatorios)}
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?Define CREDENTIALS_ENCRYPTION_KEY en .env.production (openssl rand -base64 32)}
+      VOICE_STREAM_TOKEN: ${VOICE_STREAM_TOKEN:?Define VOICE_STREAM_TOKEN en .env.production (openssl rand -hex 32)}
     expose:
       - "3000"
     # Sin healthcheck, Docker da la API por "lista" en cuanto arranca el

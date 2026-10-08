@@ -24,7 +24,7 @@ async function runEnvValidationTests() {
   };
   const emptyRes = validateEnvironment(emptyProdEnv);
   assert(!emptyRes.isValid, 'Producción sin variables es inválido');
-  assert(emptyRes.missingProductionVars.length === 8, 'Detecta las 8 variables obligatorias faltantes');
+  assert(emptyRes.missingProductionVars.length === 9, 'Detecta las 9 variables obligatorias faltantes');
 
   let throwsInProd = false;
   try {
@@ -51,6 +51,7 @@ async function runEnvValidationTests() {
     PLATFORM_ADMIN_EMAILS: 'director@sonrisaspolanco.mx,admin@sonrisaspolanco.mx',
     TRUST_PROXY: 'true',
     METRICS_TOKEN: 'metrics-secret-token',
+    VOICE_STREAM_TOKEN: 'a'.repeat(64),
   };
 
   const validRes = validateEnvironment(validProdEnv);
@@ -75,6 +76,52 @@ async function runEnvValidationTests() {
   assert(
     badKeyRes.missingProductionVars.some((v) => v.includes('32 bytes')),
     'Informa que la clave debe ser de 32 bytes'
+  );
+
+  // 3b. VOICE_STREAM_TOKEN ausente o corto impide arrancar en producción
+  const { VOICE_STREAM_TOKEN: _omit, ...noVoiceTokenEnv } = validProdEnv;
+  const noVoiceRes = validateEnvironment(noVoiceTokenEnv);
+  assert(!noVoiceRes.isValid, 'Producción sin VOICE_STREAM_TOKEN es inválida');
+  assert(
+    noVoiceRes.missingProductionVars.some((v) => v.startsWith('VOICE_STREAM_TOKEN')),
+    'Informa que falta VOICE_STREAM_TOKEN'
+  );
+  const shortVoiceRes = validateEnvironment({ ...validProdEnv, VOICE_STREAM_TOKEN: 'corto-de-31-caracteres-exactos!' });
+  assert(!shortVoiceRes.isValid, 'VOICE_STREAM_TOKEN de menos de 32 caracteres es rechazado');
+  const blankVoiceRes = validateEnvironment({ ...validProdEnv, VOICE_STREAM_TOKEN: ' '.repeat(40) });
+  assert(!blankVoiceRes.isValid, 'VOICE_STREAM_TOKEN de solo espacios es rechazado');
+  let voiceThrowMsg = '';
+  try {
+    assertProductionEnv(noVoiceTokenEnv);
+  } catch (err: any) {
+    voiceThrowMsg = err.message;
+  }
+  assert(voiceThrowMsg.includes('VOICE_STREAM_TOKEN'), 'assertProductionEnv menciona VOICE_STREAM_TOKEN al abortar');
+  const devNoVoice = validateEnvironment({ NODE_ENV: 'development' });
+  assert(
+    devNoVoice.warnings.some((w) => w.includes('VOICE_STREAM_TOKEN')),
+    'En desarrollo, sin VOICE_STREAM_TOKEN solo se advierte'
+  );
+
+  // 3c. SignalWire sin llave de firma: advertencia, no fallo duro
+  const swNoKeyRes = validateEnvironment({ ...validProdEnv, SIGNALWIRE_PROJECT_ID: 'proj-123' });
+  assert(swNoKeyRes.isValid, 'Credenciales de SignalWire sin SIGNALWIRE_SIGNING_KEY no impiden arrancar');
+  assert(
+    swNoKeyRes.warnings.some((w) => w.includes('SIGNALWIRE_SIGNING_KEY')),
+    'Advierte que falta SIGNALWIRE_SIGNING_KEY si hay credenciales de SignalWire'
+  );
+  const swWithKeyRes = validateEnvironment({
+    ...validProdEnv,
+    SIGNALWIRE_PROJECT_ID: 'proj-123',
+    SIGNALWIRE_SIGNING_KEY: 'signing-key',
+  });
+  assert(
+    !swWithKeyRes.warnings.some((w) => w.includes('SIGNALWIRE_SIGNING_KEY')),
+    'No advierte de SignalWire cuando la llave de firma está configurada'
+  );
+  assert(
+    !validRes.warnings.some((w) => w.includes('SIGNALWIRE_SIGNING_KEY')),
+    'No advierte de SignalWire si no se usa SignalWire'
   );
 
   // 4. En desarrollo, no lanza excepción aunque falten variables

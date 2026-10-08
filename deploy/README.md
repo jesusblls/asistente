@@ -33,7 +33,8 @@ Edita `deploy/.env.production` y rellena, como mínimo, las variables
 obligatorias (el propio archivo trae los comandos `openssl` para generarlas):
 `POSTGRES_PASSWORD`, `JWT_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`,
 `PUBLIC_API_HOST`, `CORS_ORIGINS`, `PLATFORM_ADMIN_EMAILS`,
-`SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, y los tres secretos de webhooks
+`SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `VOICE_STREAM_TOKEN`
+(`openssl rand -hex 32`, aunque todavía no conectes telefonía), y los tres secretos de webhooks
 (`META_APP_SECRET`, `TWILIO_AUTH_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` — un
 valor de relleno sirve hasta que conectes esa integración real; env.ts
 rechaza el arranque en producción si faltan).
@@ -242,6 +243,12 @@ $DC config --quiet && $DC build api web
 $DC up -d --no-deps api web
 $DC logs --tail 50 api
 ```
+
+Si el arranque falla con *"Error fatal de configuración"*, la versión nueva
+exige una variable que tu `deploy/.env.production` todavía no tiene (el
+mensaje dice cuál). Desde octubre de 2026, por ejemplo, `VOICE_STREAM_TOKEN`
+es obligatoria: agrégala con `openssl rand -hex 32` y vuelve a levantar.
+`$DC config --quiet` del paso 3 ya lo detecta antes de construir.
 
 Revisa en el log que las migraciones se aplicaron y que no hay errores al
 arrancar, y entra al panel.

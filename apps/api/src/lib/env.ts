@@ -99,8 +99,36 @@ export function validateEnvironment(env: NodeJS.ProcessEnv = process.env): EnvVa
     }
   }
 
+  // 9. VOICE_STREAM_TOKEN (>= 32 caracteres)
+  // Es el único secreto que protege el WebSocket /voice/stream. Sin él,
+  // cualquiera que conozca un tenantId puede abrir una sesión de voz con el
+  // `from` que quiera; como el número que llama es la única prueba de
+  // identidad del paciente para el agente, podría consultar o cancelar citas
+  // ajenas y además consumir minutos pagados de STT/TTS/LLM.
+  const voiceStreamToken = env.VOICE_STREAM_TOKEN?.trim();
+  if (!voiceStreamToken || voiceStreamToken.length < 32) {
+    if (isProduction) {
+      missingProductionVars.push(
+        'VOICE_STREAM_TOKEN (al menos 32 caracteres aleatorios, ej. openssl rand -hex 32; protege el WebSocket /voice/stream contra sesiones de voz suplantadas)'
+      );
+    } else {
+      warnings.push('VOICE_STREAM_TOKEN no configurado o menor a 32 caracteres: el WebSocket de voz acepta streams sin token');
+    }
+  }
+
   // Recomendaciones operativas en producción
   if (isProduction) {
+    const hasSignalWireCredentials = Boolean(
+      env.SIGNALWIRE_PROJECT_ID?.trim() || env.SIGNALWIRE_API_TOKEN?.trim() || env.SIGNALWIRE_SPACE_URL?.trim()
+    );
+    if (hasSignalWireCredentials && !env.SIGNALWIRE_SIGNING_KEY?.trim()) {
+      // No es fallo duro: una clínica puede operar solo con Twilio y usar
+      // SignalWire únicamente para la transferencia a recepción. Pero si las
+      // llamadas entran por SignalWire, sin la llave de firma se rechazarán.
+      warnings.push(
+        'Hay credenciales de SignalWire pero falta SIGNALWIRE_SIGNING_KEY: si las llamadas entran por SignalWire, sus webhooks firmados se rechazarán con 503'
+      );
+    }
     if (env.TRUST_PROXY !== 'true') {
       warnings.push('TRUST_PROXY no es "true": si la API corre tras un balanceador/reverse-proxy, la auditoría registrará la IP del proxy para todos');
     }
