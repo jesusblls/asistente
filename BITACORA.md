@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] feat(api): enviar recordatorios de cita de 24 h y 2 h
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `c82ee1b`
 
 ### Qué se hizo
 La landing promete recordatorios por WhatsApp 24 h y 2 h antes de la cita, y
