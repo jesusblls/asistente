@@ -672,6 +672,78 @@ No se tocó código de la app ni la configuración de Playwright.
   5 altas por hora por IP y `/auth/login` 10 por minuto. La suite completa
   hace 1 alta y 8 intentos de login; correrla varias veces seguidas contra el
   mismo API da 429. Reiniciar el API limpia el contador (es en memoria).
+## [2026-10-08] fix(web): hacer accesibles los modales de equipo y FAQ
+
+**Autor:** Claude Opus 5.5 · **Commit:** `4200cd7`
+
+### Qué se hizo
+Los cuatro modales de `/dashboard/team` (alta/edición de especialista, de
+tratamiento, pregunta frecuente y confirmación de borrado) eran un `div` fijo
+sin semántica. Para quien usa lector de pantalla no existían como diálogo:
+el contenido aparecía sin anunciarse y sin nombre. Con teclado:
+- el foco se quedaba en el botón que los abrió, detrás del fondo;
+- Tab recorría la página de abajo;
+- Escape no cerraba;
+- la página de fondo seguía desplazándose.
+
+Se creó `components/ui/Modal.tsx`, sin dependencias nuevas, con el patrón
+WAI-ARIA de diálogo modal:
+- `role="dialog"` (o `alertdialog`), `aria-modal`, `aria-labelledby` al
+  título visible y `aria-describedby` al subtítulo;
+- foco al abrir en el primer campo del formulario, atrapado mientras está
+  abierto y devuelto al disparador al cerrar;
+- Escape cierra;
+- scroll del fondo bloqueado, con compensación del ancho de la barra para que
+  el fondo no "salte";
+- una pila de modales, para que dos apilados no se cierren con un solo
+  Escape ni se peleen el foco.
+
+Decisiones:
+- **Clic en el fondo no cierra** (`closeOnBackdropClick`, apagado por
+  omisión). Ningún modal lo hacía antes, y en formularios largos como el
+  horario del especialista un clic accidental perdería lo capturado.
+- **Escape no cierra mientras se guarda o se elimina**
+  (`dismissible={!isSubmitting}` / `{!isDeleting}`). Si la petición falla, el
+  error se pinta dentro del modal; si ya estuviera cerrado, nadie lo vería.
+- **Confirmación de borrado** como `alertdialog`, con foco inicial en
+  "Cancelar" y no en "Sí, eliminar", para que un Enter de inercia no borre.
+- Si el botón enfocado se deshabilita ("Eliminando..."), el foco se recupera
+  en el panel en vez de caer en `<body>` fuera del diálogo.
+- Se descarta Escape durante una composición IME (`isComposing`).
+
+De paso, en esos mismos modales:
+- los `<label>` de alta de especialista y tratamiento se ligaron a su campo
+  (`htmlFor`/`id`). Antes, al recibir el foco, el lector anunciaba "campo de
+  texto" sin nombre;
+- los banners de error llevan `role="alert"`;
+- la X tiene `aria-label="Cerrar"` y los iconos decorativos `aria-hidden`.
+
+La apariencia no cambia: el fondo y el panel conservan exactamente las mismas
+clases. `NewAppointmentModal`, el modal de `DashboardShell` y el de ajustes
+quedan fuera de este cambio a propósito; se atienden por separado.
+
+### Archivos tocados
+- `apps/web/src/components/ui/Modal.tsx` — nuevo componente de diálogo accesible.
+- `apps/web/src/components/dashboard/team/AddDoctorModal.tsx` — migrado a `Modal`; labels ligados.
+- `apps/web/src/components/dashboard/team/AddServiceModal.tsx` — migrado a `Modal`; labels ligados.
+- `apps/web/src/components/dashboard/team/DeleteConfirmModal.tsx` — `alertdialog`, foco inicial en Cancelar.
+- `apps/web/src/components/dashboard/team/FaqSection.tsx` — modal de pregunta migrado a `Modal`.
+- `apps/web/e2e/modals-a11y.spec.ts` — prueba E2E de rol, nombre, trampa de foco, Escape y retorno del foco.
+
+### Verificación
+- `npm run build` limpio.
+- `npm run lint --workspace=apps/web`: 0 errores y los mismos 9 avisos que ya había.
+- `npm test`: todas las suites pasan salvo `subscription-test-suite`, que
+  choca por `mpPreapprovalId` único cuando otras ramas corren a la vez contra
+  la misma base. Sola pasa 28/28, y este cambio no toca la API.
+- E2E con Playwright contra API y web locales, con una clínica de prueba que
+  se borra al final. Se abrió cada modal con teclado y se verificó:
+  - `getByRole('dialog' | 'alertdialog', { name })`;
+  - foco dentro tras 40 Tab y 10 Shift+Tab;
+  - Escape cierra y el foco regresa al disparador;
+  - `body` con `overflow: hidden` mientras está abierto;
+  - la X devuelve el foco.
+- Capturas revisadas: el aspecto es idéntico.
 
 ---
 
