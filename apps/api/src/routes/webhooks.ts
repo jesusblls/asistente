@@ -5,8 +5,8 @@ import {
   MercadoPagoService,
   SubscriptionService,
 } from '@asistente/ai-agent';
-import { WhatsAppService } from '../services/whatsappService.js';
 import { enqueueMetaInbound, type MetaInboundPayload } from '../services/queue/handlers.js';
+import { enqueueDepositNotice } from '../services/deposits/depositSweeper.js';
 import { HttpError } from '../lib/http.js';
 import {
   maskPhone,
@@ -442,20 +442,43 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       return reply.status(200).send({ success: true, tipo, aplicado });
     }
 
-    const updated = await MercadoPagoService.processPaymentWebhook(
+    const result = await MercadoPagoService.processPaymentWebhook(
       body,
       webhookActor(request, 'mercadopago')
     );
 
-    if (updated.paymentStatus === 'DEPOSIT_PAID') {
-      await WhatsAppService.sendAppointmentConfirmation(updated);
+    // Pago no aprobado, evento ajeno o pago inexistente: se responde 200 para
+    // que Mercado Pago no reintente algo que nunca va a acreditarse.
+    if (result.outcome === 'IGNORED') {
+      request.log.info({ reason: result.reason }, 'Notificación de Mercado Pago sin acreditación');
+      return reply.status(200).send({
+        success: true,
+        ignored: true,
+        reason: result.reason,
+        appointmentId: result.appointmentId ?? null,
+      });
+    }
+
+    const { appointment, transitioned } = result;
+
+    // El aviso "Recibimos tu anticipo" va por la cola (reintentos si Meta
+    // falla). Se encola también en los duplicados a propósito: la dedupeKey
+    // por cita hace que solo exista un aviso, y así, si el encolado falló
+    // justo después de acreditar, el reintento de Mercado Pago lo recupera.
+    if (appointment.paymentStatus === 'DEPOSIT_PAID') {
+      await enqueueDepositNotice({
+        notice: 'PAID',
+        appointmentId: appointment.id,
+        tenantId: appointment.tenantId,
+      });
     }
 
     return reply.status(200).send({
       success: true,
-      appointmentId: updated.id,
-      paymentStatus: updated.paymentStatus,
-      depositAmountMxn: updated.depositAmountMxn,
+      appointmentId: appointment.id,
+      paymentStatus: appointment.paymentStatus,
+      depositAmountMxn: appointment.depositAmountMxn,
+      duplicate: !transitioned,
     });
   });
 }

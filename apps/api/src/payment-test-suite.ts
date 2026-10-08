@@ -1,5 +1,5 @@
 import { db } from '@asistente/database';
-import { MercadoPagoService } from '@asistente/ai-agent';
+import { DepositLinkUnavailableError, MercadoPagoService } from '@asistente/ai-agent';
 
 process.env.MERCADOPAGO_ACCESS_TOKEN = 'test-mp-access-token';
 process.env.MERCADOPAGO_WEBHOOK_SECRET = 'test-mp-webhook-secret';
@@ -42,6 +42,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   }
 
   if (url.includes('/v1/payments/')) {
+    if (state.paymentStatus === '__404__') {
+      return new Response('{"message":"Payment not found"}', { status: 404 });
+    }
     return new Response(
       JSON.stringify({
         status: state.paymentStatus,
@@ -146,34 +149,94 @@ async function runPaymentTests() {
 
     console.log('\n💳 2. Verificación del pago contra la API antes de acreditar');
     const paid = await MercadoPagoService.processPaymentWebhook({ data: { id: 'pay-real-123' } });
-    assert(paid.paymentStatus === 'DEPOSIT_PAID', 'Pago aprobado con monto correcto acredita el anticipo');
+    assert(
+      paid.outcome === 'PAID' && paid.transitioned && paid.appointment.paymentStatus === 'DEPOSIT_PAID',
+      'Pago aprobado con monto correcto acredita el anticipo'
+    );
+
+    const duplicatePaid = await MercadoPagoService.processPaymentWebhook({ data: { id: 'pay-real-123' } });
+    assert(
+      duplicatePaid.outcome === 'PAID' && duplicatePaid.transitioned === false,
+      'Una notificación duplicada del mismo pago no repite la transición'
+    );
 
     await db.appointment.update({
       where: { id: appointment.id },
       data: { paymentStatus: 'DEPOSIT_PENDING' },
     });
     state.paymentAmount = 999;
-    let amountMismatchRejected = false;
-    try {
-      await MercadoPagoService.processPaymentWebhook({ data: { id: 'pay-real-124' } });
-    } catch {
-      amountMismatchRejected = true;
-    }
+    const amountMismatch = await MercadoPagoService.processPaymentWebhook({ data: { id: 'pay-real-124' } });
     const stillPending = await db.appointment.findUnique({ where: { id: appointment.id } });
     assert(
-      amountMismatchRejected && stillPending?.paymentStatus === 'DEPOSIT_PENDING',
-      'Un pago con monto distinto al anticipo se rechaza y la cita no se acredita'
+      amountMismatch.outcome === 'IGNORED' &&
+        amountMismatch.reason === 'monto_no_coincide' &&
+        stillPending?.paymentStatus === 'DEPOSIT_PENDING',
+      'Un pago con monto distinto al anticipo se ignora (sin lanzar) y la cita no se acredita'
     );
+    state.paymentAmount = 200;
 
     state.paymentStatus = 'rejected';
-    let rejectedStatusBlocked = false;
-    try {
-      await MercadoPagoService.processPaymentWebhook({ data: { id: 'pay-real-125' } });
-    } catch {
-      rejectedStatusBlocked = true;
-    }
-    assert(rejectedStatusBlocked, 'Un pago no aprobado no acredita el anticipo');
+    const rejected = await MercadoPagoService.processPaymentWebhook({ data: { id: 'pay-real-125' } });
+    const afterRejected = await db.appointment.findUnique({ where: { id: appointment.id } });
+    assert(
+      rejected.outcome === 'IGNORED' &&
+        rejected.reason === 'pago_no_aprobado:rejected' &&
+        afterRejected?.paymentStatus === 'DEPOSIT_PENDING',
+      'Un pago no aprobado no acredita el anticipo y no lanza (Mercado Pago no reintenta)'
+    );
     state.paymentStatus = 'approved';
+
+    const otherType = await MercadoPagoService.processPaymentWebhook({
+      type: 'merchant_order',
+      data: { id: 'order-1' },
+    });
+    assert(
+      otherType.outcome === 'IGNORED' && otherType.reason === 'tipo_no_soportado:merchant_order',
+      'Una notificación de otro tipo (merchant_order) se ignora sin consultar el pago'
+    );
+
+    state.paymentStatus = '__404__';
+    const unknownPayment = await MercadoPagoService.processPaymentWebhook({ data: { id: '123456' } });
+    assert(
+      unknownPayment.outcome === 'IGNORED' && unknownPayment.reason === 'pago_inexistente',
+      'Un pago inexistente (notificación de prueba del panel) se ignora en vez de reintentarse'
+    );
+    state.paymentStatus = 'approved';
+
+    console.log('\n💳 2b. Producción sin credenciales: no se fabrican links ni se acredita a ciegas');
+    const savedToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    const savedEnv = process.env.NODE_ENV;
+    delete process.env.MERCADOPAGO_ACCESS_TOKEN;
+    process.env.NODE_ENV = 'production';
+    let unavailable = false;
+    let prodWebhook: Awaited<ReturnType<typeof MercadoPagoService.processPaymentWebhook>>;
+    try {
+      try {
+        await MercadoPagoService.createDepositPreference({
+          appointmentId: appointment.id,
+          tenantId: tenant.id,
+          amountMxn: 200,
+        });
+      } catch (error) {
+        unavailable = error instanceof DepositLinkUnavailableError;
+      }
+      prodWebhook = await MercadoPagoService.processPaymentWebhook({
+        external_reference: appointment.id,
+        data: { id: 'pay-prod-sin-token' },
+      });
+    } finally {
+      process.env.MERCADOPAGO_ACCESS_TOKEN = savedToken;
+      process.env.NODE_ENV = savedEnv;
+    }
+    const afterProd = await db.appointment.findUnique({ where: { id: appointment.id } });
+    assert(
+      unavailable && afterProd?.depositPaymentUrl === 'https://www.mercadopago.com.mx/checkout/real-preference',
+      'En producción sin MERCADOPAGO_ACCESS_TOKEN no se genera un link simulado'
+    );
+    assert(
+      prodWebhook.outcome === 'IGNORED' && afterProd?.paymentStatus === 'DEPOSIT_PENDING',
+      'En producción sin token, una notificación no acredita nada solo por lo que dice su cuerpo'
+    );
 
     console.log('\n💬 3. Reintentos de envío de WhatsApp');
     const { WhatsAppService } = await import('./services/whatsappService.js');

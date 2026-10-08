@@ -6,6 +6,7 @@ import {
   startReminderSweeper,
   stopReminderSweeper,
 } from './services/reminders/reminderService.js';
+import { startDepositSweeper, stopDepositSweeper } from './services/deposits/depositSweeper.js';
 
 async function main() {
   const server = await buildServer();
@@ -28,6 +29,12 @@ async function main() {
       startReminderSweeper();
     }
 
+    // Barrido de anticipos (No-Show Shield): recuerda y libera horarios con
+    // anticipo vencido. Es seguro en varias instancias; se puede apagar aparte.
+    if (process.env.DEPOSITS_SWEEP_ENABLED !== 'false') {
+      startDepositSweeper();
+    }
+
     server.log.info(`🚀 Servidor Asistente Omnicanal activo en: ${address}`);
     server.log.info(`📡 Webhook Meta: ${address}/webhooks/meta`);
     server.log.info(`📞 Webhook Twilio Voice: ${address}/voice/incoming`);
@@ -44,6 +51,7 @@ async function main() {
     try {
       await server.close();
       await stopReminderSweeper();
+      await stopDepositSweeper();
       await jobQueue.stop();
     } catch (error) {
       server.log.error(error);

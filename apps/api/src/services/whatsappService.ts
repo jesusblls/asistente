@@ -1,6 +1,7 @@
 import { db, decryptCredentials } from '@asistente/database';
 import { createLogger } from '@asistente/observability';
 import { maskPhone } from '../lib/webhookSecurity.js';
+import { buildDepositConfirmationLine, formatMxDateTime } from './deposits/depositMessages.js';
 
 const logger = createLogger('whatsapp');
 
@@ -44,6 +45,11 @@ export interface AppointmentConfirmationDetails {
     address?: string | null;
     timezone?: string | null;
   };
+  status?: string;
+  paymentStatus?: string;
+  depositAmountMxn?: number | null;
+  depositPaymentUrl?: string | null;
+  depositDeadlineAt?: Date | string | null;
 }
 
 const MAX_SEND_ATTEMPTS = Math.max(1, Number(process.env.WHATSAPP_SEND_ATTEMPTS || 3));
@@ -257,10 +263,19 @@ export class WhatsAppService {
     appointment: AppointmentConfirmationDetails
   ): Promise<boolean> {
     const { patient, doctor, service, tenant, startTime } = appointment;
-    const dateFormatted = new Date(startTime).toLocaleString('es-MX', {
-      timeZone: tenant?.timezone || 'America/Mexico_City',
-      dateStyle: 'full',
-      timeStyle: 'short',
+    const dateFormatted = formatMxDateTime(startTime, tenant?.timezone);
+    const depositLine = buildDepositConfirmationLine({
+      startTime,
+      status: appointment.status ?? 'CONFIRMED',
+      // Sin estado de pago explícito se conserva el comportamiento anterior:
+      // mostrar el monto del servicio como pendiente.
+      paymentStatus:
+        appointment.paymentStatus ?? (service.requiredDepositMxn > 0 ? 'DEPOSIT_PENDING' : 'NONE'),
+      depositAmountMxn: appointment.depositAmountMxn ?? null,
+      depositPaymentUrl: appointment.depositPaymentUrl ?? null,
+      depositDeadlineAt: appointment.depositDeadlineAt ?? null,
+      service,
+      tenant,
     });
 
     const message = `🦷 *¡Cita Confirmada en ${tenant.name}!*
@@ -271,7 +286,7 @@ Hola *${patient.fullName}*, tu cita ha quedado agendada con éxito:
 📋 *Tratamiento:* ${service.name}
 🗓 *Fecha y Hora:* ${dateFormatted}
 📍 *Dirección:* ${tenant.address || 'Consultorio'}
-${service.requiredDepositMxn > 0 ? `💳 *Anticipo:* $${service.requiredDepositMxn} MXN` : ''}
+${depositLine}
 
 Te esperamos con 10 minutos de anticipación. Si requieres reagendar o tienes dudas, puedes responder a este mensaje en cualquier momento.`;
 

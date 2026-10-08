@@ -1174,6 +1174,170 @@ producción, así que la bandeja marcaba SENT mensajes que nunca salieron.
   sin consultar el estado real.
 - La caché de credenciales es por proceso: con varias réplicas, un cambio
   tarda hasta 30 s en verse en las demás.
+## [2026-10-08] fix(payments): completar el flujo de anticipos con recordar y liberar
+
+**Autor:** Claude Opus 5.5 · **Commit:** `7f42e0b`
+
+### Qué se hizo
+El No-Show Shield estaba a medias. Se encontraron cinco huecos:
+
+1. **El paciente no recibía el link.** La agenda dejaba la cita en
+   `DEPOSIT_PENDING`, pero el link de Mercado Pago solo se generaba si
+   recepción lo pedía a mano. La confirmación de WhatsApp mostraba el monto
+   sin forma de pagarlo.
+2. **Reintentos infinitos.** `processPaymentWebhook` lanzaba en un pago
+   rechazado o pendiente, en un monto distinto y en un pago inexistente. El
+   webhook respondía 500 y Mercado Pago reintentaba sin fin algo que nunca
+   iba a acreditarse. La notificación de prueba del panel de MP (id
+   ficticio, la API responde 404) caía en lo mismo.
+3. **Aviso de pago duplicado e indistinguible.** El aviso "anticipo pagado"
+   se mandaba dentro del request, se ignoraba si fallaba y se repetía con
+   cada notificación duplicada (MP manda `payment.created`,
+   `payment.updated` y reintentos). Además era la misma confirmación de
+   cita, así que el paciente no sabía si su pago había llegado.
+4. **Anticipos sin vencimiento.** Un anticipo no pagado apartaba el horario
+   para siempre.
+5. **Link falso en producción.** Sin `MERCADOPAGO_ACCESS_TOKEN`, se armaba un
+   link simulado sobre el dominio real de mercadopago.com.mx, aun en
+   producción. El paciente habría visto un checkout roto.
+
+Cambios, en el mismo orden:
+
+1. **Link en la confirmación.** Al procesar `APPOINTMENT_CONFIRMATION`, la
+   cola llama a `ensureDepositLink`, que crea la preferencia con la lógica
+   existente de `createDepositPreference` (auditada como `SYSTEM`) y la mete
+   en el mensaje. En los reintentos se reutiliza el link ya guardado. Si la
+   API de MP falla, se relanza para que la cola reintente. En el último
+   intento se confirma sin link: una confirmación sin link es mejor que
+   ninguna.
+2. **Webhook sin reintentos inútiles.** `processPaymentWebhook` devuelve
+   `PAID` o `IGNORED` con la razón. Solo lanza ante fallas transitorias de
+   la API de MP (5xx, red), y ahí sí conviene el reintento. Los tipos ajenos
+   a `payment` (`merchant_order`, …) se ignoran con 200. Un monto que no
+   cuadra no se acredita, pero queda como `error` en el log para
+   conciliarlo a mano.
+3. **Un solo aviso de pago.** La transición a `DEPOSIT_PAID` es un UPDATE
+   condicional con concurrencia optimista sobre `updatedAt`, no un "leer y
+   escribir". Así, dos notificaciones simultáneas no ganan ambas, y el
+   barrido no pisa sus notas. El aviso nuevo ("✅ Recibimos tu anticipo de
+   $X MXN…") va por la cola con `dedupeKey` por cita. Se encola también en
+   los duplicados a propósito: la clave garantiza un solo mensaje, y si el
+   encolado falló justo después de acreditar, el reintento de MP lo
+   recupera. Si el pago llega después de que el barrido liberó el horario,
+   se acredita igual (el dinero sí entró) y se audita con
+   `DEPOSIT_PAID_AFTER_RELEASE`. El paciente recibe un aviso que lo explica
+   y le dice que recepción lo contactará.
+4. **Barrido "recordar y liberar"** (`services/deposits/depositSweeper.ts`,
+   decisión del dueño):
+   - **Límite de pago.** Gana lo que ocurra primero: 24 h desde que se
+     agendó, o 3 h antes de la cita. El límite se guarda en la columna
+     nueva `depositDeadlineAt` (migración `0007`).
+   - **Recordatorio.** Uno solo, a la mitad del plazo. Se registra en
+     `depositReminderSentAt`.
+   - **Liberación.** Al vencer el plazo, la cita queda `CANCELLED` con
+     `slotKey = null` (igual que la cancelación manual), se audita como
+     `SYSTEM` (`DEPOSIT_EXPIRED`) y se avisa al paciente.
+   - **Outbox.** Los avisos de recordatorio y vencimiento se insertan en la
+     tabla `Job` dentro de la misma transacción que el cambio de la cita. Si
+     se encolaran después del COMMIT y fallara, el aviso se perdería, porque
+     la cita ya no vuelve a entrar al barrido.
+   - **Concurrencia y aislamiento.** Recorre clínica por clínica (toda
+     consulta filtra por `tenantId`) y pagina con cursor, para que filas que
+     fallan no bloqueen a las demás. Es seguro con varias instancias:
+     UPDATE condicional y avisos deduplicados.
+   - **Arranque.** Se inicia en `index.ts` con `DEPOSITS_SWEEP_ENABLED` y
+     `DEPOSIT_SWEEP_INTERVAL_MS`.
+5. **Producción sin token.** Ya no se fabrica el link: se lanza
+   `DepositLinkUnavailableError`, y el endpoint de recepción responde 503
+   con el motivo. La confirmación sale diciendo *"Recepción te compartirá
+   cómo realizar el pago"*. La cita se queda en `DEPOSIT_PENDING` **sin
+   límite**, así que el barrido no la cancela: se descartó "agendar sin
+   anticipo" porque recepción perdería de vista el cobro. El webhook, sin
+   token en producción, tampoco acredita nada por lo que diga el cuerpo de
+   la notificación.
+
+Casos borde decididos:
+- **Solo citas con link automático.** El barrido solo toca citas con
+  `depositDeadlineAt`, es decir, las que recibieron el link
+  automáticamente.
+  - Las que agenda recepción a mano no tienen límite y nunca se cancelan
+    solas.
+  - Si recepción regenera el link, o reprograma, cambia el estado o toca el
+    cobro (PATCH), el límite se borra. Desde ahí lo gestiona una persona.
+    Sin esto, una cita que el barrido liberó y recepción reactivó se volvía
+    a cancelar en la siguiente pasada.
+- **Urgencias del mismo día.** Con la regla de 3 h, una cita agendada con
+  menos de 3 h de anticipación se cancelaría en el acto. Por eso el
+  paciente siempre tiene al menos 1 h para pagar
+  (`DEPOSIT_MIN_WINDOW_HOURS`). Si ni eso cabe antes de la cita, no se fija
+  límite.
+- **Plazo corto.** Si al mandar el link quedan menos de 2 h de plazo, el
+  link cuenta como recordatorio, para no mandar un recordatorio pegado a la
+  confirmación.
+- **Citas ya pasadas.** No se cancelan: no liberan nada útil.
+- **Link sobre cita pagada o cancelada.** `createDepositPreference` ahora lo
+  rechaza (409). Antes, regenerar el link sobre una cita pagada la regresaba
+  a `DEPOSIT_PENDING`.
+
+Revisión de código (`/code-review`): se corrigieron los 8 hallazgos de
+lógica (PATCH con plazo viejo, avisos perdidos tras COMMIT, notas pisadas
+por la carrera pago/barrido, inanición por `take`, condiciones del
+recordatorio, consulta sin `tenantId`, plazo al regenerar link y
+condición redundante en el webhook). Se descartó el de `date-fns-tz` para
+formatear fechas en los textos. El resto del código que habla con el
+paciente (la confirmación existente y el agente) usa `toLocaleString` con
+`timeZone`, y Node trae ICU completo desde la v13.
+
+### Archivos tocados
+- `packages/ai-agent/src/payment/mercadoPagoService.ts` — `PaymentWebhookOutcome`, `markDepositAsPaidOnce`, errores `DepositLinkUnavailableError`/`DepositStateError`, `deadlineAt`/`reminderCovered`.
+- `packages/database/prisma/schema.prisma` y `migrations/0007_deposit_reminders/` — `depositDeadlineAt`, `depositReminderSentAt` e índice `(paymentStatus, depositDeadlineAt)`.
+- `apps/api/src/services/deposits/` (nuevo) — `depositPolicy.ts` (plazos), `depositMessages.ts` (textos), `depositLink.ts` (link en la confirmación), `depositSweeper.ts` (barrido y encolado de avisos).
+- `apps/api/src/services/queue/handlers.ts` — confirmación con link y nuevo `DEPOSIT_NOTICE` en `WHATSAPP_SEND` (no se tocó `processMetaInbound`).
+- `apps/api/src/services/whatsappService.ts` — línea del anticipo con link y límite.
+- `apps/api/src/routes/webhooks.ts` — solo la sección de Mercado Pago.
+- `apps/api/src/routes/admin/appointments.ts` — 503 con motivo al pedir link sin token; PATCH borra el límite automático.
+- `apps/api/src/index.ts` — arranque y apagado del barrido.
+- `apps/api/src/deposit-test-suite.ts` (nuevo) y `apps/api/src/payment-test-suite.ts` — pruebas.
+- `.env.example` — variables del barrido.
+
+### Verificación
+- `npm run build` limpio.
+- `npm test`: todas las suites en verde, incluida `deposit-test-suite` (23/23):
+  - plazos;
+  - link en la confirmación;
+  - webhook rechazado o de otro tipo → 200;
+  - aprobado + duplicado → un solo aviso y una sola auditoría;
+  - recordatorio único;
+  - confirmación tardía;
+  - liberación con `slotKey` nulo y reagenda del mismo horario;
+  - cita manual intacta;
+  - pago tardío.
+- `payment-test-suite` (12/12) suma: duplicado, 404 de MP, `merchant_order` y producción sin token.
+- `npm run test:stress` falla en la sección 5, en
+  `SchedulerService.bookAppointment` ("fuera del horario de atención"),
+  **antes** de llegar al código de anticipos. La prueba agenda "mañana a las
+  17:00" de la hora local, y cuando mañana es viernes el horario por
+  defecto cierra justo a las 17:00. Hoy es jueves. El fallo depende de la
+  fecha y no lo causa este cambio: `scheduler.ts` no se tocó.
+- E2E contra la API en el puerto 3102, con WhatsApp y MP simulados:
+  - una cita agendada con `SchedulerService` y confirmada por la cola
+    mandó el link y el límite en el texto;
+  - con `curl`, un pago `rejected` respondió 200 `ignored`, un
+    `merchant_order` 200 `ignored`, el pago `approved` pasó a
+    `DEPOSIT_PAID` y su duplicado respondió 200 `duplicate: true`, con
+    un solo aviso "Recibimos tu anticipo";
+  - al forzar el vencimiento, el barrido real canceló la cita, dejó
+    `slotKey` en null y encoló el aviso de liberación.
+
+### Pendientes derivados
+- **Voz.** Las citas agendadas por voz no encolan `APPOINTMENT_CONFIRMATION`,
+  así que no reciben link ni límite: no se liberan solas, y el anticipo
+  queda para recepción. Conectar `VoiceCallSession` (`appointmentBooked`)
+  con la confirmación por WhatsApp.
+- **Reembolsos.** `refunded` y `charged_back` hoy se ignoran (200): una cita
+  pagada y luego reembolsada sigue en `DEPOSIT_PAID`.
+- **Fallo previo de la suite de estrés.** Su sección 5 agenda a las 17:00
+  sin mirar el día de la semana, y falla los jueves (ver Verificación).
 
 ---
 
