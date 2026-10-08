@@ -127,6 +127,9 @@ async function runSecurityTests() {
     const tenantA = await createTestTenant(`a-${suffix}`, '+529900001001');
     const tenantB = await createTestTenant(`b-${suffix}`, '+529900001002');
     createdTenants.push(tenantA.id, tenantB.id);
+    // El seed del sandbox exige administrador de plataforma: el ADMIN de la
+    // clínica A lo es para esta suite (la B queda fuera de la lista).
+    process.env.PLATFORM_ADMIN_EMAILS = `security-a-${suffix}@test.mx`;
 
     const tokenA = app.jwt.sign({
       userId: tenantA.userId,

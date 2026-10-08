@@ -1338,6 +1338,175 @@ paciente (la confirmación existente y el agente) usa `toLocaleString` con
   pagada y luego reembolsada sigue en `DEPOSIT_PAID`.
 - **Fallo previo de la suite de estrés.** Su sección 5 agenda a las 17:00
   sin mirar el día de la semana, y falla los jueves (ver Verificación).
+## [2026-10-08] fix(web): confirmar takeover y respuestas en la bandeja
+
+**Autor:** Claude Opus 5.5 · **Commit:** `2f20a1c`
+
+### Qué se hizo
+En Modo En Vivo, "Tomar control" y "Enviar" de la Bandeja Omnicanal
+actualizaban la pantalla de forma optimista sin revisar `res.ok`. `apiFetch`
+no lanza error ante un 4xx o 5xx, así que si la API rechazaba el cambio, la
+recepcionista creía haber pausado la IA cuando la IA seguía respondiendo, o
+creía haber contestado a un paciente que nunca recibió nada. No había
+reversión ni aviso.
+
+- **Takeover:** si la API falla, el estado vuelve a como estaba y se avisa
+  ("No se pudo tomar el control: …"); si sale bien, también se avisa. El
+  botón se deshabilita mientras la petición está en vuelo. Un mapa de cambios
+  pendientes evita que un sondeo que salió *antes* del cambio pise el estado
+  nuevo. "Estado:" se recalcula en el mismo paso, sin esperar al sondeo.
+- **Respuestas:** la burbuja local se marca "Enviando…" y luego:
+  - **4xx:** "No se envió: la API rechazó el mensaje", en rojo, y el texto
+    vuelve al campo para reintentar.
+  - **5xx o error de red:** "Envío sin confirmar: revisa antes de reenviar".
+    El servidor pudo haberlo guardado y enviado, así que no se devuelve el
+    texto, para no provocar un doble envío a WhatsApp.
+  - **Éxito:** la copia local toma el id del servidor y se queda hasta que el
+    sondeo la trae. Así no desaparece si un sondeo viejo llega tarde, ni se
+    duplica cuando llega.
+- **Mensajes con `deliveryStatus: FAILED`** (WhatsApp no los entregó): borde
+  rojo y la etiqueta "No se entregó por WhatsApp". Antes se veían igual que
+  uno entregado.
+- **Firma:** la respuesta se firma con el nombre de quien tiene la sesión,
+  en lugar de "Recepción" fijo. La API ya aceptaba `staffName` y lo guarda
+  como `[Nombre]: texto`; al paciente le llega solo el texto. La bandeja
+  separa esa firma para mostrar el nombre como remitente, solo en mensajes
+  `HUMAN_STAFF`, porque un paciente puede escribir "[Urgente]: …".
+- **Etiqueta del agente:** "Asistente IA (Gemini 2.5)" pasa a "Asistente IA
+  (DeepSeek)", el modelo real (en vivo y en los datos demo).
+- **Sin permiso para sembrar:** en Modo En Vivo, la bandeja vacía ya no
+  ofrece sembrar datos a quien no es administrador de plataforma, porque
+  recibiría 403. En su lugar ofrece "Ver un ejemplo en Modo Demo". Al sembrar
+  o limpiar desde la barra superior, la bandeja se recarga con `dataVersion`.
+
+Los dos pendientes que dejó la entrada del 2026-09-14 ya estaban resueltos
+en `main`: "Estado:" atrasado y la demo que mutaba constantes del módulo.
+Aquí solo se eliminó la carrera con el sondeo que quedaba.
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/inbox/page.tsx`: takeover y respuestas confirmados, bandeja local, avisos, firma, insignias de entrega.
+- `apps/web/src/app/dashboard/inbox/types.ts`: `deliveryStatus`, `createdAtMs`.
+- `apps/web/src/app/dashboard/inbox/demo.ts`: etiqueta DeepSeek.
+- `apps/web/src/components/dashboard/inbox/ChatHeader.tsx`: botón deshabilitado en vuelo.
+- `apps/web/src/components/dashboard/inbox/ConversationList.tsx`: `canSeed` / `onShowDemo`.
+
+### Verificación
+- `npm run build` limpio; `npm test` 15/15 suites; lint web sin errores.
+- Playwright contra la API en 3107 y la web en 3207, con una clínica
+  desechable ya borrada:
+  - Un mensaje con `FAILED` muestra la insignia roja; la firma
+    "[Recepción Mañana]" aparece como remitente.
+  - Tomar control: "Estado: Modo Humano Activo" y aviso al instante, y
+    sobrevive a un ciclo de sondeo.
+  - La respuesta aparece una sola vez tras el sondeo, firmada "Dra.
+    Directora".
+  - Devolver a la IA: estado y aviso al instante.
+  - Con `/takeover` forzado a 500, el estado se revierte y aparece un aviso
+    rojo.
+  - Con `/reply` forzado a 400, aparece la insignia "No se envió" y el texto
+    vuelve al campo.
+
+### Pendientes derivados
+- `apps/web/src/app/dashboard/settings/page.tsx` sigue diciendo "Motor:
+  Gemini 2.5 Flash". Esa pantalla quedó fuera de esta unidad.
+
+---
+
+## [2026-10-08] fix(seguridad): limitar limpiar y citas demo a la plataforma
+
+**Autor:** Claude Opus 5.5 · **Commit:** `efe55aa`
+
+### Qué se hizo
+El botón **"Limpiar"** de la barra superior llamaba a
+`DELETE /api/tenants/:id/reset`, que borra **todas** las citas,
+conversaciones y mensajes de la clínica. No distingue datos de prueba de
+datos reales. Pero el `confirm()` del botón decía *"limpiar las citas y
+mensajes de prueba"*, y la ruta solo pedía rol `ADMIN`.
+
+**Cómo se explotaba (por accidente o a propósito):** cualquier ADMIN de una
+clínica en operación, en Modo En Vivo, pulsaba "Limpiar", aceptaba un
+diálogo que hablaba de "datos de prueba" y perdía el historial de todos sus
+pacientes. La bitácora de auditoría registraba el borrado, pero no lo
+revertía. "+ Citas Demo" tenía el mismo alcance: metía 4 pacientes y citas
+ficticios en la agenda real de la clínica. Además fallaba en silencio, y si
+salía bien recargaba la página completa.
+
+**Por qué la corrección lo cierra:**
+- `POST /seed` y `DELETE /reset` ahora usan `requirePlatformAdmin`, el mismo
+  control de `PLATFORM_ADMIN_EMAILS` que ya protegía el alta de clínicas.
+  Cualquier otro usuario, ADMIN de clínica incluido, recibe **403** y no se
+  escribe ni se borra nada. Ocultar los botones es solo comodidad; el control
+  real está en la API.
+- La regla vive en `lib/platformAdmin.ts` (`isPlatformAdmin`). La usan los
+  guardias y también `GET /auth/me`, que ahora devuelve `isPlatformAdmin`,
+  así que el panel y la API no pueden discrepar. Sin lista configurada, en
+  producción nadie es administrador de plataforma (falla cerrado) y en
+  desarrollo lo es cualquier ADMIN. Se conservó ese comportamiento del alta
+  de clínicas para no romper un clon recién levantado.
+- En el panel, "+ Citas Demo", "Limpiar" y "Crear Nuevo Cliente" solo
+  aparecen para administradores de plataforma. "Limpiar" abre un modal
+  (`ResetTenantModal`) que explica qué se borra, incluidos los pacientes
+  reales, y qué se conserva. El botón de borrar no se habilita hasta escribir
+  el nombre exacto de la clínica.
+- Las dos acciones muestran un aviso de éxito o de error con el mensaje de
+  la API. El error del reset aparece dentro del modal, porque el aviso de la
+  página queda detrás del fondo oscurecido. Ya no se recarga la página:
+  `TenantContext` sube un contador `dataVersion` y las vistas se refrescan
+  con él.
+- `reset` responde cuántos registros borró, y ese conteo es el que se
+  muestra en el aviso.
+
+Ajustes en el mismo componente:
+- La barra superior decía siempre **"WhatsApp Cloud API Activa"**, aunque la
+  clínica no tuviera WhatsApp conectado. También caía a "Sonrisas Polanco"
+  mientras cargaba. Ahora solo muestra el nombre y el teléfono reales. No se
+  añadió un indicador de canal: el estado real lo expone otra unidad
+  (`GET /api/channels`).
+- El modal "Dar de Alta Nueva Clínica" tiene ahora `role="dialog"`,
+  `aria-modal` y título enlazado. Además pone el foco inicial en el nombre,
+  cierra con Escape, mantiene Tab dentro del modal y devuelve el foco al
+  cerrar (hook `useModalDialog`). Si el alta falla, ahora se avisa; antes
+  no pasaba nada.
+- Resumen General: sus botones de sembrar siguen la misma regla. En el
+  estado vacío, quien no es administrador de plataforma ve "Agendar una
+  cita".
+- `fetchAuthMe()` comparte una sola petición en vuelo a `/auth/me` entre
+  `TenantProvider` y `OnboardingGate`, para no duplicarla al montar el panel.
+
+### Archivos tocados
+- `apps/api/src/lib/platformAdmin.ts` (nuevo): `isPlatformAdmin`, `platformAdminAllowList`.
+- `apps/api/src/routes/admin/common.ts`: `requirePlatformAdmin(request, accion)` reutiliza la regla.
+- `apps/api/src/routes/admin/tenants.ts`: seed y reset exigen administrador de plataforma; el reset devuelve conteos.
+- `apps/api/src/routes/auth.ts`: `isPlatformAdmin` en `GET /auth/me`.
+- `apps/api/src/sandbox-tools-test-suite.ts` (nuevo): 15 pruebas.
+- `apps/api/src/audit-test-suite.ts`, `apps/api/src/security-test-suite.ts`: declaran su administrador de plataforma (antes dependían de que la lista estuviera vacía).
+- `apps/web/src/context/TenantContext.tsx`: `isPlatformAdmin`, `dataVersion`; seed y reset devuelven `{ ok, message }`.
+- `apps/web/src/lib/api.ts`: `fetchAuthMe()`.
+- `apps/web/src/components/auth/OnboardingGate.tsx`: usa `fetchAuthMe()`.
+- `apps/web/src/components/dashboard/DashboardShell.tsx`: herramientas de sandbox condicionadas, avisos de éxito o error, encabezado honesto, accesibilidad del modal.
+- `apps/web/src/components/dashboard/ResetTenantModal.tsx` (nuevo).
+- `apps/web/src/hooks/useModalDialog.ts` (nuevo).
+- `apps/web/src/app/dashboard/page.tsx`: siembra solo para administrador de plataforma, error visible, refresco por `dataVersion`.
+
+### Verificación
+- `npm run build` limpio; `npm test` 15/15 suites (incluye la nueva
+  `sandbox-tools`: el ADMIN de clínica y Recepción reciben 403 en seed y reset
+  sin que cambie ningún conteo; el administrador de plataforma recibe 200;
+  `/auth/me` reporta el indicador; sin lista, falla cerrado en producción).
+- `audit` y `security` también pasan con `PLATFORM_ADMIN_EMAILS` ajeno
+  exportado en el entorno.
+- `npm run lint --workspace=apps/web`: 0 errores, 9 avisos (los mismos de antes).
+- E2E (API en 3107 y web en 3207, clínicas desechables ya borradas):
+  - `curl` como ADMIN de clínica a reset y a seed: 403, y la conversación
+    sigue ahí.
+  - Playwright como ADMIN de clínica: sin "Limpiar", sin "+ Citas Demo" y
+    sin "WhatsApp Cloud API Activa".
+  - Playwright como administrador de plataforma: "+ Citas Demo" muestra el
+    aviso sin recargar.
+  - Modal de "Limpiar": el foco entra al campo; con un nombre incompleto el
+    botón queda deshabilitado; Escape cierra; con el nombre exacto borra y
+    avisa con los conteos.
+  - Modal de alta de clínica: el foco entra al nombre y Escape lo cierra.
 
 ---
 

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { API_BASE_URL, apiFetch } from '../../lib/api';
+import { fetchAuthMe } from '../../lib/api';
 
 /**
  * Lleva al asistente de configuración a quien todavía no lo terminó.
@@ -24,16 +24,11 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     (async () => {
-      try {
-        const res = await apiFetch(`${API_BASE_URL}/auth/me`);
-        if (!res.ok || cancelled) return;
-
-        const data = await res.json();
-        if (data?.onboarding?.step && !data?.onboarding?.completedAt) {
-          router.replace('/onboarding');
-        }
-      } catch {
-        // Un fallo de red no debe sacar a nadie de su panel.
+      // Un fallo de red (null) no debe sacar a nadie de su panel.
+      const data = await fetchAuthMe();
+      if (!data || cancelled) return;
+      if (data.onboarding?.step && !data.onboarding?.completedAt) {
+        router.replace('/onboarding');
       }
     })();
 

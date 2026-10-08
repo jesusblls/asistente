@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, Instagram, MessageSquare, PhoneCall, Plus, Search } from 'lucide-react';
+import { AlertTriangle, Instagram, MessageSquare, PhoneCall, Plus, Search, Sparkles } from 'lucide-react';
 import type { ConversationItem } from '../../../app/dashboard/inbox/types';
 
 export interface ConversationListProps {
@@ -16,7 +16,11 @@ export interface ConversationListProps {
   onOpenConversation: (id: string) => void;
   activeTenantId: string | null;
   isSeeding: boolean;
+  /** Solo un administrador de plataforma puede sembrar datos de prueba. */
+  canSeed: boolean;
   onSeed: () => void;
+  /** Alternativa para quien no puede sembrar: ver la bandeja de ejemplo. */
+  onShowDemo: () => void;
   hidden: boolean;
 }
 
@@ -33,7 +37,9 @@ export function ConversationList({
   onOpenConversation,
   activeTenantId,
   isSeeding,
+  canSeed,
   onSeed,
+  onShowDemo,
   hidden,
 }: ConversationListProps) {
   return (
@@ -112,15 +118,25 @@ export function ConversationList({
                 ? 'No hay resultados que coincidan con la búsqueda.'
                 : 'Esta clínica aún no tiene chats activos en la base de datos.'}
             </p>
-            {mode === 'live' && activeTenantId && (
-              <button
-                onClick={onSeed}
-                disabled={isSeeding}
-                className="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition-all shadow flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {isSeeding ? 'Generando...' : 'Generar Citas & Chats Demo'}
-              </button>
+            {mode === 'live' && activeTenantId && !searchQuery.trim() && (
+              canSeed ? (
+                <button
+                  onClick={onSeed}
+                  disabled={isSeeding}
+                  className="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition-all shadow flex items-center justify-center gap-1.5 disabled:opacity-60"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {isSeeding ? 'Generando...' : 'Generar Citas & Chats Demo'}
+                </button>
+              ) : (
+                <button
+                  onClick={onShowDemo}
+                  className="w-full py-2 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Ver un ejemplo en Modo Demo
+                </button>
+              )
             )}
           </div>
         ) : (

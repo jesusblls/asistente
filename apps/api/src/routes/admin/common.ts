@@ -1,5 +1,6 @@
 import { FastifyRequest } from 'fastify';
 import { HttpError, requireRole } from '../../lib/http.js';
+import { isPlatformAdmin, platformAdminAllowList } from '../../lib/platformAdmin.js';
 
 export function parseDate(value: unknown, field: string): Date {
   if (typeof value !== 'string' || !value.trim()) {
@@ -32,23 +33,29 @@ export interface PlatformAdminOptions {
   deniedMessage?: string;
 }
 
-export function requirePlatformAdmin(request: FastifyRequest, options: PlatformAdminOptions = {}): void {
+/**
+ * Exige un administrador de plataforma (ver `lib/platformAdmin.ts`). Como
+ * texto, el segundo argumento completa el mensaje: "Solo un administrador de
+ * plataforma puede <accion>".
+ */
+export function requirePlatformAdmin(
+  request: FastifyRequest,
+  accionOrOptions: string | PlatformAdminOptions = 'crear clínicas'
+): void {
   const user = requireRole(request, ['ADMIN']);
-  const allowList = (process.env.PLATFORM_ADMIN_EMAILS || '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
-  const deniedMessage = options.deniedMessage ?? 'Solo un administrador de plataforma puede crear clínicas';
+  const options: PlatformAdminOptions =
+    typeof accionOrOptions === 'string' ? {} : accionOrOptions;
+  const accion = typeof accionOrOptions === 'string' ? accionOrOptions : 'realizar esta acción';
+  const deniedMessage = options.deniedMessage ?? `Solo un administrador de plataforma puede ${accion}`;
 
-  if (allowList.length === 0) {
+  if (platformAdminAllowList().length === 0) {
     if (options.strict) throw new HttpError(403, deniedMessage);
     if (process.env.NODE_ENV === 'production') {
-      throw new HttpError(403, 'La creación de clínicas requiere configurar PLATFORM_ADMIN_EMAILS');
+      throw new HttpError(403, `Para ${accion} hay que configurar PLATFORM_ADMIN_EMAILS`);
     }
-    return;
   }
 
-  if (!allowList.includes(user.email.toLowerCase())) {
+  if (!isPlatformAdmin(user)) {
     throw new HttpError(403, deniedMessage);
   }
 }

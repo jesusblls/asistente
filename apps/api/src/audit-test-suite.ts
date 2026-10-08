@@ -500,6 +500,8 @@ async function runAuditTests() {
     // ------------------------------------------------------------------
     console.log('\n🧹 7. Borrado masivo');
     const before = await db.auditLog.count({ where: { tenantId: tenantA.id } });
+    // Limpiar es exclusivo del administrador de plataforma.
+    process.env.PLATFORM_ADMIN_EMAILS = adminA.email;
     const reset = await app.inject({
       method: 'DELETE',
       url: `/api/tenants/${tenantA.id}/reset`,
@@ -509,7 +511,7 @@ async function runAuditTests() {
       where: { tenantId: tenantA.id, action: 'DELETE', entityType: 'TENANT' },
     });
     const after = await db.auditLog.count({ where: { tenantId: tenantA.id } });
-    assert(reset.statusCode === 200, 'El ADMIN limpia el historial clínico');
+    assert(reset.statusCode === 200, 'El administrador de plataforma limpia el historial clínico');
     assert(
       parse(resetRow?.metadata ?? null)?.deleted?.appointments === 1,
       'El borrado queda registrado con cuántos registros eliminó'

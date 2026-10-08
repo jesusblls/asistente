@@ -12,6 +12,7 @@ import {
 import { LEGAL_VERSION, TRIAL_DURATION_DAYS } from '@asistente/shared-types';
 import { HttpError, requireString, requireMexicanPhone } from '../lib/http.js';
 import { actorFromRequest } from '../lib/audit.js';
+import { isPlatformAdmin } from '../lib/platformAdmin.js';
 import { AUTH_COOKIE_NAME, getAuthCookieOptions, type AuthUser } from '../lib/auth.js';
 import { sendEmail, passwordResetEmail, type EmailSender } from '../services/emailService.js';
 
@@ -552,6 +553,10 @@ export async function authRoutes(fastify: FastifyInstance, options: AuthRoutesOp
 
     return reply.send({
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      // El panel lo usa para mostrar u ocultar las herramientas de sandbox
+      // (`+ Citas Demo`, `Limpiar`). La API las vuelve a verificar: ocultarlas
+      // es comodidad, no control de acceso.
+      isPlatformAdmin: isPlatformAdmin(user),
       tenant: { id: user.tenant.id, name: user.tenant.name, slug: user.tenant.slug },
       plan: {
         slug: planState.plan.slug,

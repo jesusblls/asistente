@@ -10,6 +10,8 @@ export interface ChatHeaderProps {
   chatHeadingRef: React.RefObject<HTMLHeadingElement | null>;
   onBack: () => void;
   onToggleTakeover: () => void;
+  /** Hay un cambio de takeover en vuelo: el botón no acepta otro clic. */
+  isTogglingTakeover?: boolean;
 }
 
 /**
@@ -17,7 +19,13 @@ export interface ChatHeaderProps {
  * resumen de la cita (colapsable, solo por debajo de 1280 px donde no cabe
  * la ficha lateral) y los banners de urgencia / copiloto humano.
  */
-export function ChatHeader({ activeConv, chatHeadingRef, onBack, onToggleTakeover }: ChatHeaderProps) {
+export function ChatHeader({
+  activeConv,
+  chatHeadingRef,
+  onBack,
+  onToggleTakeover,
+  isTogglingTakeover = false,
+}: ChatHeaderProps) {
   return (
     <>
       <div className="p-3 sm:p-4 bg-white border-b border-slate-200 flex items-center justify-between gap-3 shrink-0 shadow-sm">
@@ -70,7 +78,9 @@ export function ChatHeader({ activeConv, chatHeadingRef, onBack, onToggleTakeove
           </div>
           <button
             onClick={onToggleTakeover}
-            className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+            disabled={isTogglingTakeover}
+            aria-busy={isTogglingTakeover}
+            className={`min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-70 disabled:cursor-wait ${
               activeConv.isHandedOverToHuman
                 ? 'bg-amber-500 hover:bg-amber-600 text-white'
                 : 'bg-slate-800 hover:bg-slate-900 text-white'
@@ -162,7 +172,8 @@ export function ChatHeader({ activeConv, chatHeadingRef, onBack, onToggleTakeove
           </div>
           <button
             onClick={onToggleTakeover}
-            className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline underline-offset-2 ml-2 shrink-0"
+            disabled={isTogglingTakeover}
+            className="disabled:opacity-60 text-[11px] font-bold text-amber-800 hover:text-amber-950 underline underline-offset-2 ml-2 shrink-0"
           >
             Reactivar IA 24/7
           </button>

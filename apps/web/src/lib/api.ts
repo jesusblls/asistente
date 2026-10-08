@@ -122,6 +122,36 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   return response;
 }
 
+/** Lo que devuelve `GET /auth/me` y usa el panel (solo los campos leídos). */
+export interface AuthMeResponse {
+  user?: AuthUserInfo;
+  isPlatformAdmin?: boolean;
+  onboarding?: { step?: string | null; completedAt?: string | null };
+}
+
+let authMeInFlight: Promise<AuthMeResponse | null> | null = null;
+
+/**
+ * `GET /auth/me` compartido: si varios componentes lo piden a la vez (el
+ * proveedor de clínica y la compuerta de onboarding al montar el panel), sale
+ * una sola petición. Devuelve null si falla.
+ */
+export function fetchAuthMe(): Promise<AuthMeResponse | null> {
+  if (authMeInFlight) return authMeInFlight;
+  authMeInFlight = (async () => {
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/auth/me`);
+      if (!res.ok) return null;
+      return (await res.json()) as AuthMeResponse;
+    } catch {
+      return null;
+    } finally {
+      authMeInFlight = null;
+    }
+  })();
+  return authMeInFlight;
+}
+
 export async function loginRequest(params: {
   email: string;
   password: string;
