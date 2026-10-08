@@ -21,14 +21,27 @@ export function parseJsonField(value: string | null): unknown {
   }
 }
 
-export function requirePlatformAdmin(request: FastifyRequest): void {
+export interface PlatformAdminOptions {
+  /**
+   * Exige PLATFORM_ADMIN_EMAILS en todo entorno. Sin `strict`, en desarrollo
+   * una lista vacía deja pasar a cualquier ADMIN (cómodo para dar de alta
+   * clínicas en local); las vistas que cruzan datos de varias clínicas no
+   * pueden permitírselo, porque el ADMIN de una vería pacientes de otras.
+   */
+  strict?: boolean;
+  deniedMessage?: string;
+}
+
+export function requirePlatformAdmin(request: FastifyRequest, options: PlatformAdminOptions = {}): void {
   const user = requireRole(request, ['ADMIN']);
   const allowList = (process.env.PLATFORM_ADMIN_EMAILS || '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
+  const deniedMessage = options.deniedMessage ?? 'Solo un administrador de plataforma puede crear clínicas';
 
   if (allowList.length === 0) {
+    if (options.strict) throw new HttpError(403, deniedMessage);
     if (process.env.NODE_ENV === 'production') {
       throw new HttpError(403, 'La creación de clínicas requiere configurar PLATFORM_ADMIN_EMAILS');
     }
@@ -36,6 +49,6 @@ export function requirePlatformAdmin(request: FastifyRequest): void {
   }
 
   if (!allowList.includes(user.email.toLowerCase())) {
-    throw new HttpError(403, 'Solo un administrador de plataforma puede crear clínicas');
+    throw new HttpError(403, deniedMessage);
   }
 }

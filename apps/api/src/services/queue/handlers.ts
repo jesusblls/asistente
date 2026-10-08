@@ -3,6 +3,7 @@ import { OmnichannelAgent } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
 import { WhatsAppService } from '../whatsappService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
+import { maskJobText } from './queue.js';
 
 /**
  * Handlers concretos de la cola y la instancia compartida (`jobQueue`).
@@ -237,6 +238,20 @@ export const jobQueue = new JobQueue({
   maxAttemptsDefault: envNumber('JOBS_MAX_ATTEMPTS', 5),
   logger: createLogger('api:queue'),
   onDeadLetter: async (job, reason) => {
+    // Todo descarte se registra en nivel error, sea cual sea el tipo: un
+    // META_INBOUND_MESSAGE muerto significa que un paciente escribió y nadie
+    // le respondió, y antes eso ocurría en silencio (solo WHATSAPP_SEND dejaba
+    // rastro). Solo identificadores: nada de teléfono ni texto del paciente.
+    // El reintento manual vive en POST /api/admin/queue/:id/retry.
+    logger.error('Trabajo descartado definitivamente (DEAD)', undefined, {
+      jobId: job.id,
+      type: job.type,
+      tenantId: job.tenantId,
+      attempts: job.attempts,
+      maxAttempts: job.maxAttempts,
+      reason: maskJobText(reason, 200),
+    });
+
     // Un mensaje que jamás pudo entregarse no debe quedarse en PENDING para
     // siempre: se marca FAILED para que la bandeja muestre el fallo real.
     const payload = job.payload as Partial<WhatsAppSendPayload> & { messageId?: string };
@@ -247,9 +262,9 @@ export const jobQueue = new JobQueue({
       data: { deliveryStatus: 'FAILED' },
     });
 
-    logger.error('Mensaje de WhatsApp descartado tras agotar reintentos', undefined, {
+    logger.warn('Mensaje de WhatsApp descartado tras agotar reintentos', {
       messageId: payload.messageId,
-      reason: reason.slice(0, 200),
+      reason: maskJobText(reason, 200),
     });
   },
 });

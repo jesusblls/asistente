@@ -39,6 +39,9 @@ export const AUDIT_ENTITY_TYPES = [
   'MESSAGE',
   'AUDIT_LOG',
   'FAQ_ITEM',
+  // Trabajo de la cola durable: el reintento manual de un trabajo DEAD vuelve
+  // a procesar datos de un paciente por decisión de una persona.
+  'JOB',
 ] as const;
 
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
