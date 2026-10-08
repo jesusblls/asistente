@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(payments): no activar el plan contratado antes del cobro
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `5868531`
 
 ### Qué se hizo
 `SubscriptionService.createCheckout` escribía el plan pedido en `planSlug` y
