@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(webhooks): enviar avisos de anticipo desde el número de la clínica
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `48f9d1e`
 
 ### Qué se hizo
 Dos huecos que aparecieron al integrar #12 (WhatsApp por clínica) con #13
@@ -44,7 +44,7 @@ Dos huecos que aparecieron al integrar #12 (WhatsApp por clínica) con #13
 
 ## [2026-10-08] fix(payments): acreditar el anticipo de una cita reagendada
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `7ffe16c`
 
 ### Qué se hizo
 Pendiente que dejaron cruzado #10 (reagendado atómico) y #13 (anticipos).
@@ -81,7 +81,7 @@ para redirigir y no debe impedir borrar historial.
 
 ## [2026-10-08] test(web): esperar la firma real en la prueba de la bandeja
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `eee8b34`
 
 ### Qué se hizo
 Al integrar los 14 PRs de la revisión en paralelo, `bandeja.spec.ts` (#6)
