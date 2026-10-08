@@ -292,6 +292,13 @@ export class SchedulerService {
     auditActor: AuditActor;
     /** Contexto adicional para la fila de auditoría (herramienta del agente, conversación). */
     auditMetadata?: Record<string, unknown>;
+    /**
+     * Reagendado: cita del mismo paciente que esta reserva sustituye. Se
+     * cancela en la MISMA transacción que crea la nueva, así nunca quedan dos
+     * citas vivas (la vieja ocupando el hueco) ni el paciente se queda sin
+     * ninguna si el nuevo horario ya no está libre.
+     */
+    replacesAppointmentId?: string;
   }) {
     const {
       tenantId,
@@ -304,6 +311,7 @@ export class SchedulerService {
       channelOrigin = 'WHATSAPP',
       auditActor,
       auditMetadata,
+      replacesAppointmentId,
     } = params;
 
     const patientPhoneE164 = normalizeMexicanPhone(patientPhone);
@@ -315,11 +323,63 @@ export class SchedulerService {
     // porque por este método pasan los dos caminos de agendado: el panel y la
     // herramienta `agendar_cita` del agente. Ponerlo en la ruta habría dejado
     // al agente agendando sin límite, que es justo por donde entra el volumen.
+    // También aplica al reagendar: el cupo cuenta filas creadas en el periodo,
+    // y saltarlo permitiría crear citas sin límite reagendando una y otra vez.
     await assertCanBookAppointment(tenantId);
 
     return db.$transaction(async (tx) => {
       const tenant = await tx.tenant.findFirst({ where: { id: tenantId, isActive: true } });
       if (!tenant) throw new Error('Clínica no encontrada o inactiva');
+
+      // Pago de la cita sustituida: si el anticipo ya se cubrió, viaja a la
+      // nueva para no cobrarle dos veces al paciente.
+      let replacedPayment: {
+        paymentStatus: string;
+        depositAmountMxn: number | null;
+        depositPaymentUrl: string | null;
+        paymentReferenceId: string | null;
+      } | null = null;
+
+      if (replacesAppointmentId) {
+        // Solo se puede sustituir una cita vigente (agendada y aún no
+        // terminada) del MISMO paciente y clínica: nunca una completada, un
+        // no-show ni una cita pasada, que son historial clínico.
+        const previous = await tx.appointment.findFirst({
+          where: {
+            id: replacesAppointmentId,
+            tenantId,
+            status: { in: ['CONFIRMED', 'PENDING'] },
+            endTime: { gte: new Date() },
+            patient: { tenantId, phoneE164: patientPhoneE164 },
+          },
+        });
+        if (!previous) throw new Error('No se encontró la cita a reagendar');
+
+        // Se libera antes de la verificación de colisiones para que el
+        // paciente pueda moverse a un horario que se traslape con el suyo.
+        await tx.appointment.update({
+          where: { id: previous.id },
+          data: {
+            status: 'CANCELLED',
+            slotKey: null,
+            notes: ((previous.notes || '') + ' | Reagendada por el paciente').trim(),
+          },
+        });
+        await recordAudit(
+          {
+            tenantId,
+            actor: auditActor,
+            action: 'UPDATE',
+            entityType: 'APPOINTMENT',
+            entityId: previous.id,
+            patientId: previous.patientId,
+            changes: { status: { before: previous.status, after: 'CANCELLED' } },
+            metadata: { ...auditMetadata, reason: 'reschedule' },
+          },
+          tx
+        );
+        replacedPayment = previous;
+      }
 
       const service = await tx.service.findFirst({
         where: { id: serviceId, tenantId, isActive: true },
@@ -413,6 +473,10 @@ export class SchedulerService {
         });
       }
 
+      const carriesPaidDeposit =
+        replacedPayment !== null &&
+        (replacedPayment.paymentStatus === 'DEPOSIT_PAID' || replacedPayment.paymentStatus === 'FULLY_PAID');
+
       try {
         const appointment = await tx.appointment.create({
           data: {
@@ -424,8 +488,17 @@ export class SchedulerService {
             endTime,
             status: 'CONFIRMED',
             slotKey: appointmentSlotKey({ doctorId, startTime, status: 'CONFIRMED' }),
-            paymentStatus: service.requiredDepositMxn > 0 ? 'DEPOSIT_PENDING' : 'NONE',
-            depositAmountMxn: roundMxn(service.requiredDepositMxn),
+            ...(carriesPaidDeposit && replacedPayment
+              ? {
+                  paymentStatus: replacedPayment.paymentStatus,
+                  depositAmountMxn: replacedPayment.depositAmountMxn,
+                  depositPaymentUrl: replacedPayment.depositPaymentUrl,
+                  paymentReferenceId: replacedPayment.paymentReferenceId,
+                }
+              : {
+                  paymentStatus: service.requiredDepositMxn > 0 ? 'DEPOSIT_PENDING' : 'NONE',
+                  depositAmountMxn: roundMxn(service.requiredDepositMxn),
+                }),
             channelOrigin,
             symptoms,
           },

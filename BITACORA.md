@@ -951,6 +951,77 @@ Meta y el turno del agente en la cola:
   un mensaje que el triaje clasificó como `URGENT_DENTAL`, la transferencia
   no se aplica.
 - `test:stress` depende de la hora local (sección 5).
+## [2026-10-08] fix(agent): corregir el motor de respaldo del agente
+
+**Autor:** Claude Opus 5.5 · **Commit:** `a227b2e`
+
+### Qué se hizo
+Auditoría del motor heurístico (`handleFallbackProcessing`), que atiende cuando
+DeepSeek no tiene clave o falla. Tenía seis defectos que tocaban la agenda real
+de los pacientes o les daban datos falsos:
+
+1. **Doble acción.** Si DeepSeek fallaba a mitad de turno *después* de que
+   `agendar_cita`/`confirmar`/`cancelar` ya habían corrido, el `catch` pasaba el
+   mismo mensaje al respaldo, que podía volver a agendar o cancelar la
+   siguiente cita. Ahora el turno registra las mutaciones y, si hubo alguna,
+   responde solo con el resumen de lo hecho (`summarizeTurnMutations`). Además,
+   un error de negocio de una herramienta (horario ocupado) se le devuelve al
+   modelo en vez de abortar el turno; los errores internos (Prisma, cupo del
+   plan) se sustituyen por un texto seguro para que no lleguen al paciente.
+2. **Confirmación demasiado amplia.** Cualquier texto con "confirmar" o
+   "asistencia" confirmaba: "¿cómo confirmo?" o "no puedo confirmar" marcaban
+   la cita como confirmada. `classifyConfirmIntent` exige afirmación clara,
+   separa preguntas y negativas (que se responden sin tocar la BD) y solo
+   acepta un "sí" suelto si el asistente acababa de pedir la confirmación.
+   "Confirmo, ¿necesito llevar algo?" sí confirma.
+3. **Reagendar duplicaba citas.** Ofrecía siempre "mañana" y, al elegir, creaba
+   la cita nueva sin cancelar la anterior. Ahora ofrece los próximos horarios
+   reales (hasta 14 días) para el servicio de la cita, la selección se resuelve
+   contra las opciones exactas del mensaje anterior, y `bookAppointment` acepta
+   `replacesAppointmentId`: cancela la anterior y crea la nueva en la misma
+   transacción (si el horario ya se ocupó, no cambia nada). Solo sustituye una
+   cita vigente del mismo paciente y conserva un anticipo ya pagado. El cupo del
+   plan se sigue verificando: se cuenta por filas creadas y saltarlo permitiría
+   crear citas sin límite reagendando.
+4. **Datos inventados.** La confirmación y la opción 3 afirmaban valet
+   parking, MSI y una lista fija de aseguradoras. Ahora solo se usa la
+   dirección y las FAQs del tenant; sin dato oficial se ofrece recepción (y un
+   "sí" a esa oferta activa el traspaso humano).
+5. **`consultar_faq_clinica` ignoraba la consulta** y devolvía todas las FAQs.
+   `rankFaqItems` ordena por coincidencia léxica normalizada (keywords >
+   pregunta/categoría > respuesta) y devuelve las 3 mejores, o un aviso de que
+   no hay dato oficial.
+6. **Canal fijo.** Las notas de confirmación/cancelación decían "vía WhatsApp"
+   incluso en llamadas; ahora usan el canal real (`channelLabel`).
+
+También se reordenaron intenciones para que las acciones ganen a las
+cortesías: "cancelar mi cita" ya no cae en la consulta de cita, "la 2,
+gracias" agenda en vez de despedirse, y "no voy a poder confirmar todavía" ya
+no cancela.
+
+Descartado: guardar estado de la conversación para el reagendado (no hay
+dónde sin tocar el esquema); se usa una marca en el texto del asistente.
+
+### Archivos tocados
+- `packages/ai-agent/src/agent/deepseekAgent.ts` — motor de respaldo, bucle de herramientas y utilidades exportadas.
+- `packages/ai-agent/src/calendar/scheduler.ts` — `replacesAppointmentId` en `bookAppointment`.
+- `packages/ai-agent/src/test-suite.ts` — grupos 9 a 14.
+- `AGENTS.md` — descripción del motor de respaldo.
+
+### Verificación
+- `npm run build` limpio; `npm test` 11/11 suites (unitaria del agente 65/65).
+- E2E con clínica temporal y sin `DEEPSEEK_API_KEY`: agendar → "¿cómo confirmo?"
+  (sigue PENDING) → "sí, confirmo" (CONFIRMED) → reagendar (anterior
+  CANCELLED, nueva CONFIRMED) → "¿tienen estacionamiento?" sin FAQ (ofrece
+  recepción, no inventa) → "¿aceptan tarjeta?" (responde con la FAQ).
+- `npm run test:stress` falla en la sección 5 por una causa ajena a este
+  cambio: agenda una endodoncia de 60 min a las 17:00 de "mañana", y si mañana
+  es viernes (turno hasta las 17:00) queda fuera de horario.
+
+### Pendientes derivados
+- La prueba de estrés de Mercado Pago depende del día de la semana (ver arriba).
+- Al reagendar una cita con anticipo `DEPOSIT_PENDING`, el link de pago viejo
+  sigue apuntando a la cita cancelada; la nueva queda pendiente sin link.
 
 ---
 
