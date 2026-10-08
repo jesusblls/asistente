@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] test(web): cubrir con e2e registro, recuperación, agenda y bandeja
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `db605fb`
 
 ### Qué se hizo
 La suite E2E solo cubría el login. Los flujos de los que depende que una
