@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] feat(api): número de WhatsApp propio por clínica
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `cac2e38`
 
 ### Qué se hizo
 Decisión del dueño: cada clínica atiende desde su propio número de WhatsApp.
