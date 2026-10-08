@@ -73,6 +73,18 @@ services:
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?Define CREDENTIALS_ENCRYPTION_KEY en .env.production (openssl rand -base64 32)}
     expose:
       - "3000"
+    # Sin healthcheck, Docker da la API por "lista" en cuanto arranca el
+    # proceso, aunque siga aplicando migraciones o se haya caído al validar
+    # variables. Se usa node (no curl/wget): la imagen es node:22-slim y no
+    # trae ninguno de los dos. 127.0.0.1 porque el chequeo corre dentro del
+    # propio contenedor. start_period amplio: `prisma migrate deploy` corre
+    # antes de que el servidor escuche, y en ese lapso los fallos no cuentan.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   web:
     build:
@@ -86,12 +98,23 @@ services:
         # interna de Docker.
         API_PROXY_TARGET: http://api:3000
     restart: unless-stopped
+    # Esperar a que la API responda /health, no solo a que su contenedor
+    # exista: si no, el panel queda arriba proxeando /api/* y /auth/* a una
+    # API que todavía está migrando y el login falla con 502 los primeros
+    # segundos de cada despliegue.
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     environment:
       NODE_ENV: production
     expose:
       - "3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   caddy:
     # Solo se levanta en un VPS dedicado (--profile standalone). En un VPS

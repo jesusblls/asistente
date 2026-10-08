@@ -10,6 +10,242 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(deploy): retención aunque falle la copia externa del respaldo
+
+**Autor:** Claude Opus 5.5 · **Commit:** `7632260`
+
+### Qué se hizo
+La revisión de código de `deploy/backup.sh` encontró tres problemas:
+
+- **Con el remoto de rclone caído, el disco se llenaba.** La copia externa
+  fallida salía del script antes de la retención, así que cada noche se
+  sumaba un respaldo local y nunca se borraba ninguno, en el mismo disco que
+  la base. Ahora la retención corre igual y el script sale con error **al
+  final**, para que cron lo siga reportando.
+- **`.env.production` se leía distinto que Compose.** Un `POSTGRES_DB=x   #
+  comentario`, fin de línea CRLF o `export POSTGRES_USER=...` daban un valor
+  que Compose no usa, y `pg_dump` apuntaba a una base inexistente todas las
+  noches. Se normalizan igual que Compose.
+- El volcado se descomprimía tres veces para revisarlo; ahora la cabecera y
+  el primer `CREATE TABLE` se buscan en una sola lectura que corta al
+  encontrarlos.
+
+En `deploy/README.md`, la prueba de restauración no decía `cd
+~/apps/asistente` y usa rutas relativas; también aclara la Opción A.
+
+### Archivos tocados
+- `deploy/backup.sh`, `deploy/README.md`.
+
+### Verificación
+`bash -n` y `shellcheck` limpios. Con `docker` y `rclone` falsos: volcado
+bueno → 0; vacío → 1; `pg_dump` falla → 1; rclone falla → borra el respaldo
+vencido y sale 1 con el local creado; `.env` con `export`, CRLF y comentario
+final → `pg_dump -U pguser ... clinica`.
+
+---
+
+## [2026-10-08] test(agent): elegir horarios del estrés sin depender del huso del proceso
+
+**Autor:** Claude Opus 5.5 · **Commit:** `d089016`
+
+### Qué se hizo
+Al meter `npm run test:stress` al CI, falló en el primer run: *"ese horario
+acaba de ser reservado"* al crear la cita con anticipo. La suite fijaba esa
+cita con `setHours(17, 0)` y la reprogramación con `setHours(12, 0)`, que
+usan el reloj **del proceso**. En una máquina en CDMX eso son las 17:00 y
+12:00 de la clínica; en el runner (UTC) son las 11:00 y las 6:00 de CDMX: la
+primera cae encima de una cita que la propia suite ya creó, y la segunda
+fuera del horario de atención. Nunca falló porque solo se corría a mano, en
+CDMX. Producción también corre en UTC (contenedores), así que probar ahí es
+lo que vale.
+
+- Los dos horarios ahora salen de `getAvailableSlots` (el primer slot libre
+  del doctor en ese momento), como ya hacían las demás citas de la suite.
+- El día de prueba ya no es "mañana" a ciegas: se busca el primer día de los
+  próximos 7 con lugar para las 4 citas de la Clínica A. Mañana domingo (sin
+  horario) tumbaba la suite entera.
+
+Solo cambia la prueba; el `SchedulerService` ya resolvía bien el huso.
+
+### Archivos tocados
+- `packages/ai-agent/src/stress-test-suite.ts`.
+
+### Verificación
+Contra una base aislada (`asistente_stress_unit12`, no la de desarrollo),
+migrada y sembrada: `npm run test:stress` 44/44 con `TZ=UTC`,
+`TZ=America/Mexico_City` y `TZ=Asia/Tokyo`. `npm run test` completo en verde
+(agente 20/20, API 14/14 suites).
+
+---
+
+## [2026-10-08] docs(todo): volver a llevar la lista viva de pendientes
+
+**Autor:** Claude Opus 5.5 · **Commit:** `4690fbc`
+
+### Qué se hizo
+`TODO.md` decía "sin pendientes abiertos" desde el 2026-09-15, pero las
+entradas del 2026-10-07 dejaron en "Pendientes derivados" cosas que bloquean
+producción (correo de recuperación, token de SignalWire, credenciales de
+Mercado Pago, datos legales) y ninguna pasó a la lista. Quien abriera
+`TODO.md` para saber qué faltaba concluía que nada.
+
+Se reescribió en tres bloques:
+- **Del lado del dueño**: lo que no se arregla con código (cuentas,
+  credenciales, abogado, decisión sobre DeepSeek en China, monitor externo,
+  `METRICS_TOKEN`, cron de respaldos, pool de Postgres), cada uno con el
+  commit que lo originó.
+- **De código** que sigue abierto y nadie está atendiendo.
+- **En curso (PRs abiertos)**: lo que la revisión del 2026-10-08 ya repartió
+  en PRs paralelos, para no duplicar trabajo; se borra al fusionar cada uno.
+
+### Archivos tocados
+- `TODO.md`.
+
+### Verificación
+Cada pendiente se cotejó contra la sección "Pendientes derivados" de su
+entrada en esta bitácora, y los hashes citados existen en el historial. Se
+descartaron los que ya se resolvieron después (panel en teléfono, cupos del
+plan, cobro de suscripciones, auditoría, Redis para el throttle).
+
+---
+
+## [2026-10-08] ci: correr estrés, e2e y build de imágenes Docker
+
+**Autor:** Claude Opus 5.5 · **Commit:** `44b8432`
+
+### Qué se hizo
+Tres cosas que existían en el repo no se ejecutaban en el CI, así que una
+regresión en ellas podía llegar a `main` (y al VPS) sin que nada fallara:
+
+- **`npm run test:stress`** (aislamiento multi-tenant, colisiones de agenda,
+  webhooks de Mercado Pago, takeover). Job `stress` aparte, con su propio
+  Postgres/Redis, en vez de sumarlo al job `test`: no lo alarga y cada suite
+  parte de una base recién sembrada.
+- **Playwright** (`npm run test:e2e`, el login real Next → Fastify →
+  cookie → panel). Job `e2e` con Postgres/Redis, migración y seed, Chromium
+  con `--with-deps` y subida de `apps/web/test-results/` (los traces) si
+  falla. No fija `NODE_ENV`: `playwright.config.ts` le pone `development` a
+  la API y `next dev` necesita el suyo; con `test` heredado, Next se queja.
+- **Build de las dos imágenes Docker**, sin publicarlas. Los Dockerfile
+  tienen su propio orden de compilación y su propia lista de `COPY`: en
+  `1b02e60` se descubrió que la imagen de la API llevaba semanas sin poder
+  construirse sin que el CI lo viera. La de web usa el mismo
+  `API_PROXY_TARGET` que el compose.
+
+Los jobs existentes no cambian.
+
+### Archivos tocados
+- `.github/workflows/ci.yml` — jobs `stress`, `e2e` y `docker-images`.
+
+### Verificación
+- `js-yaml` y `@action-validator/cli` validan el workflow sin errores.
+- La prueba real es el run de GitHub Actions del PR (ver su estado en el PR).
+
+---
+
+## [2026-10-08] build(deploy): script de respaldo automático de la base
+
+**Autor:** Claude Opus 5.5 · **Commit:** `f189cf5`
+
+### Qué se hizo
+Producción no tenía respaldos automáticos: solo los `pg_dump` manuales del
+procedimiento de actualización, y el README todavía sugería un `tar` del
+volumen con los contenedores detenidos. Si el disco del VPS fallaba, la
+pérdida era todo lo ocurrido desde la última actualización.
+
+`deploy/backup.sh` (para cron):
+- `pg_dump` en caliente vía `docker compose exec -T postgres`, comprimido.
+  `BACKUP_COMPOSE_MODE=proxy|standalone` elige la invocación de la Opción B
+  o la A: con otros `-f`, Compose valida otra configuración.
+- `umask 077` antes de crear nada: el respaldo manual del 2026-10-07 quedó en
+  `664` con datos de pacientes.
+- **Falla ruidosamente**: `set -euo pipefail`, se escribe a un `.partial` y
+  solo se renombra si el gzip es íntegro, trae la cabecera de `pg_dump` y al
+  menos un `CREATE TABLE`. Un volcado vacío de una base equivocada sería un
+  gzip válido pero inútil, y la retención acabaría borrando los buenos.
+- Retención (14 días por defecto) **después** del respaldo exitoso y solo
+  sobre `asistente-auto-*`: los respaldos manuales previos a actualizar no
+  se borran solos.
+- Copia externa opcional con `rclone` (`BACKUP_RCLONE_REMOTE`). Se verifica
+  que rclone exista antes de volcar, no después.
+- `POSTGRES_USER`/`POSTGRES_DB` se leen de `.env.production` sin hacer
+  `source` del archivo.
+
+Un detalle que la prueba atrapó en la revisión: con `pipefail`,
+`gzip -dc | grep -q` falla aunque encuentre la línea, porque `grep` corta y
+gzip recibe SIGPIPE; esas revisiones corren con `pipefail` apagado.
+
+`deploy/README.md` documenta probarlo a mano, la línea de `crontab -e`, la
+copia fuera del VPS y cómo **probar una restauración** en una base aparte.
+
+### Archivos tocados
+- `deploy/backup.sh` (nuevo).
+- `deploy/README.md` — sección "Respaldos automáticos"; la nota vieja de
+  `tar` apunta a ella.
+
+### Verificación
+- `bash -n` y `shellcheck` 0.11 sin hallazgos.
+- Corrido localmente con un `docker` falso en el `PATH`: volcado bueno →
+  exit 0, archivo `600`, borra un `asistente-auto-*` de 2025 y conserva un
+  `asistente-*` manual de la misma fecha; volcado sin tablas → exit 1 sin
+  archivo; `docker` que falla → exit 1 sin `.partial` residual; modo
+  `standalone` arma `--profile standalone`; `BACKUP_RCLONE_REMOTE` sin rclone
+  y retención `0` → exit 1.
+- No se corrió contra el Postgres de producción (no se accede al servidor
+  desde esta tarea).
+
+### Pendientes derivados
+- **Instalar el cron en el VPS** y configurar la copia externa con rclone
+  (lo hace el dueño; pasos en `deploy/README.md`).
+- Hacer una restauración de prueba con el primer respaldo automático.
+
+---
+
+## [2026-10-08] build(deploy): healthchecks de api y web en compose
+
+**Autor:** Claude Opus 5.5 · **Commit:** `c2a05fa`
+
+### Qué se hizo
+`api` y `web` no tenían healthcheck, y `web` dependía de `api` con la forma
+corta de `depends_on`, que solo espera a que el contenedor **exista**. La API
+corre `prisma migrate deploy` antes de escuchar, así que en cada arranque
+del stack el panel quedaba sirviendo y proxeando `/api/*` y `/auth/*` a una
+API que aún no respondía: el login daba 502 durante esos segundos, y si la
+API se caía al validar variables, `docker ps` la seguía mostrando "Up".
+
+- `api`: chequeo contra `http://127.0.0.1:3000/health` cada 30 s, con
+  `start_period` de 90 s para cubrir las migraciones.
+- `web`: chequeo contra `http://127.0.0.1:3001/login`, `start_period` 30 s.
+- `web.depends_on.api.condition: service_healthy`.
+
+El chequeo usa `node -e "fetch(...)"` y no `curl`/`wget`: las dos imágenes
+son `node:22-slim`, que no trae ninguno, y agregarlos solo para esto
+engordaría la imagen. `fetch` ya viene en Node 22.
+
+El procedimiento de actualización (`up -d --no-deps api web`) no cambia:
+`--no-deps` ignora la condición y sigue sin reiniciar Postgres ni Redis.
+
+### Archivos tocados
+- `docker-compose.yml` — healthchecks y condición de `depends_on`.
+
+### Verificación
+- `docker-compose config --quiet` (Compose 5.5.1, con un `.env.production`
+  copiado del ejemplo y borrado después) válido para la Opción A y para la
+  Opción B con `deploy/docker-compose.proxy-externo.yml`; la salida muestra
+  ambos healthchecks y la condición.
+- El comando del chequeo, corrido con Node local: sale con 0 contra una URL
+  que responde 200 y con 1 contra un puerto cerrado.
+- No se levantó el stack completo localmente: la prueba real es el siguiente
+  despliegue (`docker ps` debe mostrar `healthy` en `api` y `web`).
+
+### Pendientes derivados
+- `/health` responde `ok` siempre que el proceso escuche: no consulta la
+  base (los errores de la cola se capturan). Con Postgres caído, la API
+  sigue "healthy". Un endpoint de *readiness* con `SELECT 1` daría un
+  healthcheck real.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`

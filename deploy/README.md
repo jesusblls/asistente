@@ -146,12 +146,73 @@ paso 4.
 
 ## Notas operativas
 
-- **Backups**: `postgres_data` es un volumen con nombre de Docker (prefijado
-  con el nombre del proyecto, ej. `asistente_postgres_data`). Respaldar con
-  `docker run --rm -v asistente_postgres_data:/data -v $(pwd):/backup alpine
-  tar czf /backup/postgres_backup.tar.gz /data` (con los contenedores
-  detenidos, o usando `pg_dump` en caliente).
+- **Backups**: automáticos con `deploy/backup.sh` y cron; ver
+  [Respaldos automáticos](#respaldos-automáticos).
 - **Logs**: `docker compose logs -f api` / `web`.
+
+## Respaldos automáticos
+
+`deploy/backup.sh` hace un `pg_dump` en caliente del contenedor `postgres`,
+lo comprime y lo guarda en `~/backups/asistente-auto-<fecha>.sql.gz` con
+permisos `600` (`umask 077`: el archivo trae datos de pacientes y hashes de
+contraseñas). Borra los `asistente-auto-*` de más de 14 días, pero **solo
+después** de un respaldo exitoso, y nunca toca los respaldos manuales previos
+a una actualización. Si `pg_dump` falla o el volcado sale sin tablas, termina
+con código distinto de 0 y no deja archivo.
+
+Variables opcionales: `BACKUP_COMPOSE_MODE` (`proxy` = Opción B, por
+defecto; `standalone` = Opción A), `ASISTENTE_DIR` (`~/apps/asistente`),
+`BACKUP_DIR` (`~/backups`), `BACKUP_RETENTION_DAYS` (`14`) y
+`BACKUP_RCLONE_REMOTE` (ver abajo).
+
+**1. Probarlo a mano una vez** (como el mismo usuario que corre Docker):
+
+```bash
+~/apps/asistente/deploy/backup.sh && ls -l ~/backups
+```
+
+**2. Instalarlo en cron** con `crontab -e`, una línea (todos los días a las
+3:15, hora del servidor):
+
+```cron
+15 3 * * * /home/<usuario>/apps/asistente/deploy/backup.sh >> /home/<usuario>/backups/backup.log 2>&1
+```
+
+Cron corre con un `PATH` mínimo; si `docker` no está en `/usr/bin`, agrega
+arriba de la línea `PATH=/usr/local/bin:/usr/bin:/bin`. En la Opción A
+agrega `BACKUP_COMPOSE_MODE=standalone` antes de la ruta del script. Revisa
+`backup.log` al día siguiente.
+
+**3. Copia fuera del VPS (recomendado).** Un respaldo que vive en el mismo
+disco que la base no sirve si se pierde el VPS. Con
+[rclone](https://rclone.org/) configurado (`rclone config`, p. ej. un bucket
+de Backblaze B2 o S3 **con cifrado del lado del servidor y acceso privado**),
+define el destino en la línea de cron:
+
+```cron
+15 3 * * * BACKUP_RCLONE_REMOTE=b2:asistente-backups /home/<usuario>/apps/asistente/deploy/backup.sh >> /home/<usuario>/backups/backup.log 2>&1
+```
+
+Si la copia falla, el respaldo local queda creado y la retención local se
+aplica igual (para que un remoto caído no llene el disco), pero el script
+termina con error para que cron lo reporte. La retención del destino remoto
+se configura en el propio bucket (regla de ciclo de vida), no en este script.
+
+**4. Probar una restauración** al menos una vez, y después de vez en cuando:
+un respaldo que nunca se restauró no está comprobado. Hazlo en una base
+**aparte**, nunca sobre la de producción (en la Opción A cambia los `-f` por
+`--profile standalone`):
+
+```bash
+cd ~/apps/asistente
+DC="docker compose --env-file deploy/.env.production -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml"
+$DC exec -T postgres createdb -U asistente asistente_restore_test
+gunzip -c ~/backups/<archivo>.sql.gz | $DC exec -T postgres psql -q -v ON_ERROR_STOP=1 -U asistente asistente_restore_test
+$DC exec -T postgres psql -U asistente asistente_restore_test -c 'SELECT count(*) FROM "Tenant";'
+$DC exec -T postgres dropdb -U asistente asistente_restore_test
+```
+
+Si el conteo coincide con lo que ves en el panel, el respaldo sirve.
 
 ## Actualizar a una versión nueva
 
