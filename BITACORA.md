@@ -10,6 +10,80 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(web): confirmar takeover y respuestas en la bandeja
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+En Modo En Vivo, "Tomar control" y "Enviar" de la Bandeja Omnicanal
+actualizaban la pantalla de forma optimista sin revisar `res.ok`. `apiFetch`
+no lanza error ante un 4xx o 5xx, así que si la API rechazaba el cambio, la
+recepcionista creía haber pausado la IA cuando la IA seguía respondiendo, o
+creía haber contestado a un paciente que nunca recibió nada. No había
+reversión ni aviso.
+
+- **Takeover:** si la API falla, el estado vuelve a como estaba y se avisa
+  ("No se pudo tomar el control: …"); si sale bien, también se avisa. El
+  botón se deshabilita mientras la petición está en vuelo. Un mapa de cambios
+  pendientes evita que un sondeo que salió *antes* del cambio pise el estado
+  nuevo. "Estado:" se recalcula en el mismo paso, sin esperar al sondeo.
+- **Respuestas:** la burbuja local se marca "Enviando…" y luego:
+  - **4xx:** "No se envió: la API rechazó el mensaje", en rojo, y el texto
+    vuelve al campo para reintentar.
+  - **5xx o error de red:** "Envío sin confirmar: revisa antes de reenviar".
+    El servidor pudo haberlo guardado y enviado, así que no se devuelve el
+    texto, para no provocar un doble envío a WhatsApp.
+  - **Éxito:** la copia local toma el id del servidor y se queda hasta que el
+    sondeo la trae. Así no desaparece si un sondeo viejo llega tarde, ni se
+    duplica cuando llega.
+- **Mensajes con `deliveryStatus: FAILED`** (WhatsApp no los entregó): borde
+  rojo y la etiqueta "No se entregó por WhatsApp". Antes se veían igual que
+  uno entregado.
+- **Firma:** la respuesta se firma con el nombre de quien tiene la sesión,
+  en lugar de "Recepción" fijo. La API ya aceptaba `staffName` y lo guarda
+  como `[Nombre]: texto`; al paciente le llega solo el texto. La bandeja
+  separa esa firma para mostrar el nombre como remitente, solo en mensajes
+  `HUMAN_STAFF`, porque un paciente puede escribir "[Urgente]: …".
+- **Etiqueta del agente:** "Asistente IA (Gemini 2.5)" pasa a "Asistente IA
+  (DeepSeek)", el modelo real (en vivo y en los datos demo).
+- **Sin permiso para sembrar:** en Modo En Vivo, la bandeja vacía ya no
+  ofrece sembrar datos a quien no es administrador de plataforma, porque
+  recibiría 403. En su lugar ofrece "Ver un ejemplo en Modo Demo". Al sembrar
+  o limpiar desde la barra superior, la bandeja se recarga con `dataVersion`.
+
+Los dos pendientes que dejó la entrada del 2026-09-14 ya estaban resueltos
+en `main`: "Estado:" atrasado y la demo que mutaba constantes del módulo.
+Aquí solo se eliminó la carrera con el sondeo que quedaba.
+
+### Archivos tocados
+- `apps/web/src/app/dashboard/inbox/page.tsx`: takeover y respuestas confirmados, bandeja local, avisos, firma, insignias de entrega.
+- `apps/web/src/app/dashboard/inbox/types.ts`: `deliveryStatus`, `createdAtMs`.
+- `apps/web/src/app/dashboard/inbox/demo.ts`: etiqueta DeepSeek.
+- `apps/web/src/components/dashboard/inbox/ChatHeader.tsx`: botón deshabilitado en vuelo.
+- `apps/web/src/components/dashboard/inbox/ConversationList.tsx`: `canSeed` / `onShowDemo`.
+
+### Verificación
+- `npm run build` limpio; `npm test` 15/15 suites; lint web sin errores.
+- Playwright contra la API en 3107 y la web en 3207, con una clínica
+  desechable ya borrada:
+  - Un mensaje con `FAILED` muestra la insignia roja; la firma
+    "[Recepción Mañana]" aparece como remitente.
+  - Tomar control: "Estado: Modo Humano Activo" y aviso al instante, y
+    sobrevive a un ciclo de sondeo.
+  - La respuesta aparece una sola vez tras el sondeo, firmada "Dra.
+    Directora".
+  - Devolver a la IA: estado y aviso al instante.
+  - Con `/takeover` forzado a 500, el estado se revierte y aparece un aviso
+    rojo.
+  - Con `/reply` forzado a 400, aparece la insignia "No se envió" y el texto
+    vuelve al campo.
+
+### Pendientes derivados
+- `apps/web/src/app/dashboard/settings/page.tsx` sigue diciendo "Motor:
+  Gemini 2.5 Flash". Esa pantalla quedó fuera de esta unidad.
+
+---
+
 ## [2026-10-08] fix(seguridad): limitar limpiar y citas demo a la plataforma
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

@@ -76,7 +76,7 @@ export const DEMO_MESSAGES: Record<string, MessageItem[]> = {
     {
       id: 'm1-2',
       sender: 'AI_AGENT',
-      senderName: 'Asistente IA (Gemini 2.5)',
+      senderName: 'Asistente IA (DeepSeek)',
       content:
         '¡Hola Mariana! Con mucho gusto. La Limpieza Dental con Ultrasonido cuesta $850 MXN (45 minutos). Para hoy contamos con disponibilidad a las 4:00 PM y a las 5:30 PM con la Dra. Sofía Silva. ¿Cuál te acomoda mejor?',
       time: '16:05',
@@ -91,7 +91,7 @@ export const DEMO_MESSAGES: Record<string, MessageItem[]> = {
     {
       id: 'm1-4',
       sender: 'AI_AGENT',
-      senderName: 'Asistente IA (Gemini 2.5)',
+      senderName: 'Asistente IA (DeepSeek)',
       content:
         '¡Perfecto Mariana! Tu cita quedó agendada para hoy a las 4:00 PM. Para congelar el horario y evitar inasistencias requerimos un anticipo deducible de $200 MXN. Puedes pagar aquí de forma segura con Mercado Pago: https://mpago.li/dental-sonrisas',
       time: '16:09',
@@ -123,7 +123,7 @@ export const DEMO_MESSAGES: Record<string, MessageItem[]> = {
     {
       id: 'm2-3',
       sender: 'AI_AGENT',
-      senderName: 'Asistente de Voz IA (Gemini 2.5)',
+      senderName: 'Asistente de Voz IA (DeepSeek)',
       content:
         'Lamento mucho el dolor, Don Fernando. Lo canalizo de inmediato como Urgencia Prioritaria. El Dr. Roberto Mendoza tiene un espacio a las 6:30 PM de hoy para valorarlo y aliviar el dolor. ¿Le registro su lugar en nuestra sucursal?',
       time: '15:39',
