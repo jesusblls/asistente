@@ -10,6 +10,37 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] docs(todo): volver a llevar la lista viva de pendientes
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`TODO.md` decía "sin pendientes abiertos" desde el 2026-09-15, pero las
+entradas del 2026-10-07 dejaron en "Pendientes derivados" cosas que bloquean
+producción (correo de recuperación, token de SignalWire, credenciales de
+Mercado Pago, datos legales) y ninguna pasó a la lista. Quien abriera
+`TODO.md` para saber qué faltaba concluía que nada.
+
+Se reescribió en tres bloques:
+- **Del lado del dueño**: lo que no se arregla con código (cuentas,
+  credenciales, abogado, decisión sobre DeepSeek en China, monitor externo,
+  `METRICS_TOKEN`, cron de respaldos, pool de Postgres), cada uno con el
+  commit que lo originó.
+- **De código** que sigue abierto y nadie está atendiendo.
+- **En curso (PRs abiertos)**: lo que la revisión del 2026-10-08 ya repartió
+  en PRs paralelos, para no duplicar trabajo; se borra al fusionar cada uno.
+
+### Archivos tocados
+- `TODO.md`.
+
+### Verificación
+Cada pendiente se cotejó contra la sección "Pendientes derivados" de su
+entrada en esta bitácora, y los hashes citados existen en el historial. Se
+descartaron los que ya se resolvieron después (panel en teléfono, cupos del
+plan, cobro de suscripciones, auditoría, Redis para el throttle).
+
+---
+
 ## [2026-10-08] ci: correr estrés, e2e y build de imágenes Docker
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
