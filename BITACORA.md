@@ -10,6 +10,85 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] feat(queue): listar y reintentar trabajos muertos de la cola
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Un trabajo que agotaba sus reintentos pasaba a `DEAD` en silencio. Solo
+`WHATSAPP_SEND` dejaba rastro (marcaba el mensaje como `FAILED`). Un
+`META_INBOUND_MESSAGE` muerto significa que un paciente escribió y nadie le
+respondió, y no había forma de enterarse ni de volver a intentarlo salvo
+editando la base a mano.
+
+- **Log único de descarte.** El gancho `onDeadLetter` ahora emite una línea
+  de nivel `error` para todo tipo de trabajo. Lleva `jobId`, `type`,
+  `tenantId`, los intentos y el motivo enmascarado, sin teléfono ni texto del
+  paciente. Para que cada `DEAD` produzca una sola alerta, el log "agotó sus
+  reintentos" de `queue.ts` y el de WhatsApp descartado bajaron a `warn`.
+- **`GET /api/admin/queue/dead`.** Filtros `type` y `tenantId`, paginación por
+  cursor (`limit` ≤ 200). Devuelve id, tipo, clínica, intentos, `lastError`
+  truncado y enmascarado, fechas e identificadores internos del payload
+  (`conversationId`, `messageId`…), con el destinatario enmascarado. El
+  payload crudo nunca sale. Se ordena por `createdAt` y no por `updatedAt`,
+  que cambia al reintentar y haría que el cursor repitiera páginas.
+- **`POST /api/admin/queue/:id/retry`.** Pasa el trabajo de `DEAD` a
+  `PENDING` con intentos en cero y `runAt` inmediato. Usa compare-and-swap
+  sobre `status`, así que dos clics simultáneos no lo reencolan dos veces.
+  Queda auditado en la clínica dueña del trabajo (`entityType: 'JOB'`,
+  nuevo), porque una persona decidió volver a procesar datos de un paciente
+  suyo. Se niega (409) a reenviar una respuesta de la IA si recepción ya tomó
+  la conversación: haría hablar a la IA en un chat silenciado (§ 1.5).
+- **Solo administradores de plataforma, en modo estricto.**
+  `requirePlatformAdmin` ganó la opción `strict`. Sin ella, en desarrollo una
+  `PLATFORM_ADMIN_EMAILS` vacía deja pasar a cualquier ADMIN, lo cual sirve
+  para dar de alta clínicas en local. Pero estas rutas cruzan datos de todas
+  las clínicas: sin lista, el ADMIN de una vería trabajos de las demás.
+- `maskJobText()` enmascara **todos** los teléfonos y correos de un texto.
+  `redact()` del logger solo enmascara la primera coincidencia. Para no
+  destrozar el diagnóstico, respeta fechas ISO e ids largos de Meta.
+
+Se descartó devolver el payload "redactado" con una lista negra de llaves:
+cualquier llave nueva de un payload futuro se filtraría. La lista blanca de
+identificadores falla del lado seguro.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/queue.ts` — rutas nuevas.
+- `apps/api/src/routes/admin/index.ts` — registro.
+- `apps/api/src/routes/admin/common.ts` — opción `strict` y mensaje configurable en `requirePlatformAdmin`.
+- `apps/api/src/services/queue/queue.ts` — `requeueDeadJob()`, `maskJobText()` y logs enmascarados.
+- `apps/api/src/services/queue/handlers.ts` — solo el gancho `onDeadLetter`.
+- `packages/database/src/audit.ts` — tipo de entidad `JOB`.
+- `apps/api/src/queue-dead-letter-test-suite.ts` — suite nueva (26 pruebas).
+
+### Verificación
+- `npm run build` limpio.
+- `npm test`: 15/15 suites; la nueva da 26/26. Cubre el log de error sin
+  teléfono, 401 sin sesión, 403 para el ADMIN de una clínica, el listado sin
+  texto/teléfono/payload, los filtros y la paginación, 404/409, la auditoría,
+  el bloqueo por takeover y el reintento procesado hasta `DONE`.
+- E2E contra la API en el puerto 3113 con curl/fetch: 401 y 403 correctos, el
+  listado enmascarado, el reintento pasa a `PENDING` y el worker lo toma, el
+  segundo reintento da 409 y la fila de auditoría queda en la clínica.
+- `npm run test:stress` falla en la sección de Mercado Pago con "fuera del
+  horario de atención del especialista". Esa sección (agenda del paquete
+  `ai-agent`) no la toca este cambio y depende de la fecha y hora de la
+  corrida.
+
+### Pendientes derivados
+- No hay pantalla en el panel. Por ahora se consulta con la API.
+- No se avisa si el trabajo muerto es de hace más de 24 h. Un
+  `WHATSAPP_SEND` de texto libre fuera de la ventana de servicio de
+  WhatsApp volverá a fallar.
+- `redact()` de `@asistente/observability` solo enmascara el primer teléfono
+  de cada cadena, y lo hace con los dígitos de la cadena completa. Conviene
+  corregirlo ahí para todos los logs.
+- `queue-test-suite.ts` borra **todos** los trabajos al arrancar
+  (`db.job.deleteMany({})`). En la base compartida eso borra los trabajos de
+  otras suites que corren en paralelo.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`

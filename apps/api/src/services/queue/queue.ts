@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@asistente/database';
-import { createLogger, incrementCounter, recordTiming, type Logger } from '@asistente/observability';
+import {
+  createLogger,
+  incrementCounter,
+  maskEmail,
+  maskPhone,
+  recordTiming,
+  type Logger,
+} from '@asistente/observability';
 
 /**
  * Cola de trabajos durable respaldada por la tabla `Job` (SQLite/PostgreSQL).
@@ -310,7 +317,7 @@ export class JobQueue {
       this.logger.warn('Trabajo descartado por error permanente (no reintentable)', {
         jobId: job.id,
         type: job.type,
-        reason: message.slice(0, 200),
+        reason: maskJobText(message, 200),
       });
       return;
     }
@@ -318,10 +325,14 @@ export class JobQueue {
     if (job.attempts >= job.maxAttempts) {
       await this.markDead(job, message);
       incrementCounter('queue_jobs_failed_total', { type: job.type, reason: 'max_attempts' });
-      this.logger.error('Trabajo agotó sus reintentos', error, {
+      // warn y no error: el gancho de descarte ya emite la línea de error
+      // única (con identificadores y motivo enmascarado) para todo DEAD; dos
+      // líneas de error por trabajo duplicarían las alertas.
+      this.logger.warn('Trabajo agotó sus reintentos', {
         jobId: job.id,
         type: job.type,
         attempts: job.attempts,
+        reason: maskJobText(message, 200),
       });
       return;
     }
@@ -348,7 +359,7 @@ export class JobQueue {
       type: job.type,
       attempt: job.attempts,
       retryInMs: Math.round(delay),
-      reason: message.slice(0, 200),
+      reason: maskJobText(message, 200),
     });
   }
 
@@ -487,4 +498,64 @@ export class JobQueue {
   get id(): string {
     return this.workerId;
   }
+}
+
+const PHONE_IN_TEXT = /\+?\d[\d\s().-]{8,}\d/g;
+const ISO_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}/;
+const EMAIL_IN_TEXT = /[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+/g;
+
+/**
+ * Un candidato es teléfono si tiene entre 10 y 13 dígitos (10 locales, +52,
+ * o el legacy +52 1) y no es una fecha ISO. Así no se destrozan fechas ni ids
+ * largos de Meta (phone_number_id de 15 dígitos) que el admin necesita leer.
+ */
+function maskPhoneCandidate(match: string): string {
+  const digits = match.replace(/\D/g, '').length;
+  if (digits < 10 || digits > 13 || ISO_DATE_PREFIX.test(match)) return match;
+  return maskPhone(match);
+}
+
+/**
+ * Prepara un texto de error de trabajo para mostrarse o registrarse: lo trunca
+ * y enmascara teléfonos y correos que se hayan colado en el mensaje (p. ej. un
+ * error del proveedor que repite el destinatario). `redact()` del logger solo
+ * enmascara la primera coincidencia; aquí se cubren todas.
+ */
+export function maskJobText(text: string | null | undefined, max = 300): string | null {
+  if (!text) return null;
+  const masked = text
+    .replace(PHONE_IN_TEXT, maskPhoneCandidate)
+    .replace(EMAIL_IN_TEXT, (match) => maskEmail(match));
+  return masked.length <= max ? masked : `${masked.slice(0, max)}…`;
+}
+
+/** Cliente mínimo para reencolar: el global (`db`) o el de una transacción. */
+type JobWriter = { job: Pick<typeof db.job, 'updateMany'> };
+
+/**
+ * Devuelve un trabajo DEAD a PENDING para que el worker lo vuelva a intentar
+ * con el presupuesto completo de reintentos.
+ *
+ * Es un compare-and-swap sobre `status: 'DEAD'`: si dos administradores pulsan
+ * "reintentar" a la vez, o el trabajo ya no está muerto, solo uno gana y el
+ * otro recibe `false` (nunca se reencola un trabajo que ya está corriendo).
+ * `lastError` se conserva a propósito: hasta que el reintento termine es la
+ * única pista de por qué falló; el worker lo limpia si el reintento tiene éxito.
+ */
+export async function requeueDeadJob(
+  client: JobWriter,
+  jobId: string,
+  now: Date = new Date()
+): Promise<boolean> {
+  const result = await client.job.updateMany({
+    where: { id: jobId, status: 'DEAD' },
+    data: {
+      status: 'PENDING',
+      attempts: 0,
+      runAt: now,
+      lockedAt: null,
+      lockedBy: null,
+    },
+  });
+  return result.count === 1;
 }
