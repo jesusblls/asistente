@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(webhooks): ceder a recepción, procesar lotes y respetar suspensión
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `bc005e0`
 
 ### Qué se hizo
 La auditoría del canal de WhatsApp encontró cinco huecos entre el webhook de
