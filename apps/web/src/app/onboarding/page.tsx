@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Building2,
@@ -71,6 +71,15 @@ const FAQ_SUGERIDAS = [
 
 const CATEGORIAS = ['Diagnóstico', 'Prevención', 'Estética', 'Cirugía', 'Especialidad', 'General'];
 
+interface FaqExistente {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+const mismaPregunta = (a: { question: string }, b: { question: string }) =>
+  a.question.trim().toLowerCase() === b.question.trim().toLowerCase();
+
 interface Progreso {
   doctors: number;
   services: number;
@@ -110,12 +119,26 @@ export default function OnboardingPage() {
 
   const currentStep = STEPS[stepIndex];
 
-  const cargarEstado = useCallback(async () => {
+  // Lo que el usuario ya tocó no lo puede pisar una respuesta tardía de la
+  // carga inicial (en desarrollo el efecto corre más de una vez y una
+  // respuesta vieja llegó a sobrescribir el nombre ya editado de la clínica).
+  const camposEditados = useRef(new Set<string>());
+  const yaNavego = useRef(false);
+  const marcarEditado = (campo: string) => {
+    camposEditados.current.add(campo);
+  };
+  const cargarCampo = (campo: string, setter: (valor: string) => void, valor: string) => {
+    if (!camposEditados.current.has(campo)) setter(valor);
+  };
+
+  const cargarEstado = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/onboarding`);
+      const res = await apiFetch(`${API_BASE_URL}/api/onboarding`, { signal });
       if (!res.ok) throw new Error('No se pudo cargar la configuración');
       const data = await res.json();
+      // Una carga cancelada (desmontaje o efecto repetido) ya no aplica nada.
+      if (signal.aborted) return;
 
       // Ya terminó: no tiene sentido volver a pasarlo por el asistente.
       if (data.completedAt) {
@@ -124,33 +147,112 @@ export default function OnboardingPage() {
       }
 
       setTenantId(data.tenant.id);
-      setClinicName(data.tenant.name || '');
-      setAddress(data.tenant.address || '');
-      setWelcomeMessage(data.tenant.welcomeMessage || '');
-      setEmergencyInstructions(data.tenant.emergencyInstructions || '');
+      cargarCampo('name', setClinicName, data.tenant.name || '');
+      cargarCampo('address', setAddress, data.tenant.address || '');
+      cargarCampo('welcome', setWelcomeMessage, data.tenant.welcomeMessage || '');
+      cargarCampo('emergency', setEmergencyInstructions, data.tenant.emergencyInstructions || '');
       setProgress(data.progress);
 
       const guardado = STEPS.findIndex((s) => s.key === (data.step as StepKey));
-      if (guardado > 0) setStepIndex(guardado);
+      if (guardado > 0 && !yaNavego.current) setStepIndex(guardado);
+
+      // Si ya hay preguntas guardadas (se recargó la página a medio asistente),
+      // la selección refleja lo que de verdad existe en vez del valor inicial.
+      if (data.progress?.faqs > 0) {
+        const resFaqs = await apiFetch(`${API_BASE_URL}/api/tenants/${data.tenant.id}/faqs`, {
+          signal,
+        });
+        if (resFaqs.ok) {
+          const existentes: FaqExistente[] = await resFaqs.json();
+          if (signal.aborted || camposEditados.current.has('faqs')) return;
+          setFaqsElegidas(
+            FAQ_SUGERIDAS.flatMap((sugerida, i) =>
+              existentes.some((f) => mismaPregunta(f, sugerida)) ? [i] : []
+            )
+          );
+        }
+      }
     } catch (err) {
+      if (signal.aborted) return;
       setError(err instanceof Error ? err.message : 'Error de conexión');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [router]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const sesion = getSessionTenant();
     if (sesion) setTenantId(sesion.id);
-    cargarEstado();
+    cargarEstado(controller.signal);
+    return () => controller.abort();
   }, [cargarEstado]);
 
   const guardarPaso = async (siguiente: StepKey) => {
-    await apiFetch(`${API_BASE_URL}/api/onboarding`, {
+    const res = await apiFetch(`${API_BASE_URL}/api/onboarding`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ step: siguiente }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'No se pudo guardar tu avance. Inténtalo de nuevo.');
+    }
+  };
+
+  /**
+   * Deja en la base exactamente las sugerencias elegidas, sin duplicar.
+   *
+   * Se consulta lo que ya existe (por si se volvió con "Atrás" o se recargó la
+   * página) y solo se crea lo que falta. Una sugerencia desmarcada se elimina
+   * únicamente si su copia en la base sigue idéntica al texto sugerido: eso
+   * prueba que la creó este asistente y nadie la editó. Las FAQ que la clínica
+   * capturó o ajustó por su cuenta no se tocan. Si algo falla, se lanza el
+   * error y el paso no avanza; el reintento parte de lo que ya quedó guardado.
+   */
+  const sincronizarFaqs = async (clinicaId: string) => {
+    const resLista = await apiFetch(`${API_BASE_URL}/api/tenants/${clinicaId}/faqs`);
+    if (!resLista.ok) throw new Error('No se pudieron consultar tus preguntas frecuentes');
+    const existentes: FaqExistente[] = await resLista.json();
+    let total = existentes.length;
+
+    try {
+      for (const [i, sugerida] of FAQ_SUGERIDAS.entries()) {
+        const elegida = faqsElegidas.includes(i);
+        const copias = existentes.filter((f) => mismaPregunta(f, sugerida));
+
+        if (!elegida) {
+          for (const copia of copias.filter((f) => f.answer.trim() === sugerida.answer)) {
+            const res = await apiFetch(`${API_BASE_URL}/api/faqs/${copia.id}`, {
+              method: 'DELETE',
+            });
+            if (!res.ok && res.status !== 404) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(
+                data.error || `No se pudo quitar la pregunta "${sugerida.question}"`
+              );
+            }
+            if (res.ok) total -= 1;
+          }
+          continue;
+        }
+
+        if (copias.length > 0) continue;
+
+        const res = await apiFetch(`${API_BASE_URL}/api/tenants/${clinicaId}/faqs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sugerida),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `No se pudo guardar la pregunta "${sugerida.question}"`);
+        }
+        total += 1;
+      }
+    } finally {
+      setProgress((p) => ({ ...p, faqs: total }));
+    }
   };
 
   const avanzar = async () => {
@@ -228,20 +330,13 @@ export default function OnboardingPage() {
       }
 
       if (currentStep.key === 'faqs') {
-        for (const i of faqsElegidas) {
-          const faq = FAQ_SUGERIDAS[i];
-          await apiFetch(`${API_BASE_URL}/api/tenants/${tenantId}/faqs`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(faq),
-          });
-        }
-        setProgress((p) => ({ ...p, faqs: p.faqs + faqsElegidas.length }));
+        await sincronizarFaqs(tenantId);
       }
 
       const siguiente = STEPS[stepIndex + 1];
       if (siguiente) {
         await guardarPaso(siguiente.key);
+        yaNavego.current = true;
         setStepIndex(stepIndex + 1);
       }
     } catch (err) {
@@ -358,7 +453,10 @@ export default function OnboardingPage() {
                   id="ob-name"
                   type="text"
                   value={clinicName}
-                  onChange={(e) => setClinicName(e.target.value)}
+                  onChange={(e) => {
+                    marcarEditado('name');
+                    setClinicName(e.target.value);
+                  }}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
               </div>
@@ -372,7 +470,10 @@ export default function OnboardingPage() {
                   rows={2}
                   maxLength={300}
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
+                  onChange={(e) => {
+                    marcarEditado('address');
+                    setAddress(e.target.value);
+                  }}
                   placeholder="Calle, número, colonia, referencias (estacionamiento, metro cercano)"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
@@ -387,7 +488,10 @@ export default function OnboardingPage() {
                   rows={2}
                   maxLength={1000}
                   value={welcomeMessage}
-                  onChange={(e) => setWelcomeMessage(e.target.value)}
+                  onChange={(e) => {
+                    marcarEditado('welcome');
+                    setWelcomeMessage(e.target.value);
+                  }}
                   placeholder="¡Hola! Bienvenido a nuestra clínica. ¿En qué podemos apoyarte hoy?"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
@@ -402,7 +506,10 @@ export default function OnboardingPage() {
                   rows={2}
                   maxLength={1000}
                   value={emergencyInstructions}
-                  onChange={(e) => setEmergencyInstructions(e.target.value)}
+                  onChange={(e) => {
+                    marcarEditado('emergency');
+                    setEmergencyInstructions(e.target.value);
+                  }}
                   placeholder="Acudir a urgencias o llamar al 911 en caso de dolor incapacitante, hemorragia o dificultad para respirar."
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
@@ -587,11 +694,12 @@ export default function OnboardingPage() {
                     <button
                       key={faq.question}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        marcarEditado('faqs');
                         setFaqsElegidas((prev) =>
                           prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
-                        )
-                      }
+                        );
+                      }}
                       className={`w-full text-left p-3.5 rounded-xl border transition-colors ${
                         elegida
                           ? 'bg-teal-50 border-teal-300'
@@ -664,7 +772,11 @@ export default function OnboardingPage() {
           <div className="flex items-center justify-between gap-3 mt-7 pt-5 border-t border-slate-100">
             <button
               type="button"
-              onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+              onClick={() => {
+                setError(null);
+                yaNavego.current = true;
+                setStepIndex((i) => Math.max(0, i - 1));
+              }}
               disabled={stepIndex === 0 || saving}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
             >

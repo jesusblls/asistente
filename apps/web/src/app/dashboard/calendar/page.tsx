@@ -1,16 +1,20 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
+  AlertCircle,
   Calendar as CalendarIcon,
+  CheckCircle2,
   Plus,
   RefreshCw,
   Search,
   SlidersHorizontal,
 } from 'lucide-react';
 import {
+  addDaysToDateKey,
   formatDateKeyLong,
   formatDateKeyShort,
+  mexicoCityWallTimeToUtcIso,
   todayInMexicoCity,
 } from '../../../lib/format';
 import { usePolling } from '../../../hooks/usePolling';
@@ -20,6 +24,26 @@ import { AppointmentRow } from '../../../components/dashboard/calendar/Appointme
 import { NewAppointmentModal } from '../../../components/dashboard/calendar/NewAppointmentModal';
 import type { ApiAppointment, TenantDoctor, TenantService, TenantCatalogItem } from './types';
 import { DEMO_APPOINTMENTS, DEMO_DOCTORS, DEMO_SERVICES } from './demo';
+
+/** Participio para el toast de cambio de estado: "Cita de Ana confirmada". */
+const STATUS_LABELS: Record<string, string> = {
+  CONFIRMED: 'confirmada',
+  COMPLETED: 'marcada como completada',
+  CANCELLED: 'cancelada',
+};
+
+/**
+ * Normalización mínima a E.164 (+52) para las citas creadas en Modo Demo, que
+ * no pasan por la API. En vivo, la API normaliza con `phone.ts` del agente.
+ */
+function toDemoE164(phone: string): string {
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('044') || digits.startsWith('045')) digits = digits.slice(3);
+  if (digits.length === 13 && digits.startsWith('521')) digits = `52${digits.slice(3)}`;
+  if (digits.length === 10) return `+52${digits}`;
+  if (digits.length === 12 && digits.startsWith('52')) return `+${digits}`;
+  return phone.trim();
+}
 
 export default function CalendarPage() {
   const { mode, activeTenantId } = useTenant();
@@ -37,6 +61,10 @@ export default function CalendarPage() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Ahora');
 
+  // Estado de carga del catálogo (doctores/servicios) para el modal de nueva cita
+  const [catalogLoading, setCatalogLoading] = useState<boolean>(() => mode !== 'demo');
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
   // Ajuste de estado durante render al cambiar de modo
   const [prevMode, setPrevMode] = useState(mode);
   if (mode !== prevMode) {
@@ -47,6 +75,8 @@ export default function CalendarPage() {
       setAppointments(DEMO_APPOINTMENTS);
       setLoading(false);
       setLastSyncTime('Demo');
+      setCatalogLoading(false);
+      setCatalogError(null);
     }
   }
 
@@ -69,33 +99,55 @@ export default function CalendarPage() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Cambios de estado en vuelo (id -> estado elegido + secuencia). El polling
+  // los respeta para no "regresar" la fila mientras la API responde, y la
+  // secuencia evita que el fallo de un clic viejo revierta uno más reciente.
+  const pendingStatusRef = useRef(new Map<string, { status: string; seq: number }>());
+  const statusSeqRef = useRef(0);
+
+  // Toast de feedback para mutaciones (cambio de estado, alta de cita)
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
+    setToast({ message, tone });
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   // Cargar catálogo de doctores y servicios de la clínica en vivo
   useEffect(() => {
     if (mode !== 'live' || !activeTenantId) return;
 
     let active = true;
     const fetchCatalog = async () => {
+      setCatalogLoading(true);
+      setCatalogError(null);
       try {
         const res = await apiFetch(`${API_BASE_URL}/api/tenants`);
-        if (active && res.ok) {
-          const data: TenantCatalogItem[] = await res.json();
-          if (data && data.length > 0) {
-            const current = data.find((t: TenantCatalogItem) => t.id === activeTenantId) || data[0];
-            setTenantId(current.id);
-            const docs = current.doctors || [];
-            const svcs = current.services || [];
-            setDoctors(docs);
-            setServices(svcs);
-            if (docs.length > 0) {
-              setNewDoctorId((prev) => prev || docs[0].id);
-            }
-            if (svcs.length > 0) {
-              setNewServiceId((prev) => prev || svcs[0].id);
-            }
-          }
+        if (!res.ok) throw new Error(`La API respondió ${res.status}`);
+        const data: TenantCatalogItem[] = await res.json();
+        if (!active) return;
+        if (data && data.length > 0) {
+          const current = data.find((t: TenantCatalogItem) => t.id === activeTenantId) || data[0];
+          setTenantId(current.id);
+          const docs = current.doctors || [];
+          const svcs = current.services || [];
+          setDoctors(docs);
+          setServices(svcs);
+          // Al cambiar de clínica, la selección previa puede pertenecer a otra.
+          setNewDoctorId((prev) => (docs.some((d) => d.id === prev) ? prev : docs[0]?.id ?? ''));
+          setNewServiceId((prev) => (svcs.some((sv) => sv.id === prev) ? prev : svcs[0]?.id ?? ''));
         }
       } catch (err) {
-        if (active) console.warn('Error cargando doctores y servicios:', err);
+        if (!active) return;
+        console.warn('Error cargando doctores y servicios:', err);
+        setCatalogError(
+          'No se pudieron cargar los especialistas y tratamientos de la clínica. Revisa tu conexión e inténtalo de nuevo.'
+        );
+      } finally {
+        if (active) setCatalogLoading(false);
       }
     };
 
@@ -130,7 +182,16 @@ export default function CalendarPage() {
         { signal }
       );
       if (!res.ok) throw new Error(`La API respondió ${res.status}`);
-      setAppointments(await res.json());
+      const fetched: ApiAppointment[] = await res.json();
+      const pending = pendingStatusRef.current;
+      setAppointments(
+        pending.size === 0
+          ? fetched
+          : fetched.map((a) => {
+              const override = pending.get(a.id);
+              return override ? { ...a, status: override.status } : a;
+            })
+      );
       setLastSyncTime(
         new Date().toLocaleTimeString('es-MX', {
           timeZone: 'America/Mexico_City',
@@ -159,14 +220,30 @@ export default function CalendarPage() {
     enabled: mode === 'live' && Boolean(activeTenantId),
   });
 
-  // Manejador de cambio de estado de cita (Confirmar / Completar / Cancelar)
+  // Manejador de cambio de estado de cita (Confirmar / Completar / Cancelar).
+  // Actualización optimista: la fila cambia al instante y, si la API rechaza el
+  // cambio, se revierte al estado anterior y se avisa con un toast de error.
   const handleUpdateStatus = async (appointmentId: string, newStatus: string) => {
-    if (mode === 'demo') {
+    const previous = appointments.find((a) => a.id === appointmentId);
+    if (!previous || previous.status === newStatus) return;
+
+    const label = STATUS_LABELS[newStatus] ?? 'actualizada';
+    const patientName = previous.patient?.fullName ?? 'el paciente';
+    const applyStatus = (status: string) =>
       setAppointments((prev) =>
-        prev.map((a) => (a.id === appointmentId ? { ...a, status: newStatus } : a))
+        prev.map((a) => (a.id === appointmentId ? { ...a, status } : a))
       );
+
+    applyStatus(newStatus);
+
+    if (mode === 'demo') {
+      showToast(`Cita de ${patientName} ${label} (Modo Demo)`);
       return;
     }
+
+    const seq = ++statusSeqRef.current;
+    pendingStatusRef.current.set(appointmentId, { status: newStatus, seq });
+    const isLatest = () => pendingStatusRef.current.get(appointmentId)?.seq === seq;
 
     try {
       const res = await apiFetch(`${API_BASE_URL}/api/appointments/${appointmentId}`, {
@@ -174,11 +251,26 @@ export default function CalendarPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
-        void refreshAppointments();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `La API respondió ${res.status}`);
       }
+      if (isLatest()) pendingStatusRef.current.delete(appointmentId);
+      showToast(`Cita de ${patientName} ${label}`);
+      void refreshAppointments();
     } catch (err) {
       console.error('Error actualizando estado de cita:', err);
+      // Solo se revierte si nadie cambió la cita después de este clic.
+      if (isLatest()) {
+        pendingStatusRef.current.delete(appointmentId);
+        applyStatus(previous.status);
+      }
+      showToast(
+        `No se pudo actualizar la cita de ${patientName}: ${
+          err instanceof Error ? err.message : 'error de conexión'
+        }`,
+        'error'
+      );
     }
   };
 
@@ -186,10 +278,64 @@ export default function CalendarPage() {
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
-    setIsSubmitting(true);
 
+    // Si la selección quedó vacía (catálogo recién cargado o clínica cambiada),
+    // se usa la primera opción, que es la que el <select> muestra en pantalla.
+    const doctor = doctors.find((d) => d.id === newDoctorId) ?? doctors[0];
+    const service = services.find((sv) => sv.id === newServiceId) ?? services[0];
+    if (!doctor || !service) {
+      setSubmitError('Primero registra al menos un especialista y un tratamiento en Equipo.');
+      return;
+    }
+
+    // La hora capturada es hora de CDMX, sin importar la zona del navegador.
+    const startTimeIso = mexicoCityWallTimeToUtcIso(newDate, newTime);
+    if (!startTimeIso) {
+      setSubmitError('Captura una fecha y un horario válidos.');
+      return;
+    }
+
+    if (mode === 'demo') {
+      const start = new Date(startTimeIso);
+      const demoAppt: ApiAppointment = {
+        id: `demo-${start.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+        tenantId: 'demo',
+        patientId: `demo-patient-${start.getTime()}`,
+        doctorId: doctor.id,
+        serviceId: service.id,
+        startTime: startTimeIso,
+        endTime: new Date(start.getTime() + (service.durationMinutes || 45) * 60_000).toISOString(),
+        status: 'CONFIRMED',
+        paymentStatus: 'NONE',
+        channelOrigin: 'WEBCHAT',
+        symptoms: newSymptoms || 'Agendado manualmente en panel',
+        createdAt: new Date().toISOString(),
+        patient: {
+          id: `demo-patient-${start.getTime()}`,
+          fullName: newPatientName,
+          phoneE164: toDemoE164(newPatientPhone),
+        },
+        doctor: { id: doctor.id, name: doctor.name, specialty: doctor.specialty },
+        service: {
+          id: service.id,
+          name: service.name,
+          priceMxn: service.priceMxn,
+          durationMinutes: service.durationMinutes,
+        },
+      };
+      setAppointments((prev) =>
+        [...prev, demoAppt].sort((a, b) => a.startTime.localeCompare(b.startTime))
+      );
+      setIsModalOpen(false);
+      setNewPatientName('');
+      setNewPatientPhone('');
+      setNewSymptoms('');
+      showToast(`Cita de ${demoAppt.patient.fullName} agendada (Modo Demo)`);
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      const startTimeIso = new Date(`${newDate}T${newTime}:00`).toISOString();
       const res = await apiFetch(`${API_BASE_URL}/api/appointments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -197,8 +343,8 @@ export default function CalendarPage() {
           tenantId,
           patientName: newPatientName,
           patientPhone: newPatientPhone,
-          doctorId: newDoctorId,
-          serviceId: newServiceId,
+          doctorId: doctor.id,
+          serviceId: service.id,
           startTimeIso,
           symptoms: newSymptoms || 'Agendado manualmente en panel',
           channelOrigin: 'WEBCHAT',
@@ -206,13 +352,15 @@ export default function CalendarPage() {
       });
 
       if (res.ok) {
+        const patientName = newPatientName;
         setIsModalOpen(false);
         setNewPatientName('');
         setNewPatientPhone('');
         setNewSymptoms('');
+        showToast(`Cita de ${patientName} agendada`);
         void refreshAppointments();
       } else {
-        const errorData = await res.json();
+        const errorData = await res.json().catch(() => ({}));
         setSubmitError(errorData.error || 'No se pudo agendar la cita. Verifica el horario.');
       }
     } catch (err: unknown) {
@@ -252,18 +400,10 @@ export default function CalendarPage() {
   };
 
   // Fechas de referencia calculadas en huso de CDMX (nunca hardcodeadas).
-  const getCdmxDayStr = (date: Date) =>
-    new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(date);
-
-  const todayDate = useMemo(() => new Date(), []);
-  const tomorrowDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d;
-  }, []);
-
-  const todayDayStr = useMemo(() => getCdmxDayStr(todayDate), [todayDate]);
-  const tomorrowDayStr = useMemo(() => getCdmxDayStr(tomorrowDate), [tomorrowDate]);
+  // Se recalcula en cada render (el polling re-renderiza cada 3.5 s) para que
+  // "Hoy" y "Mañana" cambien solos a la medianoche de CDMX.
+  const todayDayStr = todayInMexicoCity();
+  const tomorrowDayStr = addDaysToDateKey(todayDayStr, 1);
 
   // Filtrado de citas
   const filteredAppointments = useMemo(() => {
@@ -310,6 +450,23 @@ export default function CalendarPage() {
 
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
+      {/* Toast de feedback */}
+      {toast && (
+        <div
+          role={toast.tone === 'error' ? 'alert' : 'status'}
+          className={`fixed bottom-6 right-6 z-[60] max-w-sm flex items-start gap-2.5 text-white text-xs sm:text-sm px-4 py-3 rounded-xl shadow-xl border animate-in fade-in slide-in-from-bottom-2 ${
+            toast.tone === 'error' ? 'bg-red-700 border-red-800' : 'bg-slate-900 border-slate-700'
+          }`}
+        >
+          {toast.tone === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-red-100 shrink-0 mt-0.5" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Encabezado y Acciones */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -350,11 +507,7 @@ export default function CalendarPage() {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="text-xs font-medium text-slate-500">
             Citas Hoy (
-            {new Intl.DateTimeFormat('es-MX', {
-              timeZone: 'America/Mexico_City',
-              day: 'numeric',
-              month: 'short',
-            }).format(todayDate)}
+            {formatDateKeyShort(todayDayStr)}
             )
           </div>
           <div className="text-2xl font-bold text-slate-900 mt-1">{todayCount}</div>
@@ -364,11 +517,7 @@ export default function CalendarPage() {
         <div className="bg-white p-4 rounded-xl border border-teal-200 bg-teal-50/20 shadow-sm">
           <div className="text-xs font-medium text-teal-800">
             Citas Mañana (
-            {new Intl.DateTimeFormat('es-MX', {
-              timeZone: 'America/Mexico_City',
-              day: 'numeric',
-              month: 'short',
-            }).format(tomorrowDate)}
+            {formatDateKeyShort(tomorrowDayStr)}
             )
           </div>
           <div className="text-2xl font-bold text-teal-900 mt-1">{tomorrowCount}</div>
@@ -411,7 +560,7 @@ export default function CalendarPage() {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Hoy (9 Sep) • {todayCount}
+              Hoy ({formatDateKeyShort(todayDayStr)}) • {todayCount}
             </button>
             <button
               onClick={() => setDateView('tomorrow')}
@@ -585,6 +734,8 @@ export default function CalendarPage() {
         setSymptoms={setNewSymptoms}
         isSubmitting={isSubmitting}
         submitError={submitError}
+        catalogLoading={mode === 'live' && Boolean(activeTenantId) && catalogLoading}
+        catalogError={mode === 'live' ? catalogError : null}
       />
     </div>
   );

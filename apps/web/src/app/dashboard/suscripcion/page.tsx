@@ -13,6 +13,7 @@ import {
   Building2,
   ExternalLink,
   Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import { API_BASE_URL, apiFetch } from '@/lib/api';
 import { useTenant } from '@/context/TenantContext';
@@ -103,6 +104,7 @@ export default function SuscripcionPage() {
   const [error, setError] = useState<string | null>(null);
   const [contratando, setContratando] = useState<string | null>(null);
   const [cancelando, setCancelando] = useState(false);
+  const [confirmandoCancelacion, setConfirmandoCancelacion] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
@@ -163,6 +165,7 @@ export default function SuscripcionPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo cancelar');
 
+      setConfirmandoCancelacion(false);
       setAviso(
         data.accesoHasta
           ? `Renovación cancelada. Tu servicio sigue activo hasta el ${fechaLarga(data.accesoHasta)}.`
@@ -228,7 +231,7 @@ export default function SuscripcionPage() {
         </div>
       )}
 
-      {error && (
+      {error && !confirmandoCancelacion && (
         <div
           role="alert"
           className="mb-5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-start gap-2"
@@ -302,14 +305,96 @@ export default function SuscripcionPage() {
 
           {datos.tieneSuscripcion && datos.status !== 'CANCELED' && (
             <button
-              onClick={cancelar}
+              type="button"
+              onClick={() => {
+                setError(null);
+                setConfirmandoCancelacion(true);
+              }}
               disabled={cancelando}
               className="mt-4 text-xs font-semibold text-slate-500 hover:text-red-700 underline disabled:opacity-50"
             >
-              {cancelando ? 'Cancelando…' : 'Cancelar renovación automática'}
+              Cancelar renovación automática
             </button>
           )}
         </section>
+      )}
+
+      {/* Confirmación de cancelación: no se cancela de un clic */}
+      {confirmandoCancelacion && datos && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !cancelando) setConfirmandoCancelacion(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && !cancelando) setConfirmandoCancelacion(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirmar-cancelacion-titulo"
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 space-y-4">
+              <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 id="confirmar-cancelacion-titulo" className="text-base font-bold text-slate-900">
+                  ¿Cancelar la renovación automática?
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {datos.currentPeriodEnd ? (
+                    <>
+                      No se te volverá a cobrar. Tu asistente sigue atendiendo WhatsApp y
+                      teléfono hasta el{' '}
+                      <strong className="text-slate-900">
+                        {fechaLarga(datos.currentPeriodEnd)}
+                      </strong>
+                      , fin del periodo que ya pagaste; después la cuenta se suspende.
+                    </>
+                  ) : (
+                    <>
+                      No se te volverá a cobrar. Conservas el servicio hasta el fin del periodo que
+                      ya pagaste; después la cuenta se suspende.
+                    </>
+                  )}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Puedes volver a contratar un plan cuando quieras.
+                </p>
+              </div>
+              {error && (
+                <div
+                  role="alert"
+                  className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{error}</span>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmandoCancelacion(false)}
+                disabled={cancelando}
+                autoFocus
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-50"
+              >
+                Mantener mi plan
+              </button>
+              <button
+                type="button"
+                onClick={cancelar}
+                disabled={cancelando}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60"
+              >
+                {cancelando && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {cancelando ? 'Cancelando…' : 'Sí, cancelar renovación'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Selector de ciclo */}

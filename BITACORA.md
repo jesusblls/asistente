@@ -1024,6 +1024,78 @@ dónde sin tocar el esquema); se usa una marca en el texto del asistente.
   sigue apuntando a la cita cancelada; la nueva queda pendiente sin link.
 
 ---
+## [2026-10-08] fix(web): agendar en hora de CDMX y validar onboarding y agenda
+
+**Autor:** Claude Opus 5.5 · **Commit:** `5749706`
+
+### Qué se hizo
+- **Hora de la cita en CDMX (alto):** el calendario armaba la fecha con
+  ``new Date(`${fecha}T${hora}:00`)``, que usa la zona del navegador. Una
+  recepcionista con la laptop en otra zona (o mal configurada) agendaba a otra
+  hora: las 10:00 desde Los Ángeles quedaban guardadas como 17:00Z (11:00 en
+  CDMX). Ahora se convierte la hora de pared de CDMX a UTC con
+  `fromZonedTime` de `date-fns-tz` (lo mismo que usa el `SchedulerService`;
+  se agregó la dependencia a `apps/web`) en `mexicoCityWallTimeToUtcIso`, que
+  además rechaza fechas inexistentes (31 de febrero, 24:30) en vez de dejar
+  que se desborden al día siguiente. Las vistas ya mostraban en CDMX; se
+  quitó el "Hoy (9 Sep)" hardcodeado y "Hoy/Mañana" se calculan con claves de
+  fecha de CDMX en cada render, para que cambien solos a la medianoche.
+- **Cambios de estado con feedback:** Confirmar/Completar/Cancelar eran
+  silenciosos ante un error. Ahora son optimistas con toast de éxito, y si la
+  API falla se revierte la fila y se muestra un toast de error. Un mapa de
+  cambios en vuelo evita que el polling de 3.5 s regrese la fila mientras la
+  API responde, y una secuencia evita que el fallo de un clic viejo revierta
+  uno más reciente.
+- **Modal de nueva cita:** sin doctores o servicios los selects quedaban
+  vacíos sin explicación y el error de carga solo iba a consola. Ahora hay un
+  estado vacío con enlace a `/dashboard/team`, un error visible si falla el
+  catálogo, y el botón se deshabilita (con catálogo en error lo que se ve
+  puede ser de otra clínica). Al cambiar de clínica se descarta la selección
+  previa. En Modo Demo la cita se agrega localmente en vez de pegarle a la API.
+- **Onboarding:** `guardarPaso` ignoraba fallas y las FAQ se re-creaban al ir
+  "Atrás" y volver, duplicándose, mientras el contador sumaba aunque el POST
+  fallara. Ahora se revisa cada respuesta y el paso no avanza si algo falla;
+  las FAQ se sincronizan contra lo que ya existe (solo se crea lo que falta y
+  se borra una sugerencia desmarcada solo si su copia sigue idéntica al texto
+  sugerido, para no tocar FAQ capturadas o editadas por la clínica). Tras
+  recargar, la selección refleja lo guardado.
+- **Carga tardía en onboarding (reportado por otra unidad en su e2e):** en
+  desarrollo el efecto disparaba varias veces `GET /api/onboarding` y una
+  respuesta vieja llegó a pisar el nombre de la clínica ya editado, que luego
+  se guardaba. Ahora la carga usa `AbortController` (se cancela en el cleanup
+  del efecto), no sobrescribe campos que el usuario ya tocó ni regresa el paso
+  si ya navegó.
+- **Suscripción:** "Cancelar renovación automática" cancelaba de un clic.
+  Ahora abre un diálogo que explica que el acceso sigue hasta el fin del
+  periodo pagado (`currentPeriodEnd`) y se suspende después; cerrar con
+  "Mantener mi plan", Escape o clic fuera.
+
+### Archivos tocados
+- `apps/web/src/lib/format.ts`
+- `apps/web/src/app/dashboard/calendar/page.tsx`
+- `apps/web/src/components/dashboard/calendar/NewAppointmentModal.tsx`
+- `apps/web/src/app/onboarding/page.tsx`
+- `apps/web/src/app/dashboard/suscripcion/page.tsx`
+- `apps/web/package.json`, `package-lock.json` (date-fns-tz)
+
+### Verificación
+- `npm run build` correcto; `tsc --noEmit` de web limpio; `eslint` sin
+  advertencias nuevas en los archivos tocados (quedan 3 previas).
+- `npm test`: todas las suites de API pasan; fallan 1 prueba de
+  `test-suite.ts` del agente (Blanqueamiento vs Limpieza) y 1 de voz, ajenas a
+  este cambio (solo se tocó `apps/web`).
+- `mexicoCityWallTimeToUtcIso` probado con `TZ=America/Los_Angeles` y
+  `Asia/Tokyo`: 10:00 → 16:00Z; 2021 (con horario de verano) → 15:00Z; fechas
+  u horas inválidas → `null`.
+- E2E con Playwright (API 3108, web 3208, navegador en `America/Los_Angeles`),
+  19/19 verificaciones: registro, onboarding con respuesta tardía simulada
+  (no pisa el nombre editado y se guarda el editado), FAQ sin duplicar al ir
+  atrás/adelante, cambiar selección y recargar; error simulado al guardar paso
+  no avanza; cita a las 10:00 guardada como `16:00:00.000Z` y mostrada
+  "10:00 a.m."; toast de éxito al completar; error simulado con rollback;
+  estado vacío y error de catálogo en el modal; diálogo de cancelación con la
+  fecha de fin (respuesta de suscripción y cancelación interceptadas). La
+  clínica de prueba se borró al final.
 
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
