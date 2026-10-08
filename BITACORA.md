@@ -10,6 +10,40 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] ci: correr estrés, e2e y build de imágenes Docker
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Tres cosas que existían en el repo no se ejecutaban en el CI, así que una
+regresión en ellas podía llegar a `main` (y al VPS) sin que nada fallara:
+
+- **`npm run test:stress`** (aislamiento multi-tenant, colisiones de agenda,
+  webhooks de Mercado Pago, takeover). Job `stress` aparte, con su propio
+  Postgres/Redis, en vez de sumarlo al job `test`: no lo alarga y cada suite
+  parte de una base recién sembrada.
+- **Playwright** (`npm run test:e2e`, el login real Next → Fastify →
+  cookie → panel). Job `e2e` con Postgres/Redis, migración y seed, Chromium
+  con `--with-deps` y subida de `apps/web/test-results/` (los traces) si
+  falla. No fija `NODE_ENV`: `playwright.config.ts` le pone `development` a
+  la API y `next dev` necesita el suyo; con `test` heredado, Next se queja.
+- **Build de las dos imágenes Docker**, sin publicarlas. Los Dockerfile
+  tienen su propio orden de compilación y su propia lista de `COPY`: en
+  `1b02e60` se descubrió que la imagen de la API llevaba semanas sin poder
+  construirse sin que el CI lo viera. La de web usa el mismo
+  `API_PROXY_TARGET` que el compose.
+
+Los jobs existentes no cambian.
+
+### Archivos tocados
+- `.github/workflows/ci.yml` — jobs `stress`, `e2e` y `docker-images`.
+
+### Verificación
+- `js-yaml` y `@action-validator/cli` validan el workflow sin errores.
+- La prueba real es el run de GitHub Actions del PR (ver su estado en el PR).
+
+---
+
 ## [2026-10-08] build(deploy): script de respaldo automático de la base
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

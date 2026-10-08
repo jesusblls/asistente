@@ -124,3 +124,161 @@ jobs:
 
       - name: Run Test Suites
         run: npm run test
+
+  # Las suites de estrés (aislamiento multi-tenant, colisiones de agenda,
+  # webhooks de Mercado Pago, takeover) existían pero solo corrían a mano, así
+  # que una regresión en esas rutas podía llegar a main sin que nada fallara.
+  # Job aparte, con su propia base, para no alargar ni ensuciar `test`.
+  stress:
+    name: Stress Suite
+    needs: [lint-and-typecheck]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: asistente
+          POSTGRES_PASSWORD: asistente
+          POSTGRES_DB: asistente_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U asistente"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://asistente:asistente@localhost:5432/asistente_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret-with-at-least-32-characters
+      CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Set up test database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Run stress suite
+        run: npm run test:stress
+
+  # Flujo real de login en navegador: Next -> rewrite /auth/* -> Fastify ->
+  # cookie -> /dashboard. playwright.config.ts levanta la API y el panel por
+  # su cuenta (con CI=true no reutiliza servidores existentes). NODE_ENV no
+  # se fija aquí a propósito: el config pone `development` a la API y
+  # `next dev` necesita el suyo.
+  e2e:
+    name: E2E (Playwright)
+    needs: [lint-and-typecheck]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: asistente
+          POSTGRES_PASSWORD: asistente
+          POSTGRES_DB: asistente_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U asistente"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://asistente:asistente@localhost:5432/asistente_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret-with-at-least-32-characters
+      CREDENTIALS_ENCRYPTION_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # La API en modo dev importa los paquetes del monorepo por nombre, que
+      # resuelven a su dist/: sin compilar, no arranca.
+      - name: Build
+        run: npm run build
+
+      - name: Set up test database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Install Playwright Chromium
+        run: npm exec --workspace=@asistente/web -- playwright install --with-deps chromium
+
+      - name: Run E2E
+        run: npm run test:e2e
+
+      # El reporter es `list` (sin HTML); lo útil para depurar es el trace
+      # que playwright.config.ts conserva en test-results/ cuando falla.
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Construye las dos imágenes de producción sin publicarlas. El CI compila
+  # con `npm run build`, pero los Dockerfile tienen su propio orden de
+  # compilación y su propia lista de COPY: el 2026-10-07 se descubrió que el
+  # build de la imagen de la API llevaba semanas roto sin que el CI lo viera
+  # (ver BITACORA.md, 1b02e60). Esto lo atrapa antes de llegar al VPS.
+  docker-images:
+    name: Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f apps/api/Dockerfile -t asistente-api:ci .
+
+      # Mismo build-arg que docker-compose.yml: Next congela el rewrite a la
+      # API durante `next build`, así que se prueba con el valor real.
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile --build-arg API_PROXY_TARGET=http://api:3000 -t asistente-web:ci .
