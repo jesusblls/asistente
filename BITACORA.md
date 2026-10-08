@@ -10,6 +10,45 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] build(deploy): healthchecks de api y web en compose
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`api` y `web` no tenían healthcheck, y `web` dependía de `api` con la forma
+corta de `depends_on`, que solo espera a que el contenedor **exista**. La API
+corre `prisma migrate deploy` antes de escuchar, así que en cada arranque
+del stack el panel quedaba sirviendo y proxeando `/api/*` y `/auth/*` a una
+API que aún no respondía: el login daba 502 durante esos segundos, y si la
+API se caía al validar variables, `docker ps` la seguía mostrando "Up".
+
+- `api`: chequeo contra `http://127.0.0.1:3000/health` cada 30 s, con
+  `start_period` de 90 s para cubrir las migraciones.
+- `web`: chequeo contra `http://127.0.0.1:3001/login`, `start_period` 30 s.
+- `web.depends_on.api.condition: service_healthy`.
+
+El chequeo usa `node -e "fetch(...)"` y no `curl`/`wget`: las dos imágenes
+son `node:22-slim`, que no trae ninguno, y agregarlos solo para esto
+engordaría la imagen. `fetch` ya viene en Node 22.
+
+El procedimiento de actualización (`up -d --no-deps api web`) no cambia:
+`--no-deps` ignora la condición y sigue sin reiniciar Postgres ni Redis.
+
+### Archivos tocados
+- `docker-compose.yml` — healthchecks y condición de `depends_on`.
+
+### Verificación
+- `docker-compose config --quiet` (Compose 5.5.1, con un `.env.production`
+  copiado del ejemplo y borrado después) válido para la Opción A y para la
+  Opción B con `deploy/docker-compose.proxy-externo.yml`; la salida muestra
+  ambos healthchecks y la condición.
+- El comando del chequeo, corrido con Node local: sale con 0 contra una URL
+  que responde 200 y con 1 contra un puerto cerrado.
+- No se levantó el stack completo localmente: la prueba real es el siguiente
+  despliegue (`docker ps` debe mostrar `healthy` en `api` y `web`).
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`
