@@ -6,7 +6,7 @@ import {
   SubscriptionService,
 } from '@asistente/ai-agent';
 import { WhatsAppService } from '../services/whatsappService.js';
-import { enqueueMetaInbound } from '../services/queue/handlers.js';
+import { enqueueMetaInbound, type MetaInboundPayload } from '../services/queue/handlers.js';
 import { HttpError } from '../lib/http.js';
 import {
   maskPhone,
@@ -44,6 +44,205 @@ async function resolveTenantByWhatsApp(params: {
   }
 
   return null;
+}
+
+function asArray(value: unknown): any[] {
+  return Array.isArray(value) ? value : [];
+}
+
+interface ParsedMetaMessage {
+  text: string;
+  buttonAction?: MetaInboundPayload['buttonAction'];
+}
+
+/**
+ * Extrae el texto de un mensaje de Meta y, si es uno de los botones de la
+ * confirmación de cita, el id de la cita a la que apunta.
+ */
+function parseMetaMessage(message: Record<string, any>): ParsedMetaMessage {
+  if (message.type === 'text') return { text: message.text?.body || '' };
+
+  // `interactive` es el botón de un mensaje interactivo; `button` es el botón
+  // de respuesta rápida de una plantilla. Ambos pueden traer `confirm_<id>`.
+  if (message.type === 'interactive' || message.type === 'button') {
+    const replyButton =
+      message.type === 'interactive'
+        ? message.interactive?.button_reply
+        : { id: message.button?.payload, title: message.button?.text };
+    const buttonId = typeof replyButton?.id === 'string' ? replyButton.id : '';
+    const title = typeof replyButton?.title === 'string' ? replyButton.title : '';
+
+    // El id de la cita se manda aparte: si solo se pasa "Confirmar Asistencia"
+    // el agente confirma la próxima cita del paciente, que no siempre es la
+    // del mensaje que trae el botón.
+    const confirmId = buttonId.startsWith('confirm_') ? buttonId.slice('confirm_'.length) : '';
+    if (confirmId) {
+      return { text: 'Confirmar Asistencia', buttonAction: { kind: 'CONFIRM', appointmentId: confirmId } };
+    }
+    const rescheduleId = buttonId.startsWith('reschedule_') ? buttonId.slice('reschedule_'.length) : '';
+    if (rescheduleId) {
+      return { text: 'Reagendar Cita', buttonAction: { kind: 'RESCHEDULE', appointmentId: rescheduleId } };
+    }
+
+    if (title.toLowerCase().includes('confirmar')) return { text: 'Confirmar Asistencia' };
+    if (title.toLowerCase().includes('reagendar')) return { text: 'Reagendar Cita' };
+    return { text: title || buttonId };
+  }
+
+  if (message.type === 'audio' || message.type === 'voice') return { text: '[Mensaje de voz recibido]' };
+  if (message.type === 'image') return { text: message.image?.caption || '[Imagen recibida]' };
+  return { text: '' };
+}
+
+type MetaMessageResult =
+  | { status: 'received'; queued: boolean; duplicateJob: boolean }
+  | { status: 'duplicate' | 'handed_over' | 'ignored' | 'unknown_number' };
+
+type ResolvedTenant = Awaited<ReturnType<typeof resolveTenantByWhatsApp>>;
+
+/** Persiste un mensaje entrante de Meta y encola su turno. */
+async function processMetaMessage(
+  request: FastifyRequest,
+  value: Record<string, any>,
+  message: Record<string, any>,
+  resolveTenant: () => Promise<ResolvedTenant>
+): Promise<MetaMessageResult> {
+  const { text: incomingText, buttonAction } = parseMetaMessage(message ?? {});
+  if (!incomingText) return { status: 'ignored' };
+
+  const senderRawPhone = String(message.from || '');
+  const senderPhoneE164 = normalizeMexicanPhone(senderRawPhone);
+  // El contacto se busca por wa_id: en un lote con varios remitentes,
+  // `contacts[0]` puede ser de otra persona.
+  const contacts = asArray(value?.contacts);
+  const contact = contacts.find((c) => c?.wa_id === message.from) ?? (contacts.length === 1 ? contacts[0] : null);
+  const senderName = contact?.profile?.name || 'Paciente';
+  const phoneNumberId = value?.metadata?.phone_number_id;
+  const externalMessageId = message.id ? String(message.id) : undefined;
+
+  request.log.info(
+    { sender: maskPhone(senderPhoneE164), channel: 'WHATSAPP' },
+    'Mensaje entrante de WhatsApp'
+  );
+
+  const tenant = await resolveTenant();
+  if (!tenant) {
+    // 200 y no 404: Meta reintenta cualquier respuesta distinta de 2xx durante
+    // horas, y un número sin clínica no se va a arreglar solo con reintentos.
+    request.log.warn(
+      { phoneNumberId: phoneNumberId ?? null },
+      'Mensaje de WhatsApp para un número no asociado a ninguna clínica activa; se descarta'
+    );
+    return { status: 'unknown_number' };
+  }
+
+  const patient = await db.patient.upsert({
+    where: { tenantId_phoneE164: { tenantId: tenant.id, phoneE164: senderPhoneE164 } },
+    update: {
+      fullName: senderName !== 'Paciente' ? senderName : undefined,
+      whatsappId: senderRawPhone,
+    },
+    create: {
+      tenantId: tenant.id,
+      fullName: senderName,
+      phoneE164: senderPhoneE164,
+      whatsappId: senderRawPhone,
+    },
+  });
+
+  let conversation = await db.conversation.findFirst({
+    where: { tenantId: tenant.id, patientId: patient.id, channel: 'WHATSAPP' },
+  });
+
+  if (conversation) {
+    conversation = await db.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date() },
+    });
+  } else {
+    conversation = await db.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        patientId: patient.id,
+        channel: 'WHATSAPP',
+        externalChannelId: senderRawPhone,
+      },
+    });
+  }
+
+  const conversationId = conversation.id;
+  const isHandedOver = conversation.isHandedOverToHuman;
+
+  // El turno del agente y el envío por WhatsApp se ejecutan en la cola:
+  // Meta exige una respuesta rápida y reintenta el webhook si tardamos, lo
+  // que duplicaría respuestas y citas. El mensaje entrante ya quedó
+  // persistido, así que aparece de inmediato en la bandeja omnicanal.
+  const enqueueTurn = (inboundMessageId: string) =>
+    enqueueMetaInbound({
+      conversationId,
+      patientId: patient.id,
+      tenantId: tenant.id,
+      inboundMessageId,
+      text: incomingText,
+      channel: 'WHATSAPP',
+      phoneNumberId,
+      buttonAction,
+    });
+
+  // Idempotencia: Meta reintenta el mismo wamid; se descarta sin duplicar respuesta.
+  // Se vuelve a encolar con la misma llave (`meta:<id>`, que la cola deduplica):
+  // si el intento anterior guardó el mensaje pero falló antes de encolarlo, el
+  // reintento de Meta es la única oportunidad de que ese turno se conteste.
+  const handleDuplicate = async (duplicateId: string): Promise<MetaMessageResult> => {
+    request.log.info({ externalMessageId }, 'Mensaje duplicado de Meta ignorado');
+    if (!isHandedOver) await enqueueTurn(duplicateId);
+    return { status: 'duplicate' };
+  };
+
+  if (externalMessageId) {
+    const duplicate = await db.message.findFirst({
+      where: { conversationId, externalMessageId },
+      select: { id: true },
+    });
+    if (duplicate) return handleDuplicate(duplicate.id);
+  }
+
+  let inboundMessageId: string;
+  try {
+    const created = await db.message.create({
+      data: {
+        conversationId,
+        tenantId: tenant.id,
+        direction: 'INBOUND',
+        senderRole: 'PATIENT',
+        content: incomingText,
+        channel: 'WHATSAPP',
+        externalMessageId,
+        rawPayload: JSON.stringify(message),
+      },
+      select: { id: true },
+    });
+    inboundMessageId = created.id;
+  } catch (error) {
+    // Dos entregas simultáneas del mismo wamid: la consulta de arriba no vio
+    // la otra, pero el índice único (conversación, wamid) sí. Es un duplicado.
+    if ((error as { code?: string })?.code === 'P2002' && externalMessageId) {
+      const winner = await db.message.findFirst({
+        where: { conversationId, externalMessageId },
+        select: { id: true },
+      });
+      if (winner) return handleDuplicate(winner.id);
+    }
+    throw error;
+  }
+
+  if (isHandedOver) {
+    request.log.info({ conversationId }, 'Conversación en modo humano: IA silenciada');
+    return { status: 'handed_over' };
+  }
+
+  const jobId = await enqueueTurn(inboundMessageId);
+  return { status: 'received', queued: Boolean(jobId), duplicateJob: jobId === null };
 }
 
 /**
@@ -100,6 +299,14 @@ export async function webhookRoutes(fastify: FastifyInstance) {
   /**
    * 2. Recepción de mensajes de Meta.
    *    La firma X-Hub-Signature-256 es obligatoria: sin ella no se procesa nada.
+   *
+   *    Meta agrupa: un mismo POST puede traer varias `entry`, cada una con
+   *    varios `changes`, y cada `value` con varios `messages` (ráfagas del
+   *    mismo paciente o de varios). Antes solo se leía el primero y el resto
+   *    se perdía en silencio. Ahora se procesa cada mensaje por separado, con
+   *    su propia idempotencia por wamid: si algo falla a la mitad se responde
+   *    500, Meta reenvía el lote completo y los ya guardados se reconocen
+   *    como duplicados (reencolando su turno por si no alcanzó a encolarse).
    */
   fastify.post('/webhooks/meta', async (request: FastifyRequest, reply: FastifyReply) => {
     verifyMetaSignature(
@@ -108,144 +315,41 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     );
 
     const body = request.body as Record<string, any>;
-    const entry = body?.entry?.[0];
-    const value = entry?.changes?.[0]?.value;
-    const message = value?.messages?.[0];
+    const results: MetaMessageResult[] = [];
 
-    if (!message) {
-      return reply.status(200).send({ status: 'ignored' });
-    }
+    for (const entry of asArray(body?.entry)) {
+      for (const change of asArray(entry?.changes)) {
+        const value = change?.value;
+        const messages = asArray(value?.messages);
+        // Los `statuses` (enviado/entregado/leído) llegan por el mismo webhook.
+        // Hoy no se usan; se aceptan con 200 para que Meta no los reintente.
+        if (messages.length === 0) continue;
 
-    const senderRawPhone = String(message.from || '');
-    const senderPhoneE164 = normalizeMexicanPhone(senderRawPhone);
-    const senderName = value?.contacts?.[0]?.profile?.name || 'Paciente';
-    const phoneNumberId = value?.metadata?.phone_number_id;
-    const displayPhoneNumber = value?.metadata?.display_phone_number;
-    const externalMessageId = message.id ? String(message.id) : undefined;
+        // Una sola búsqueda de clínica por `value`, y solo si algún mensaje
+        // trae contenido (un lote de stickers no consulta la base).
+        let tenantLookup: Promise<ResolvedTenant> | null = null;
+        const resolveTenant = () =>
+          (tenantLookup ??= resolveTenantByWhatsApp({
+            phoneNumberId: value?.metadata?.phone_number_id,
+            displayPhoneNumber: value?.metadata?.display_phone_number,
+          }));
 
-    let incomingText = '';
-    if (message.type === 'text') {
-      incomingText = message.text?.body || '';
-    } else if (message.type === 'interactive') {
-      const replyButton = message.interactive?.button_reply;
-      if (
-        replyButton?.id?.startsWith('confirm_') ||
-        replyButton?.title?.toLowerCase().includes('confirmar')
-      ) {
-        incomingText = 'Confirmar Asistencia';
-      } else if (
-        replyButton?.id?.startsWith('reschedule_') ||
-        replyButton?.title?.toLowerCase().includes('reagendar')
-      ) {
-        incomingText = 'Reagendar Cita';
-      } else {
-        incomingText = replyButton?.title || replyButton?.id || '';
-      }
-    } else if (message.type === 'button') {
-      incomingText = message.button?.text || message.button?.payload || '';
-    } else if (message.type === 'audio' || message.type === 'voice') {
-      incomingText = '[Mensaje de voz recibido]';
-    } else if (message.type === 'image') {
-      incomingText = message.image?.caption || '[Imagen recibida]';
-    }
-
-    if (!incomingText) {
-      return reply.status(200).send({ status: 'ignored' });
-    }
-
-    request.log.info(
-      { sender: maskPhone(senderPhoneE164), channel: 'WHATSAPP' },
-      'Mensaje entrante de WhatsApp'
-    );
-
-    const tenant = await resolveTenantByWhatsApp({ phoneNumberId, displayPhoneNumber });
-    if (!tenant) {
-      throw new HttpError(404, 'Número de WhatsApp no asociado a ninguna clínica activa');
-    }
-
-    const patient = await db.patient.upsert({
-      where: { tenantId_phoneE164: { tenantId: tenant.id, phoneE164: senderPhoneE164 } },
-      update: {
-        fullName: senderName !== 'Paciente' ? senderName : undefined,
-        whatsappId: senderRawPhone,
-      },
-      create: {
-        tenantId: tenant.id,
-        fullName: senderName,
-        phoneE164: senderPhoneE164,
-        whatsappId: senderRawPhone,
-      },
-    });
-
-    let conversation = await db.conversation.findFirst({
-      where: { tenantId: tenant.id, patientId: patient.id, channel: 'WHATSAPP' },
-    });
-
-    if (conversation) {
-      conversation = await db.conversation.update({
-        where: { id: conversation.id },
-        data: { lastMessageAt: new Date() },
-      });
-    } else {
-      conversation = await db.conversation.create({
-        data: {
-          tenantId: tenant.id,
-          patientId: patient.id,
-          channel: 'WHATSAPP',
-          externalChannelId: senderRawPhone,
-        },
-      });
-    }
-
-    // Idempotencia: Meta reintenta el mismo wamid; se descarta sin duplicar respuesta.
-    if (externalMessageId) {
-      const duplicate = await db.message.findFirst({
-        where: { conversationId: conversation.id, externalMessageId },
-        select: { id: true },
-      });
-      if (duplicate) {
-        request.log.info({ externalMessageId }, 'Mensaje duplicado de Meta ignorado');
-        return reply.status(200).send({ status: 'duplicate' });
+        for (const message of messages) {
+          results.push(await processMetaMessage(request, value, message, resolveTenant));
+        }
       }
     }
 
-    const inboundMessage = await db.message.create({
-      data: {
-        conversationId: conversation.id,
-        tenantId: tenant.id,
-        direction: 'INBOUND',
-        senderRole: 'PATIENT',
-        content: incomingText,
-        channel: 'WHATSAPP',
-        externalMessageId,
-        rawPayload: JSON.stringify(message),
-      },
-    });
-
-    if (conversation.isHandedOverToHuman) {
-      request.log.info({ conversationId: conversation.id }, 'Conversación en modo humano: IA silenciada');
-      return reply.status(200).send({ status: 'handed_over' });
+    if (results.length === 0) {
+      return reply.status(200).send({ status: 'ignored' });
     }
 
-    // El turno del agente y el envío por WhatsApp se ejecutan en la cola:
-    // Meta exige una respuesta rápida y reintenta el webhook si tardamos, lo
-    // que duplicaría respuestas y citas. El mensaje entrante ya quedó
-    // persistido, así que aparece de inmediato en la bandeja omnicanal.
-    const jobId = await enqueueMetaInbound({
-      conversationId: conversation.id,
-      patientId: patient.id,
-      tenantId: tenant.id,
-      inboundMessageId: inboundMessage.id,
-      text: incomingText,
-      channel: 'WHATSAPP',
-      phoneNumberId,
-    });
-
-    return reply.status(200).send({
-      status: 'received',
-      queued: Boolean(jobId),
-      duplicateJob: jobId === null,
-    });
+    // Con un solo mensaje se conserva la respuesta de siempre; con lote se
+    // agrega el detalle por mensaje.
+    if (results.length === 1) {
+      return reply.status(200).send(results[0]);
+    }
+    return reply.status(200).send({ status: 'batch', results });
   });
 
   /**

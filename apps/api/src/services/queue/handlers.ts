@@ -1,5 +1,5 @@
-import { db } from '@asistente/database';
-import { OmnichannelAgent } from '@asistente/ai-agent';
+import { db, recordAudit, resolveTenantPlan, type AuditActor } from '@asistente/database';
+import { OmnichannelAgent, evaluateTriage } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
 import { WhatsAppService } from '../whatsappService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
@@ -23,6 +23,12 @@ export interface MetaInboundPayload {
   text: string;
   channel: string;
   phoneNumberId?: string;
+  /**
+   * Botón interactivo de la confirmación de cita (`confirm_<id>` /
+   * `reschedule_<id>`). Viaja aparte del texto para no perder a qué cita se
+   * refiere el paciente.
+   */
+  buttonAction?: { kind: 'CONFIRM' | 'RESCHEDULE'; appointmentId: string };
 }
 
 export type WhatsAppSendPayload =
@@ -48,15 +54,279 @@ const logger = createLogger('api:queue:handlers');
 const agent = new OmnichannelAgent();
 
 /**
+ * Actor de auditoría de lo que el canal de WhatsApp hace por su cuenta. Es el
+ * mismo identificador que usa el agente para sus herramientas: para quien lee
+ * la bitácora, confirmar con el botón o con la herramienta es la misma acción.
+ */
+const AGENT_AUDIT_ACTOR: AuditActor = { type: 'AI_AGENT', id: 'omnichannel-agent' };
+
+/** Estados de cita sobre los que todavía tiene sentido confirmar o reagendar. */
+const ACTIONABLE_APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED', 'RESCHEDULED'];
+
+type InboundConversation = NonNullable<Awaited<ReturnType<typeof loadInboundConversation>>>;
+
+function loadInboundConversation(conversationId: string, tenantId: string) {
+  return db.conversation.findFirst({
+    where: { id: conversationId, tenantId },
+    include: {
+      patient: true,
+      tenant: {
+        select: {
+          name: true,
+          address: true,
+          timezone: true,
+          planSlug: true,
+          subscriptionStatus: true,
+          trialEndsAt: true,
+          currentPeriodEnd: true,
+        },
+      },
+    },
+  });
+}
+
+interface InboundRef {
+  id: string;
+  createdAt: Date;
+}
+
+/** Marca que liga la respuesta de la IA con el mensaje entrante que contesta. */
+function replyMarker(inboundMessageId: string): string {
+  return JSON.stringify({ inReplyTo: inboundMessageId });
+}
+
+interface InboundTurnResult {
+  replyText: string;
+  /** Motivo por el que la IA cede la conversación a recepción; null si no la cede. */
+  handoverReason: string | null;
+  appointmentBookedId?: string | null;
+}
+
+/** Fecha de cita legible para el paciente, en la zona horaria de la clínica. */
+function formatAppointmentDate(date: Date, timezone: string | null | undefined): string {
+  return date.toLocaleString('es-MX', {
+    timeZone: timezone || 'America/Mexico_City',
+    dateStyle: 'full',
+    timeStyle: 'short',
+  });
+}
+
+/**
+ * Cita a la que apunta un botón interactivo, solo si es de ESTA clínica y de
+ * ESTE paciente. El id viene dentro del mensaje entrante y no se le confía a
+ * ciegas: sin este filtro bastaría un id ajeno para confirmar o reagendar la
+ * cita de otro paciente.
+ */
+function findButtonAppointment(conversation: InboundConversation, appointmentId: string) {
+  return db.appointment.findFirst({
+    where: {
+      id: appointmentId,
+      tenantId: conversation.tenantId,
+      patientId: conversation.patientId,
+      status: { in: ACTIONABLE_APPOINTMENT_STATUSES },
+      endTime: { gte: new Date() },
+    },
+    include: { doctor: true, service: true },
+  });
+}
+
+const STALE_BUTTON_REPLY =
+  'Esa cita ya no está vigente (pudo haberse cancelado, reagendado o ya pasó). ' +
+  'Si necesitas una nueva cita o tienes dudas, escríbenos por aquí y con gusto te ayudamos.';
+
+/**
+ * Botón "Confirmar Asistencia": confirma exactamente la cita del mensaje que
+ * lo trajo. Antes el botón se aplanaba a texto y el agente confirmaba "la
+ * próxima cita" del paciente, que con dos citas agendadas no es la misma.
+ * Se resuelve sin LLM porque no hay nada que interpretar.
+ */
+async function confirmAppointmentFromButton(
+  conversation: InboundConversation,
+  appointmentId: string
+): Promise<InboundTurnResult> {
+  const appointment = await findButtonAppointment(conversation, appointmentId);
+  if (!appointment) {
+    return { replyText: STALE_BUTTON_REPLY, handoverReason: null };
+  }
+
+  if (appointment.status !== 'CONFIRMED') {
+    await db.$transaction(async (tx) => {
+      // Condicional sobre el estado leído: dos toques seguidos del botón no
+      // deben duplicar la nota ni el rastro de auditoría.
+      const updated = await tx.appointment.updateMany({
+        where: { id: appointment.id, tenantId: conversation.tenantId, status: appointment.status },
+        data: {
+          status: 'CONFIRMED',
+          notes: ((appointment.notes || '') + ' | Asistencia confirmada con botón de WhatsApp').trim(),
+        },
+      });
+      if (updated.count === 0) return;
+      await recordAudit(
+        {
+          tenantId: conversation.tenantId,
+          actor: AGENT_AUDIT_ACTOR,
+          action: 'UPDATE',
+          entityType: 'APPOINTMENT',
+          entityId: appointment.id,
+          patientId: appointment.patientId,
+          changes: { status: { before: appointment.status, after: 'CONFIRMED' } },
+          metadata: {
+            tool: 'whatsapp:boton_confirmar',
+            channel: 'WHATSAPP',
+            conversationId: conversation.id,
+          },
+        },
+        tx
+      );
+    });
+  }
+
+  const when = formatAppointmentDate(appointment.startTime, conversation.tenant.timezone);
+  return {
+    replyText:
+      `¡Gracias por confirmar tu asistencia, ${conversation.patient.fullName}! 🙌\n\n` +
+      `📅 *Fecha:* ${when}\n` +
+      `👨‍⚕️ *Especialista:* ${appointment.doctor.name}\n` +
+      `🦷 *Tratamiento:* ${appointment.service.name}\n` +
+      `📍 *Ubicación:* ${conversation.tenant.address || conversation.tenant.name}\n\n` +
+      'Te sugerimos llegar 10 minutos antes. ¡Te esperamos!',
+    handoverReason: null,
+  };
+}
+
+/**
+ * Turno del agente. El historial y la llamada al LLM no cambian; lo único que
+ * se agrega es la traducción de `requiresHumanHandover` a un motivo auditable.
+ */
+async function runAgentTurn(
+  conversation: InboundConversation,
+  inbound: InboundRef,
+  text: string
+): Promise<InboundTurnResult> {
+  // Solo lo anterior al mensaje que se contesta: en una ráfaga, los mensajes
+  // posteriores del paciente tienen su propio turno y meterlos aquí invertiría
+  // el orden de la conversación que ve el modelo.
+  const recentMessages = await db.message.findMany({
+    where: {
+      conversationId: conversation.id,
+      id: { not: inbound.id },
+      createdAt: { lte: inbound.createdAt },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 8,
+    select: { senderRole: true, content: true },
+  });
+
+  const conversationHistory = recentMessages.reverse().map((storedMessage) => ({
+    role: (storedMessage.senderRole === 'PATIENT' ? 'user' : 'model') as 'user' | 'model',
+    parts: [{ text: storedMessage.content }],
+  }));
+
+  const agentResponse = await agent.processMessage(
+    text,
+    {
+      tenantId: conversation.tenantId,
+      patientPhone: conversation.patient.phoneE164,
+      patientName: conversation.patient.fullName,
+      channel: 'WHATSAPP',
+      conversationId: conversation.id,
+    },
+    conversationHistory
+  );
+
+  const booked = agentResponse.appointmentBooked as { id?: string } | null | undefined;
+  // El motivo queda en la auditoría: una emergencia vital o una urgencia dental
+  // detectadas por el triaje se distinguen de una transferencia que pidió el
+  // paciente (herramienta `transferir_a_recepcionista_humano`).
+  const triageLevel = agentResponse.triageAlert?.level;
+
+  // Excepción deliberada: la urgencia dental aguda NO silencia a la IA. Su
+  // respuesta termina preguntando "¿te reservamos el espacio de hoy?", y si la
+  // conversación pasara a modo humano el "sí" del paciente no lo contestaría
+  // nadie hasta que recepción abriera la bandeja. La regla de negocio para
+  // URGENT_DENTAL es agendar el mismo día, no transferir.
+  const handover =
+    agentResponse.requiresHumanHandover === true && triageLevel !== 'URGENT_DENTAL';
+
+  return {
+    replyText: agentResponse.replyText,
+    handoverReason: handover
+      ? triageLevel === 'CRITICAL_EMERGENCY'
+        ? 'CRITICAL_EMERGENCY'
+        : 'TRANSFER_REQUESTED'
+      : null,
+    appointmentBookedId: booked && typeof booked === 'object' ? booked.id ?? null : null,
+  };
+}
+
+/**
+ * Clínica suspendida (prueba vencida o suscripción caída sin periodo pagado):
+ * la IA no atiende. El mensaje ya quedó guardado en la bandeja, así que el
+ * personal lo ve y puede contestar a mano.
+ *
+ * Se decidió NO mandar un aviso automático ("la clínica no está atendiendo"):
+ * saldría del número de la clínica y con su nombre, diciendo algo que la
+ * clínica no autorizó, y Meta se lo cobra a su cuenta de WhatsApp Business.
+ * La única excepción es una emergencia vital evidente: ahí se manda la
+ * indicación del 911 y se pasa a recepción, porque el silencio ante "no puedo
+ * respirar" no es aceptable por ningún motivo comercial. El triaje es local
+ * (palabras clave), no consume LLM.
+ */
+function suspendedClinicTurn(text: string): InboundTurnResult | null {
+  const triage = evaluateTriage(text);
+  if (triage.level !== 'CRITICAL_EMERGENCY') return null;
+
+  return {
+    replyText:
+      `🚨 ATENCIÓN MÉDICA INMEDIATA:\n\n${triage.adviceForPatient}\n\n` +
+      'Si necesitas auxilio urgente, por favor comunícate al 911 de inmediato.',
+    handoverReason: 'CRITICAL_EMERGENCY',
+  };
+}
+
+/**
+ * Decide la respuesta del turno. Devuelve null cuando no se debe contestar
+ * (clínica suspendida sin emergencia vital).
+ */
+async function decideInboundTurn(
+  conversation: InboundConversation,
+  inbound: InboundRef,
+  payload: MetaInboundPayload
+): Promise<InboundTurnResult | null> {
+  // Se evalúa aquí y no en el webhook: un turno encolado antes de que venciera
+  // la suscripción también debe respetar la suspensión al ejecutarse.
+  if (resolveTenantPlan(conversation.tenant).isSuspended) {
+    return suspendedClinicTurn(payload.text);
+  }
+
+  const action = payload.buttonAction;
+  if (action?.kind === 'CONFIRM') {
+    return confirmAppointmentFromButton(conversation, action.appointmentId);
+  }
+
+  if (action?.kind === 'RESCHEDULE') {
+    const appointment = await findButtonAppointment(conversation, action.appointmentId);
+    if (!appointment) return { replyText: STALE_BUTTON_REPLY, handoverReason: null };
+    // Al agente se le describe la cita concreta: "Reagendar Cita" a secas lo
+    // dejaba adivinar cuál, y con dos citas podía mover la equivocada.
+    return runAgentTurn(
+      conversation,
+      inbound,
+      `Quiero reagendar mi cita de ${appointment.service.name} con ${appointment.doctor.name} ` +
+        `del ${formatAppointmentDate(appointment.startTime, conversation.tenant.timezone)}.`
+    );
+  }
+
+  return runAgentTurn(conversation, inbound, payload.text);
+}
+
+/**
  * Procesa un mensaje entrante de Meta: historial -> agente -> respuesta.
  * Idempotencia: si la conversación ya tiene una respuesta posterior al mensaje
  * entrante (por ejemplo, un reintento tras un éxito parcial), no repite el turno.
  */
 async function processMetaInbound(payload: MetaInboundPayload, context: JobContext): Promise<void> {
-  const conversation = await db.conversation.findFirst({
-    where: { id: payload.conversationId, tenantId: payload.tenantId },
-    include: { patient: true },
-  });
+  const conversation = await loadInboundConversation(payload.conversationId, payload.tenantId);
 
   if (!conversation) {
     throw new PermanentJobError(`Conversación ${payload.conversationId} no encontrada en la clínica`);
@@ -78,12 +348,25 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
     throw new PermanentJobError(`Mensaje entrante ${payload.inboundMessageId} no encontrado`);
   }
 
-  // Reintento tras éxito parcial: ya existe una respuesta emitida después del entrante.
+  // Reintento tras éxito parcial: la respuesta de la IA a ESTE mensaje ya se
+  // guardó, o recepción ya contestó a mano después de él.
+  //
+  // Antes bastaba "cualquier saliente posterior al entrante", pero con ráfagas
+  // (Meta manda varios mensajes juntos, o el paciente escribe mientras la IA
+  // aún piensa) la respuesta al primer mensaje queda después del segundo y el
+  // segundo se daba por contestado sin estarlo. La marca `inReplyTo` liga cada
+  // respuesta con su entrante sin tocar el esquema.
   const alreadyAnswered = await db.message.findFirst({
     where: {
       conversationId: conversation.id,
       direction: 'OUTBOUND',
-      createdAt: { gte: inbound.createdAt },
+      OR: [
+        { senderRole: 'AI_AGENT', rawPayload: replyMarker(inbound.id) },
+        { senderRole: 'HUMAN_STAFF', createdAt: { gte: inbound.createdAt } },
+        // Respuestas guardadas antes de que existiera la marca: se conserva el
+        // criterio anterior para no contestar dos veces un reintento en vuelo.
+        { senderRole: 'AI_AGENT', rawPayload: null, createdAt: { gte: inbound.createdAt } },
+      ],
     },
     select: { id: true },
   });
@@ -94,47 +377,76 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
     return;
   }
 
-  const recentMessages = await db.message.findMany({
-    where: { conversationId: conversation.id, id: { not: inbound.id } },
-    orderBy: { createdAt: 'desc' },
-    take: 8,
-    select: { senderRole: true, content: true },
-  });
-
-  const conversationHistory = recentMessages.reverse().map((storedMessage) => ({
-    role: (storedMessage.senderRole === 'PATIENT' ? 'user' : 'model') as 'user' | 'model',
-    parts: [{ text: storedMessage.content }],
-  }));
-
-  const agentResponse = await agent.processMessage(
-    payload.text,
-    {
-      tenantId: conversation.tenantId,
-      patientPhone: conversation.patient.phoneE164,
-      patientName: conversation.patient.fullName,
-      channel: 'WHATSAPP',
+  const turn = await decideInboundTurn(conversation, inbound, payload);
+  if (!turn) {
+    context.logger.warn('Clínica suspendida: el mensaje se guarda pero la IA no responde', {
       conversationId: conversation.id,
-    },
-    conversationHistory
-  );
+    });
+    return;
+  }
 
-  const outboundMessage = await db.message.create({
-    data: {
+  // La respuesta y el cambio a modo humano se confirman juntos: si la IA dice
+  // "te comunico con recepción" la conversación tiene que quedar en la bandeja
+  // de recepción, y la IA no debe volver a contestar el siguiente mensaje.
+  const outboundMessage = await db.$transaction(async (tx) => {
+    const created = await tx.message.create({
+      data: {
+        conversationId: conversation.id,
+        tenantId: conversation.tenantId,
+        direction: 'OUTBOUND',
+        senderRole: 'AI_AGENT',
+        content: turn.replyText,
+        channel: 'WHATSAPP',
+        deliveryStatus: 'PENDING',
+        rawPayload: replyMarker(inbound.id),
+      },
+      select: { id: true },
+    });
+
+    if (!turn.handoverReason) {
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+      return created;
+    }
+
+    // updateMany con la condición `false`: si recepción tomó el control en el
+    // intervalo, no se duplica el cambio ni su rastro de auditoría.
+    const flipped = await tx.conversation.updateMany({
+      where: { id: conversation.id, tenantId: conversation.tenantId, isHandedOverToHuman: false },
+      data: { isHandedOverToHuman: true, lastMessageAt: new Date() },
+    });
+    if (flipped.count > 0) {
+      await recordAudit(
+        {
+          tenantId: conversation.tenantId,
+          actor: AGENT_AUDIT_ACTOR,
+          action: 'UPDATE',
+          entityType: 'CONVERSATION',
+          entityId: conversation.id,
+          patientId: conversation.patientId,
+          changes: { isHandedOverToHuman: { before: false, after: true } },
+          metadata: {
+            reason: turn.handoverReason,
+            channel: 'WHATSAPP',
+            inboundMessageId: inbound.id,
+          },
+        },
+        tx
+      );
+    }
+    return created;
+  });
+
+  if (turn.handoverReason) {
+    // Recepción se entera por la bandeja omnicanal, que marca la conversación
+    // como "Humano en Control"; el log deja además la alerta para monitoreo.
+    context.logger.warn('La IA cedió la conversación de WhatsApp a recepción', {
       conversationId: conversation.id,
-      tenantId: conversation.tenantId,
-      direction: 'OUTBOUND',
-      senderRole: 'AI_AGENT',
-      content: agentResponse.replyText,
-      channel: 'WHATSAPP',
-      deliveryStatus: 'PENDING',
-    },
-    select: { id: true },
-  });
-
-  await db.conversation.update({
-    where: { id: conversation.id },
-    data: { lastMessageAt: new Date() },
-  });
+      reason: turn.handoverReason,
+    });
+  }
 
   await jobQueue.enqueue({
     type: 'WHATSAPP_SEND',
@@ -143,26 +455,24 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
     payload: {
       kind: 'TEXT',
       toPhoneE164: conversation.patient.phoneE164,
-      text: agentResponse.replyText,
+      text: turn.replyText,
       phoneNumberId: payload.phoneNumberId,
       messageId: outboundMessage.id,
     } satisfies WhatsAppSendPayload,
   });
 
-  if (agentResponse.appointmentBooked && typeof agentResponse.appointmentBooked === 'object') {
-    const appointmentId = (agentResponse.appointmentBooked as { id?: string }).id;
-    if (appointmentId) {
-      await jobQueue.enqueue({
-        type: 'WHATSAPP_SEND',
+  if (turn.appointmentBookedId) {
+    const appointmentId = turn.appointmentBookedId;
+    await jobQueue.enqueue({
+      type: 'WHATSAPP_SEND',
+      tenantId: conversation.tenantId,
+      dedupeKey: `wa-confirm:${appointmentId}`,
+      payload: {
+        kind: 'APPOINTMENT_CONFIRMATION',
+        appointmentId,
         tenantId: conversation.tenantId,
-        dedupeKey: `wa-confirm:${appointmentId}`,
-        payload: {
-          kind: 'APPOINTMENT_CONFIRMATION',
-          appointmentId,
-          tenantId: conversation.tenantId,
-        } satisfies WhatsAppSendPayload,
-      });
-    }
+      } satisfies WhatsAppSendPayload,
+    });
   }
 }
 

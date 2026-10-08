@@ -830,6 +830,127 @@ cancelada aunque el primer cargo fuera rechazado.
   - Una clínica registrada en prueba abre el checkout de Pro y `/auth/me` sigue mostrando los cupos de prueba.
   - El preapproval `authorized` no promueve el plan; el cobro aprobado sí.
   - Un cambio posterior a Consultorio deja Pro vigente hasta el cobro y después cancela el preapproval viejo (se vio el `PUT /preapproval/<viejo>`).
+## [2026-10-08] fix(webhooks): ceder a recepción, procesar lotes y respetar suspensión
+
+**Autor:** Claude Opus 5.5 · **Commit:** `bc005e0`
+
+### Qué se hizo
+La auditoría del canal de WhatsApp encontró cinco huecos entre el webhook de
+Meta y el turno del agente en la cola:
+
+- **Traspaso a recepción ignorado.** El agente devuelve
+  `requiresHumanHandover` en una emergencia vital (triaje
+  `CRITICAL_EMERGENCY`) y cuando usa `transferir_a_recepcionista_humano`,
+  pero `processMetaInbound` nunca lo leía. La IA contestaba "te comunico con
+  recepción" y seguía respondiendo ella misma; la conversación nunca aparecía
+  como "Humano en Control" en la bandeja. Ahora la respuesta de la IA se
+  guarda y el cambio a `isHandedOverToHuman = true` se hace en la misma
+  transacción, con `recordAudit` (actor `AI_AGENT`, `UPDATE` sobre
+  `CONVERSATION`, `false → true`, motivo `CRITICAL_EMERGENCY` o
+  `TRANSFER_REQUESTED`). La última respuesta (911 o "te comunico") sí se
+  envía. Así funciona también la voz.
+  - Excepción deliberada: la urgencia dental aguda (`URGENT_DENTAL`) **no**
+    silencia a la IA aunque el motor de respaldo marque traspaso. Su
+    respuesta termina preguntando "¿te reservamos el espacio de hoy?", y en
+    modo humano el "sí" del paciente quedaría sin respuesta hasta que alguien
+    abriera la bandeja. La regla de negocio (CLAUDE.md §1.3) para ese nivel
+    es agendar el mismo día, no transferir.
+- **Lotes de Meta.** El webhook leía solo `entry[0].changes[0].messages[0]`;
+  Meta agrupa varias entradas, cambios y mensajes, y el resto se perdía en
+  silencio. Ahora se recorre todo y se encola un turno por mensaje, con la
+  misma llave de idempotencia por wamid. Detalles que salieron al hacerlo:
+  - El nombre del contacto se toma por `wa_id`, no de `contacts[0]`, que en
+    un lote puede ser de otra persona.
+  - "¿Ya se contestó este turno?" era "existe cualquier saliente posterior
+    al entrante". En una ráfaga del mismo paciente, la respuesta al primer
+    mensaje queda después del segundo, y el segundo se daba por contestado.
+    Pasaba también sin lotes, si el paciente escribía mientras la IA aún
+    pensaba. Ahora cada respuesta de la IA lleva en `rawPayload` la marca
+    `{"inReplyTo": <id del entrante>}`, que la liga con su mensaje sin migrar
+    el esquema. Se conserva el criterio viejo solo para respuestas sin marca
+    (anteriores a este cambio) y para respuestas manuales de recepción.
+  - El historial que ve el modelo se corta en el mensaje que se contesta;
+    si no, los mensajes posteriores de la ráfaga aparecían antes que él.
+  - Un duplicado se vuelve a encolar con la misma llave. Si un intento
+    anterior guardó el mensaje pero falló antes de encolarlo, el reintento
+    de Meta es la única oportunidad de contestarlo.
+  - Dos entregas simultáneas del mismo wamid chocan en el índice único:
+    ahora se tratan como duplicado y ya no como un error 500.
+  - Los `statuses` (entregado/leído) se aceptan con 200 sin hacer nada.
+  - Respuesta: con un solo mensaje se conserva el formato de siempre; con
+    lote, `{status: 'batch', results}`.
+- **Botones de la confirmación.** `confirm_<id>` y `reschedule_<id>` se
+  aplanaban a texto y se perdía el id. El agente confirmaba entonces "la
+  próxima cita" del paciente, que con dos citas no es la del mensaje. Ahora
+  el id viaja en el trabajo (`buttonAction`):
+  - Confirmar se resuelve sin LLM sobre esa cita exacta, si es de esa
+    clínica y de ese paciente y sigue vigente. Es un `updateMany`
+    condicional, para que dos toques no dupliquen la nota ni la auditoría, y
+    se audita como `AI_AGENT`.
+  - Reagendar le describe al agente la cita concreta.
+  - Un id ajeno o vencido no toca nada y recibe "esa cita ya no está vigente".
+  - Aplica también a los botones de plantilla (`type: 'button'`, id en
+    `payload`).
+- **Número desconocido.** Respondía 404. Meta reintenta toda respuesta que
+  no sea 2xx durante horas, y un número sin clínica no se arregla
+  reintentando. Ahora responde 200 `{status: 'unknown_number'}` y deja un
+  warning en el log.
+- **Clínicas suspendidas** (`resolveTenantPlan(...).isSuspended`). La IA
+  seguía contestando. Ahora el mensaje se guarda (recepción lo ve en la
+  bandeja), pero el agente no corre y no se envía nada. Se evalúa en el
+  worker y no en el webhook, para que un turno encolado antes del
+  vencimiento también lo respete.
+  - Se descartó el aviso automático de que la clínica no atiende por este
+    medio: saldría del número de la clínica y con su nombre, diciendo algo
+    que ella no autorizó, y Meta se lo cobra a su cuenta de WhatsApp
+    Business.
+  - Única excepción: una emergencia vital evidente (triaje local por
+    palabras clave, sin LLM). Recibe la indicación del 911 y pasa a
+    recepción. Callar ante "no puedo respirar" no es aceptable por ningún
+    motivo comercial.
+
+### Archivos tocados
+- `apps/api/src/services/queue/handlers.ts`: `processMetaInbound` y sus
+  helpers (traspaso auditado, botones, suspensión, marca `inReplyTo`,
+  historial), y el campo `buttonAction` en `MetaInboundPayload`.
+- `apps/api/src/routes/webhooks.ts` (solo la sección de Meta): recorrido del
+  lote, parseo de botones, 200 ante número desconocido, duplicados
+  reencolados y carrera de inserción.
+- `apps/api/src/whatsapp-inbound-test-suite.ts` (nueva): 23 casos que cubren
+  (a)–(e).
+
+### Verificación
+- `npm run build`: limpio.
+- `whatsapp-inbound-test-suite`: 23/23.
+- `npm test`: todas las demás suites pasaron (cola 28/28, seguridad, voz,
+  auditoría, etc.). En una de las corridas, la suite nueva falló un caso de
+  ráfaga y en otras tres corridas aisladas pasó completa. La causa: varios
+  servidores de API de otros trabajos corrían con el código anterior sobre
+  la misma base y su worker tomó trabajos de la cola compartida. En CI la
+  base está aislada.
+- `npm run test:stress`: falla en la sección 5 (Mercado Pago), con *"fuera
+  del horario de atención del especialista"* al agendar "mañana a las
+  17:00" en hora local. La suite de estrés no pasa por el código tocado
+  aquí; depende del día y la hora en que corre.
+- E2E con curl contra la API en `:3103`:
+  - Un lote con 2 mensajes y un `statuses` dio `batch` con 2 `received`, los
+    dos mensajes guardados.
+  - El reenvío del lote dio 2 `duplicate`.
+  - "Ayuda no puedo respirar" respondió con el 911, dejó la conversación con
+    `isHandedOverToHuman = true` y escribió la fila de auditoría con motivo
+    `CRITICAL_EMERGENCY`.
+  - Un número desconocido dio 200 `unknown_number`, con su warning en el log.
+  - La clínica de prueba se borró al terminar.
+
+### Pendientes derivados
+- Alertar a recepción fuera de la bandeja (correo o push) cuando la IA cede
+  una conversación, sobre todo en emergencias. Hoy el aviso es el estado
+  "Humano en Control" en `/dashboard/inbox` y un warning en el log.
+- El agente debería exponer el motivo del traspaso. Hoy se infiere del
+  triaje inicial. Si el LLM llama a `transferir_a_recepcionista_humano` en
+  un mensaje que el triaje clasificó como `URGENT_DENTAL`, la transferencia
+  no se aplica.
+- `test:stress` depende de la hora local (sección 5).
 
 ---
 
