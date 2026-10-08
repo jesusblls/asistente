@@ -10,6 +10,40 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] test(agent): elegir horarios del estrés sin depender del huso del proceso
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Al meter `npm run test:stress` al CI, falló en el primer run: *"ese horario
+acaba de ser reservado"* al crear la cita con anticipo. La suite fijaba esa
+cita con `setHours(17, 0)` y la reprogramación con `setHours(12, 0)`, que
+usan el reloj **del proceso**. En una máquina en CDMX eso son las 17:00 y
+12:00 de la clínica; en el runner (UTC) son las 11:00 y las 6:00 de CDMX: la
+primera cae encima de una cita que la propia suite ya creó, y la segunda
+fuera del horario de atención. Nunca falló porque solo se corría a mano, en
+CDMX. Producción también corre en UTC (contenedores), así que probar ahí es
+lo que vale.
+
+- Los dos horarios ahora salen de `getAvailableSlots` (el primer slot libre
+  del doctor en ese momento), como ya hacían las demás citas de la suite.
+- El día de prueba ya no es "mañana" a ciegas: se busca el primer día de los
+  próximos 7 con lugar para las 4 citas de la Clínica A. Mañana domingo (sin
+  horario) tumbaba la suite entera.
+
+Solo cambia la prueba; el `SchedulerService` ya resolvía bien el huso.
+
+### Archivos tocados
+- `packages/ai-agent/src/stress-test-suite.ts`.
+
+### Verificación
+Contra una base aislada (`asistente_stress_unit12`, no la de desarrollo),
+migrada y sembrada: `npm run test:stress` 44/44 con `TZ=UTC`,
+`TZ=America/Mexico_City` y `TZ=Asia/Tokyo`. `npm run test` completo en verde
+(agente 20/20, API 14/14 suites).
+
+---
+
 ## [2026-10-08] docs(todo): volver a llevar la lista viva de pendientes
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

@@ -171,23 +171,29 @@ async function runStressTestSuite() {
       });
 
     // Fecha de prueba: se toman slots realmente disponibles para no depender
-    // del día de la semana ni del horario del consultorio.
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-    const slotsA = await SchedulerService.getAvailableSlots({
-      tenantId: tenantA.id,
-      targetDateStr: tomorrowStr,
-      serviceId: tenantA.services[0].id,
-    });
-    const slotsB = await SchedulerService.getAvailableSlots({
-      tenantId: tenantB.id,
-      targetDateStr: tomorrowStr,
-      serviceId: tenantB.services[0].id,
-    });
-    if (!slotsA.length || !slotsB.length) {
-      throw new Error('No hay disponibilidad de prueba para mañana; ajusta las reglas de los doctores');
+    // del día de la semana ni del horario del consultorio. Se busca el primer
+    // día hábil a partir de mañana (domingo no tiene horario) con lugar para
+    // las 4 citas de la Clínica A que crea la suite.
+    let tomorrowStr = '';
+    let slotsA: Awaited<ReturnType<typeof SchedulerService.getAvailableSlots>> = [];
+    let slotsB: typeof slotsA = [];
+    for (let offset = 1; offset <= 7; offset += 1) {
+      const candidate = new Date(Date.now() + offset * 24 * 60 * 60 * 1000);
+      tomorrowStr = candidate.toISOString().split('T')[0];
+      slotsA = await SchedulerService.getAvailableSlots({
+        tenantId: tenantA.id,
+        targetDateStr: tomorrowStr,
+        serviceId: tenantA.services[0].id,
+      });
+      slotsB = await SchedulerService.getAvailableSlots({
+        tenantId: tenantB.id,
+        targetDateStr: tomorrowStr,
+        serviceId: tenantB.services[0].id,
+      });
+      if (slotsA.length >= 4 && slotsB.length >= 1) break;
+    }
+    if (slotsA.length < 4 || !slotsB.length) {
+      throw new Error('No hay disponibilidad de prueba en los próximos 7 días; ajusta las reglas de los doctores');
     }
 
     // Cita en Clínica A
@@ -552,8 +558,20 @@ async function runStressTestSuite() {
     console.log(`${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}`);
 
     // Cita que requiere anticipo para Endodoncia ($500 MXN)
-    const depositSlot = new Date(tomorrow);
-    depositSlot.setHours(17, 0, 0, 0);
+    // El horario sale de la disponibilidad real, no de `setHours(17)`: esa
+    // hora es del reloj del proceso, así que en un runner en UTC caía a las
+    // 11:00 de CDMX, encima de una cita ya creada arriba.
+    const firstFreeSlotA = async (): Promise<Date> => {
+      const freeSlots = await SchedulerService.getAvailableSlots({
+        tenantId: tenantA.id,
+        doctorId: tenantA.doctors[0].id,
+        targetDateStr: tomorrowStr,
+        serviceId: tenantA.services[0].id,
+      });
+      if (!freeSlots.length) throw new Error(`Sin horarios libres para la Clínica A el ${tomorrowStr}`);
+      return new Date(freeSlots[0].startTimeIso);
+    };
+    const depositSlot = await firstFreeSlotA();
 
     const apptWithDeposit = await SchedulerService.bookAppointment({
       auditActor: { type: 'SYSTEM', id: 'stress-test-suite' },
@@ -649,8 +667,7 @@ async function runStressTestSuite() {
     );
 
     // Modificar cita existente vía PATCH /api/appointments/:id
-    const newRescheduledTime = new Date(tomorrow);
-    newRescheduledTime.setHours(12, 0, 0, 0);
+    const newRescheduledTime = await firstFreeSlotA();
 
     const patchRes = await app.inject({
       method: 'PATCH',
