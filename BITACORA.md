@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] feat(queue): listar y reintentar trabajos muertos de la cola
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `a7110b2`
 
 ### Qué se hizo
 Un trabajo que agotaba sus reintentos pasaba a `DEAD` en silencio. Solo
