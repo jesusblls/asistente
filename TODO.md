@@ -65,6 +65,11 @@ qué cambio salió (el hash lleva a su entrada en [`BITACORA.md`](BITACORA.md)).
   la landing anuncian facturación CFDI 4.0, que no existe en el código.
   *(cd0262f — confirmar contra el PR de honestidad de la landing, abajo)*
 
+- **`/health` no revisa la base.** Responde `ok` mientras el proceso
+  escuche, así que el healthcheck de Docker y un monitor externo no detectan
+  un Postgres caído. Agregar un endpoint de *readiness* con `SELECT 1` y
+  usarlo en `docker-compose.yml`. *(c2a05fa)*
+
 ### Baja
 
 - El README (setup manual, Opción B) no dice que `apps/api` y
