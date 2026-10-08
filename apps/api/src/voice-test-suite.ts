@@ -31,7 +31,7 @@ import {
 } from './services/voice/pipeline.js';
 import type { TranscriptStore, TranscriptTurn } from './services/voice/transcriptStore.js';
 import { silentVoiceLogger } from './services/voice/types.js';
-import { VoiceStreamService } from './services/voiceStreamService.js';
+import { VoiceStreamService, isStreamTokenAccepted } from './services/voiceStreamService.js';
 import { buildHumanHandoverTwiml, redirectCallToHuman } from './services/voice/handover.js';
 
 /**
@@ -515,6 +515,19 @@ async function runVoiceTests(): Promise<void> {
       mediaAfterInterrupt - mediaBeforeInterrupt <= 1,
       'la reproducción del bot se detiene tras la interrupción'
     );
+  }
+
+  section('🔑 Token del stream de voz');
+  {
+    const token = 'b'.repeat(64);
+    assert(isStreamTokenAccepted(token, token, true), 'acepta el token correcto en producción');
+    assert(!isStreamTokenAccepted(token, 'b'.repeat(63) + 'c', true), 'rechaza un token distinto de la misma longitud');
+    assert(!isStreamTokenAccepted(token, 'b'.repeat(10), true), 'rechaza un token de otra longitud');
+    assert(!isStreamTokenAccepted(token, undefined, true), 'rechaza si el stream no manda token');
+    assert(!isStreamTokenAccepted(undefined, undefined, true), 'en producción sin token configurado rechaza todo (fail-closed)');
+    assert(!isStreamTokenAccepted(undefined, 'cualquiera', true), 'en producción sin token configurado no basta con mandar uno');
+    assert(isStreamTokenAccepted(undefined, undefined, false), 'en desarrollo sin token configurado se acepta');
+    assert(!isStreamTokenAccepted(token, 'otro', false), 'en desarrollo con token configurado también se exige');
   }
 
   section('📞 Puente con Twilio Media Streams');

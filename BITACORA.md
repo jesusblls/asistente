@@ -10,6 +10,70 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(seguridad)!: exigir VOICE_STREAM_TOKEN en producción
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+`VOICE_STREAM_TOKEN` era opcional y `voiceStreamService.ts` solo validaba el
+`authToken` del evento `start` cuando la variable estaba definida.
+
+**Cómo se explotaba:** en un despliegue sin la variable, cualquiera que
+conociera un `tenantId` podía abrir `wss://<host>/voice/stream` y mandar un
+`start` con el `from` que quisiera. El número que llama es la única prueba de
+identidad del paciente ante el agente, así que podía consultar o cancelar las
+citas de otro paciente y, de paso, consumir minutos pagados de
+Deepgram/Cartesia/DeepSeek. Producción hoy sí tiene el token, pero nada lo
+garantizaba: bastaba un `.env.production` regenerado desde la plantilla (que
+lo dejaba vacío con un "conviene definirlo").
+
+**Por qué la corrección lo cierra:**
+- `lib/env.ts` agrega `VOICE_STREAM_TOKEN` (≥ 32 caracteres) a las variables
+  obligatorias en producción: sin ella la API no arranca, con mensaje en
+  español que dice cómo generarla. En desarrollo solo advierte.
+- `voiceStreamService.ts` decide con `isStreamTokenAccepted()`: con token
+  configurado lo exige siempre, comparado en tiempo constante (se reutiliza
+  `safeEqual` de `webhookSecurity.ts`, ahora exportado); sin token y en
+  producción rechaza todo stream (fail-closed, segunda línea por si alguien
+  salta `env.ts`). Solo en desarrollo sin token se acepta, para probar voz en
+  local.
+- `docker-compose.yml` lo exige con `${VOICE_STREAM_TOKEN:?...}` igual que
+  `JWT_SECRET`, para que `$DC config --quiet` falle antes de construir en vez
+  de dejar la API en bucle de reinicio tras un `up -d`.
+
+Además, `env.ts` advierte (sin bloquear) si hay credenciales de SignalWire
+pero falta `SIGNALWIRE_SIGNING_KEY`: los webhooks firmados por SignalWire se
+rechazarían con 503. No es fallo duro porque una clínica puede usar SignalWire
+solo para la transferencia a recepción y recibir llamadas por Twilio.
+
+Se descartó exigir un opt-in explícito (`VOICE_STREAM_ALLOW_UNAUTHENTICATED`)
+para desarrollo: el resto de los secretos del proyecto siguen el mismo patrón
+de "obligatorio en producción, advertencia en desarrollo".
+
+### Archivos tocados
+- `apps/api/src/lib/env.ts` — variable obligatoria y advertencia de SignalWire.
+- `apps/api/src/services/voiceStreamService.ts` — `isStreamTokenAccepted()` fail-closed.
+- `apps/api/src/lib/webhookSecurity.ts` — exporta `safeEqual`.
+- `apps/api/src/routes/webhooks.ts` — comentario que decía "opcional".
+- `apps/api/src/env-validation-test-suite.ts`, `apps/api/src/voice-test-suite.ts`, `apps/api/src/observability-test-suite.ts` — pruebas.
+- `docker-compose.yml`, `deploy/.env.production.example`, `deploy/README.md`, `.env.example` — marcarla obligatoria y nota en la guía de actualización.
+
+### Verificación
+`npm run build` limpio; suite de entorno 22/22; voz 89/89 (8 nuevas del token);
+`npm test` de la API sin regresiones (las suites con base de datos requieren
+`DATABASE_URL` en el entorno; una prueba de Cartesia depende de las llaves
+locales y no de este cambio). E2E con la API compilada en el puerto 3105 y
+`NODE_ENV=production`: sin token no arranca y nombra `VOICE_STREAM_TOKEN`; con
+token de 64 hex arranca (`/health` 200); un WebSocket con token incorrecto o
+sin token se cierra con `1008 invalid_stream_token`, y con el token correcto
+pasa la validación (cierra después por `tenant_not_found`, como se esperaba).
+
+### Pendientes derivados
+Antes de desplegar, confirmar que `deploy/.env.production` del servidor tiene
+`VOICE_STREAM_TOKEN` con ≥ 32 caracteres; si no, la API no arrancará.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`

@@ -275,9 +275,10 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tenant.welcomeMessage ||
       `Bienvenido a ${tenant.name}. Conectando con tu asistente virtual.`;
 
-    // El token del stream es opcional: si está configurado se exige en el
-    // handshake del WebSocket (/voice/stream) para que nadie externo pueda
-    // inyectar audio o escuchar la conversación.
+    // El token del stream se exige en el evento `start` del WebSocket
+    // (/voice/stream) para que nadie externo pueda abrir una sesión de voz
+    // suplantando el número de un paciente. En producción es obligatorio
+    // (env.ts no arranca sin él); solo en desarrollo puede faltar.
     const streamToken = process.env.VOICE_STREAM_TOKEN;
     const authTokenParam = streamToken
       ? `\n      <Parameter name="authToken" value="${escapeXml(streamToken)}" />`
