@@ -10,6 +10,152 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(web): quitar de la landing lo que no está construido
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La landing prometía funciones que no existen en el código, cifras sin
+fuente y datos de contacto inventados. Una clínica que contrata por la
+landing y no encuentra lo prometido tiene motivo para reclamar y
+cancelar. El dueño decidió quitar lo que no está construido. Cada
+afirmación se cotejó contra el código antes de quitarla:
+
+- **Factura CFDI 4.0** (pre-footer, Hero, Pricing, FAQ, ROI, Footer): no
+  hay código de facturación. Se quitó también la pregunta de la FAQ.
+- **Google Calendar / Cal.com**: no hay integración. La agenda vive en
+  nuestra base de datos. El Hero dice ahora "Cita registrada en la agenda".
+- **Instagram / Messenger** (Pricing, metadata de `layout.tsx`): solo
+  existen en los enums del esquema. No hay webhook ni envío. Los canales
+  reales son WhatsApp y teléfono.
+- **Grabación de llamadas "en el expediente"**: no se graba audio. Lo que
+  sí existe es la transcripción por turnos en la bandeja
+  (`transcriptStore`), y eso es lo que se anuncia ahora.
+- **Testimonios**: la sección completa se borró, con su enlace del navbar.
+  Los médicos, clínicas, resultados y métricas ("4.9/5", "<15 min",
+  "99.9%") eran inventados.
+- **Aseguradoras (GNP/MetLife/AXA), CFDI y SPEI en el simulador**: la
+  respuesta guionizada sobre formas de pago ya no los menciona. El botón
+  "¿convenio con aseguradoras?" ahora pregunta por formas de pago.
+- **El simulador agendaba en una emergencia de nivel 1**: decía "reservado
+  un espacio de sobrecupo", lo que contradice la regla de triaje
+  (CLAUDE.md § 1.3). Ahora indica llamar al 911 y avisa a recepción.
+- **Cédulas profesionales y teléfonos de las clínicas del simulador**:
+  eran números con forma real y podían pertenecer a personas o negocios
+  reales. Se reemplazaron por "Línea +52 · CDMX/GDL/MTY". Se aclaró que el
+  simulador usa clínicas y respuestas de ejemplo.
+- **OXXO / SPEI / "depósito íntegro a la CLABE de tu clínica"**: el cobro
+  de anticipos usa una sola `MERCADOPAGO_ACCESS_TOKEN` de la plataforma,
+  así que el dinero no llega a la cuenta de la clínica. Los medios de pago
+  dependen de Mercado Pago. Se quitó también la "política de cancelación
+  de 12 horas", que no existe. Ahora se anuncia lo real: anticipo por
+  servicio, la cita pasa a `DEPOSIT_PAID` por webhook, confirmación por
+  WhatsApp y estado visible para recepción.
+- **"AES-256 para todos los datos"** y cumplimiento NOM-004/LFPDPPP
+  presentado como certificación: solo las credenciales de canal se
+  cifran (AES-256-GCM). La FAQ dice ahora exactamente lo que hay: HTTPS,
+  contraseñas con hash, credenciales de canal cifradas, aislamiento por
+  clínica y bitácora de auditoría inmutable. Se quitaron los sellos
+  "Cumplimiento NOM-004-SSA3" (el producto no maneja expediente clínico)
+  y "Criterio Clínico NOM-024 & NOM-004". En su lugar va "Bitácora de
+  auditoría inmutable", que sí existe.
+- **SLA 99.9%, gerente de cuenta, "API y Webhooks para ERP", sucursales,
+  turnos de quirófano, voz con nombre de marca y soporte prioritario por
+  WhatsApp** (plan Cadenas/Pro): nada de esto está construido.
+- **IA que "redacta borradores"** (Modo Copiloto): no existe. Se cambió
+  por lo real: el personal responde desde la bandeja mientras la IA está
+  en pausa.
+- **Alertas al WhatsApp del doctor o de recepción ante urgencias**: no se
+  envían. El triaje marca la conversación para recepción en la bandeja.
+- **"Indicaciones previas / ayuno"** y botón "Ver ubicación en Google
+  Maps": no existen. Los botones reales de WhatsApp son "Confirmar
+  Asistencia" y "Reagendar Cita".
+- **Cifras sin fuente**: "-80% inasistencias", "96% prefiere WhatsApp",
+  "94% cree que es humana", "35% de ingresos", "75% del trabajo", "50
+  llamadas simultáneas", "de 30% a menos del 5%", "28% promedio en
+  México" y "15 minutos" para empezar. El 80% de la calculadora ROI se
+  conserva, pero como supuesto explícito y nombrado
+  (`RECOVERY_ASSUMPTION`) y rotulado como "estimación ilustrativa".
+- **"Twilio SIP Trunking"**: el código usa Twilio Voice con Media Streams,
+  no SIP trunking.
+- **Footer y navbar**: se quitaron el teléfono "+52 (55) 4912-8830" (el
+  navbar lo presentaba como "Línea Demo", que no existe), el `wa.me` a ese
+  número en la FAQ, el domicilio de Masaryk, "Atención técnica 24/7", el
+  correo `contacto@asistentepro.mx` y la razón social "S.A.P.I. de C.V.".
+  `lib/legal.ts` deja vacíos a propósito los datos de identidad, y
+  publicar otros aquí los contradecía. La columna de contacto pasó a ser
+  "Tu Cuenta", con enlaces reales (registro, login, precios, FAQ). Las
+  especialidades ya no son enlaces falsos a `#demo`. El ROI calculator
+  mostraba "+-$2,699" cuando la ganancia salía negativa. Ahora muestra el
+  signo correcto en rojo.
+
+Lo que **se conservó** porque sí existe: voz sub-600 ms con barge-in,
+WhatsApp Cloud API con botones, triaje en 3 niveles, anticipos con Mercado
+Pago y su webhook, Modo Copiloto/takeover, prueba sin tarjeta y
+cancelación desde el panel. También los recordatorios 24h/2h, que otra
+unidad está implementando en paralelo.
+
+**Precios desde el catálogo:** `Pricing.tsx` ya no tiene precios fijos en
+el código. Nombres, precios mensual y anual, cupos (doctores, citas,
+minutos de voz) y el cobro anual (`importeDelCiclo`) salen de `PLANS` en
+`@asistente/shared-types`, el mismo catálogo que cobra Mercado Pago y
+aplica `plan.ts`. Si alguien cambia un precio, la landing no puede quedar
+desfasada. El descuento anual se calcula del catálogo ("AHORRA 20%"). El
+texto anterior, "2 MESES GRATIS", equivalía a 16.7% y no cuadraba con el
+20% real. El calculador ROI toma el precio de `PLANS['clinica-pro']`.
+`TRIAL_DURATION_DAYS` y los cupos de la prueba también salen del
+catálogo.
+
+### Archivos tocados
+- `apps/web/src/app/page.tsx` — sin testimonios, pre-footer honesto.
+- `apps/web/src/app/layout.tsx` — metadata sin Instagram/Messenger.
+- `apps/web/src/components/landing/Testimonials.tsx` — eliminado.
+- `apps/web/src/components/landing/Navbar.tsx` — sin "Testimonios" ni línea demo.
+- `apps/web/src/components/landing/Hero.tsx`
+- `apps/web/src/components/landing/Features.tsx`
+- `apps/web/src/components/landing/InteractiveDemo.tsx`
+- `apps/web/src/components/landing/RoiCalculator.tsx`
+- `apps/web/src/components/landing/Pricing.tsx` — deriva de `PLANS`.
+- `apps/web/src/components/landing/FaqSection.tsx`
+- `apps/web/src/components/landing/Footer.tsx`
+
+### Verificación
+- `npm run build` limpio.
+- `npm run lint --workspace=apps/web`: 0 errores, sin advertencias en
+  archivos tocados.
+- E2E con Playwright contra `next dev` en el puerto 3210, en escritorio
+  (1440) y móvil (375):
+  - Se recorrieron las 5 pestañas de Soluciones y se abrieron todas las
+    FAQ.
+  - Ningún texto ni HTML coincide con
+    `/CFDI|Google Calendar|Cal\.com|Instagram|Masaryk|S\.A\.P\.I|99\.9%|4\.9\/5|AES-256/i`.
+  - Precios anuales $1,199 / $2,799 / $6,399 y "AHORRA 20%" presentes.
+  - Sin scroll horizontal a 375 px y sin errores de página.
+  - Todos los anclas (`#demo #soluciones #calculadora #precios #faq`) y
+    rutas internas (`/dashboard /registro /login /privacidad /terminos`)
+    resuelven. No hay `href="#"` ni enlaces externos.
+- `npm test`: todo pasa salvo `queue-test-suite.ts` (2 aserciones del
+  reintento ante falla de Meta). Esa suite es ajena a este cambio, que no
+  toca backend.
+
+### Pendientes derivados
+Afirmaciones que se pueden volver a poner cuando exista el código:
+- Factura CFDI 4.0 de la suscripción (requiere un PAC).
+- Sincronización con Google Calendar / Cal.com.
+- Canales Instagram y Messenger (hoy solo están en los enums).
+- Grabación de llamadas.
+- Notificación activa (WhatsApp/push) a recepción ante urgencias.
+- Respuestas sugeridas por IA en Modo Copiloto.
+- Cobro de anticipos a la cuenta de Mercado Pago **de cada clínica**
+  (credencial por tenant). Hoy todos los anticipos entran a la cuenta de
+  la plataforma, y eso necesita una decisión de producto o legal aunque
+  la landing ya no lo prometa.
+- Datos de contacto y razón social reales, cuando se completen en
+  `lib/legal.ts`.
+- Testimonios, solo con clientes reales y su autorización.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`

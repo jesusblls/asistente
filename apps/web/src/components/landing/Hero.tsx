@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { TRIAL_DURATION_DAYS } from '@asistente/shared-types';
 import { 
   PhoneCall, 
   Sparkles, 
@@ -94,9 +95,9 @@ export function Hero() {
       color: 'text-sky-700 bg-sky-50 border-sky-200',
     },
     {
-      value: '-80%',
-      label: 'Menos Inasistencias',
-      description: 'Con anticipos en Mercado Pago y alertas 2h',
+      value: 'Anticipo',
+      label: 'Escudo Anti-Inasistencias',
+      description: 'Link de pago de Mercado Pago y recordatorios 24h y 2h',
       icon: ShieldCheck,
       color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
     },
@@ -108,9 +109,9 @@ export function Hero() {
       color: 'text-teal-700 bg-teal-50 border-teal-200',
     },
     {
-      value: '100%',
-      label: 'Sincronización',
-      description: 'Google Calendar y base de datos clínica',
+      value: '3 niveles',
+      label: 'Triaje de Urgencias',
+      description: 'Emergencia 911, urgencia del día o consulta de rutina',
       icon: HeartPulse,
       color: 'text-amber-700 bg-amber-50 border-amber-200',
     },
@@ -190,7 +191,7 @@ export function Hero() {
             </span>
             <span className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-teal-600" />
-              <span>Factura fiscal CFDI 4.0</span>
+              <span>{TRIAL_DURATION_DAYS} días de prueba sin tarjeta</span>
             </span>
           </div>
         </div>
@@ -207,12 +208,11 @@ export function Hero() {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-slate-900 text-base">Llamada entrante: Clínica Sonrisas Polanco</h3>
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                    En Vivo
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                    Ejemplo
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">Línea +52 (55) 4912-8830 • Latencia de respuesta: <span className="tabular-nums font-semibold text-slate-800">520 ms</span></p>
+                <p className="text-xs text-slate-500 mt-0.5">Clínica de demostración • Latencia de respuesta: <span className="tabular-nums font-semibold text-slate-800">520 ms</span></p>
               </div>
             </div>
 
@@ -255,7 +255,7 @@ export function Hero() {
               <span>Triaje: Urgencia Dental Nivel 2 • Notificación enviada a recepción</span>
             </div>
             <div className="text-slate-500">
-              Sincronizado con Google Calendar & WhatsApp
+              Cita registrada en la agenda • Confirmación por WhatsApp
             </div>
           </div>
         </div>
@@ -295,7 +295,7 @@ export function Hero() {
         {/* Official Partners & Technology */}
         <div className="mt-14 pt-8 border-t border-slate-200">
           <p className="text-center text-xs font-bold uppercase tracking-wider text-slate-400 mb-6">
-            Infraestructura médica de confianza y estándares oficiales
+            Infraestructura sobre la que opera
           </p>
           <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-slate-600 text-xs sm:text-sm font-semibold">
             <div className="flex items-center gap-2">
@@ -304,19 +304,15 @@ export function Hero() {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
-              <span>Twilio SIP Trunking (+52)</span>
+              <span>Twilio Voice (+52)</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-500"></span>
               <span>Mercado Pago México</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-              <span>Google Calendar</span>
-            </div>
-            <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
-              <span>Cumplimiento NOM-004-SSA3</span>
+              <span>Bitácora de auditoría inmutable</span>
             </div>
           </div>
         </div>

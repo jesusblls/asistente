@@ -4,11 +4,11 @@ import { InteractiveDemo } from '@/components/landing/InteractiveDemo';
 import { Features } from '@/components/landing/Features';
 import { RoiCalculator } from '@/components/landing/RoiCalculator';
 import { Pricing } from '@/components/landing/Pricing';
-import { Testimonials } from '@/components/landing/Testimonials';
 import { FaqSection } from '@/components/landing/FaqSection';
 import { Footer } from '@/components/landing/Footer';
 import Link from 'next/link';
 import { ArrowRight, ShieldCheck, Play } from 'lucide-react';
+import { TRIAL_DURATION_DAYS } from '@asistente/shared-types';
 
 export default function LandingPage() {
   return (
@@ -32,13 +32,10 @@ export default function LandingPage() {
         {/* 6. Tarifas en Pesos Mexicanos (MXN) */}
         <Pricing />
 
-        {/* 7. Testimonios Reales en CDMX, MTY y GDL */}
-        <Testimonials />
-
-        {/* 8. Preguntas Frecuentes con Filtros */}
+        {/* 7. Preguntas Frecuentes con Filtros */}
         <FaqSection />
 
-        {/* 9. Pre-Footer High Conversion CTA */}
+        {/* 8. Pre-Footer High Conversion CTA */}
         <section className="py-20 bg-slate-950 text-white border-t border-slate-800">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">
@@ -46,7 +43,7 @@ export default function LandingPage() {
             </h2>
 
             <p className="mt-5 text-slate-300 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
-              Comienza hoy mismo en menos de 15 minutos. Conserva tu número de teléfono (+52), activa WhatsApp Cloud API oficial y elimina los huecos en la agenda por inasistencias.
+              Crea la cuenta de tu clínica y pruébala {TRIAL_DURATION_DAYS} días sin tarjeta. Conserva tu número de teléfono (+52) con desvío de llamadas, conecta WhatsApp Cloud API oficial y protege tu agenda con anticipos.
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -74,18 +71,18 @@ export default function LandingPage() {
               </span>
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Soporte clínico en México</span>
+                <span>{TRIAL_DURATION_DAYS} días de prueba sin tarjeta</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Factura fiscal con CFDI 4.0</span>
+                <span>Pago de la suscripción con Mercado Pago</span>
               </span>
             </div>
           </div>
         </section>
       </main>
 
-      {/* 10. Footer */}
+      {/* 9. Footer */}
       <Footer />
     </div>
   );

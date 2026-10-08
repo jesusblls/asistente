@@ -1,13 +1,5 @@
 import Link from 'next/link';
-import { 
-  Bot, 
-  PhoneCall, 
-  Mail, 
-  MapPin, 
-  ShieldCheck, 
-  Heart, 
-  ExternalLink
-} from 'lucide-react';
+import { Bot, ShieldCheck, ExternalLink } from 'lucide-react';
 
 export function Footer() {
   return (
@@ -42,7 +34,7 @@ export function Footer() {
 
             <div className="pt-1 flex items-center gap-2 text-xs text-slate-300">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Conforme a la NOM-004-SSA3 y LFPDPPP México</span>
+              <span>Bitácora de auditoría inmutable de accesos clínicos</span>
             </div>
 
             <div className="pt-2">
@@ -62,36 +54,12 @@ export function Footer() {
               Especialidades
             </h4>
             <ul className="space-y-2.5 text-xs sm:text-sm">
-              <li>
-                <a href="#demo" className="hover:text-teal-400 transition-colors">
-                  Clínicas Dentales & Odontología
-                </a>
-              </li>
-              <li>
-                <a href="#demo" className="hover:text-teal-400 transition-colors">
-                  Dermatología & Clínicas Estéticas
-                </a>
-              </li>
-              <li>
-                <a href="#demo" className="hover:text-teal-400 transition-colors">
-                  Consultorios Médicos Privados
-                </a>
-              </li>
-              <li>
-                <a href="#demo" className="hover:text-teal-400 transition-colors">
-                  Oftalmología & Cirugía
-                </a>
-              </li>
-              <li>
-                <a href="#demo" className="hover:text-teal-400 transition-colors">
-                  Fisioterapia & Rehabilitación
-                </a>
-              </li>
-              <li>
-                <a href="#demo" className="hover:text-teal-400 transition-colors">
-                  Policlínicas & Hospitales
-                </a>
-              </li>
+              <li>Clínicas Dentales & Odontología</li>
+              <li>Dermatología & Clínicas Estéticas</li>
+              <li>Consultorios Médicos Privados</li>
+              <li>Oftalmología & Cirugía</li>
+              <li>Fisioterapia & Rehabilitación</li>
+              <li>Policlínicas & Hospitales</li>
             </ul>
           </div>
 
@@ -134,32 +102,31 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Contact in Mexico */}
+          {/* Account */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-4">
-              Soporte en México
+              Tu Cuenta
             </h4>
-            <ul className="space-y-3 text-xs sm:text-sm">
-              <li className="flex items-start gap-2.5">
-                <PhoneCall className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="block text-white font-medium">+52 (55) 4912-8830</span>
-                  <span className="text-[11px] text-slate-500">Línea directa CDMX</span>
-                </div>
+            <ul className="space-y-2.5 text-xs sm:text-sm">
+              <li>
+                <Link href="/registro" className="hover:text-teal-400 transition-colors">
+                  Crear cuenta de prueba
+                </Link>
               </li>
-              <li className="flex items-start gap-2.5">
-                <Mail className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="block text-white font-medium">contacto@asistentepro.mx</span>
-                  <span className="text-[11px] text-slate-500">Atención técnica 24/7</span>
-                </div>
+              <li>
+                <Link href="/login" className="hover:text-teal-400 transition-colors">
+                  Iniciar sesión
+                </Link>
               </li>
-              <li className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="block text-white font-medium">Av. Pdte. Masaryk 101</span>
-                  <span className="text-[11px] text-slate-500">Polanco V Secc, CDMX</span>
-                </div>
+              <li>
+                <a href="#precios" className="hover:text-teal-400 transition-colors">
+                  Planes y precios
+                </a>
+              </li>
+              <li>
+                <a href="#faq" className="hover:text-teal-400 transition-colors">
+                  Preguntas frecuentes
+                </a>
               </li>
             </ul>
           </div>
@@ -169,19 +136,13 @@ export function Footer() {
         {/* Legal & Privacy */}
         <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-6 gap-y-2">
-            <span>© 2026 AsistentePro Clínicas S.A.P.I. de C.V.</span>
+            <span>© 2026 AsistentePro</span>
             <Link href="/privacidad" className="hover:text-teal-400 transition-colors">
               Aviso de Privacidad (LFPDPPP)
             </Link>
             <Link href="/terminos" className="hover:text-teal-400 transition-colors">
               Términos de Servicio
             </Link>
-            <a href="#faq" className="hover:text-teal-400 transition-colors">
-              Cumplimiento NOM-004-SSA3
-            </a>
-            <a href="#precios" className="hover:text-teal-400 transition-colors">
-              Facturación SAT CFDI 4.0
-            </a>
           </div>
 
           <div className="flex items-center gap-1.5 text-slate-400">

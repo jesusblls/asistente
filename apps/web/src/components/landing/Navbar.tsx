@@ -8,8 +8,7 @@ import {
   X, 
   Sparkles, 
   ShieldCheck,
-  LayoutDashboard,
-  Phone
+  LayoutDashboard
 } from 'lucide-react';
 
 export function Navbar() {
@@ -42,7 +41,6 @@ export function Navbar() {
     { name: 'Soluciones', href: '#soluciones' },
     { name: 'Calculadora', href: '#calculadora' },
     { name: 'Precios', href: '#precios' },
-    { name: 'Testimonios', href: '#testimonios' },
     { name: 'FAQ', href: '#faq' },
   ];
 
@@ -94,16 +92,6 @@ export function Navbar() {
 
           {/* Action CTAs (Clean, uncluttered, no double-line wrapping) */}
           <div className="hidden md:flex items-center gap-3 shrink-0 whitespace-nowrap">
-            {/* Demo phone chip only shown when extra width is available */}
-            <a
-              href="#demo"
-              className="hidden 2xl:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 rounded-lg transition-colors border border-slate-200/60 whitespace-nowrap"
-              title="Línea demo de conmutador en CDMX"
-            >
-              <Phone className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-              <span className="tabular-nums">+52 (55) 4912-8830</span>
-            </a>
-
             {/* Dashboard Link */}
             <Link
               href="/dashboard"
@@ -171,15 +159,6 @@ export function Navbar() {
           </div>
 
           <div className="mt-4 space-y-2">
-            <a
-              href="#demo"
-              onClick={() => setMobileMenuOpen(false)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-            >
-              <Phone className="w-4 h-4 text-teal-600" />
-              <span>Línea Demo CDMX: +52 (55) 4912-8830</span>
-            </a>
-
             <Link
               href="/dashboard"
               onClick={() => setMobileMenuOpen(false)}

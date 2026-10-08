@@ -11,7 +11,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: 'AsistentePro | Asistente IA Omnicanal para Clínicas y Consultorios en México',
-  description: 'Recepcionista con Inteligencia Artificial que contesta llamadas telefónicas en México (+52) y mensajes en WhatsApp, Instagram y Messenger 24/7.',
+  description: 'Recepcionista con Inteligencia Artificial que contesta llamadas telefónicas en México (+52) y mensajes de WhatsApp 24/7, con triaje de urgencias y anticipos con Mercado Pago.',
 };
 
 export default function RootLayout({

@@ -11,88 +11,107 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
+import {
+  PLANS,
+  PLANES_CONTRATABLES,
+  TRIAL_DURATION_DAYS,
+  importeDelCiclo,
+  type PlanLimits,
+  type PlanSlug,
+} from '@asistente/shared-types';
+
+/**
+ * Lo que la landing agrega a cada plan: presentación, no números. Precios,
+ * nombres y cupos salen de `PLANS` en @asistente/shared-types —el mismo
+ * catálogo que cobra Mercado Pago y que aplica el backend—, para que lo que
+ * se anuncia no pueda separarse de lo que se cobra.
+ */
+const PLAN_PRESENTATION: Record<
+  (typeof PLANES_CONTRATABLES)[number],
+  { icon: typeof Stethoscope; badge: string; description: string; popular: boolean; ctaText: string }
+> = {
+  consultorio: {
+    icon: Stethoscope,
+    badge: 'Para Médicos Independientes',
+    description:
+      'Para consultorios dentales o médicos privados de un solo especialista que quieren automatizar WhatsApp y reducir inasistencias.',
+    popular: false,
+    ctaText: 'Comenzar Prueba Gratis',
+  },
+  'clinica-pro': {
+    icon: Crown,
+    badge: 'Más completo',
+    description:
+      'Telefonía de voz con IA (+52) y WhatsApp para clínicas dentales, dermatológicas o policlínicas con equipo.',
+    popular: true,
+    ctaText: 'Comenzar Prueba Gratis',
+  },
+  cadenas: {
+    icon: Building2,
+    badge: 'Alto Volumen',
+    description:
+      'Para clínicas grandes y hospitales privados con muchos especialistas y alto volumen de llamadas.',
+    popular: false,
+    ctaText: 'Comenzar Prueba Gratis',
+  },
+};
+
+/** Funciones reales que todos los planes contratables incluyen. */
+const SHARED_FEATURES = [
+  'WhatsApp Cloud API oficial de Meta 24/7',
+  'Triaje de urgencias en 3 niveles',
+  'Escudo Anti-Inasistencias con Mercado Pago',
+  'Recordatorios automáticos 24h y 2h antes',
+  'Bandeja web con Modo Copiloto para recepción',
+];
+
+const formatNumber = (n: number) => new Intl.NumberFormat('es-MX').format(n);
+
+function describeLimits(limits: PlanLimits): string[] {
+  return [
+    limits.maxDoctors === null
+      ? 'Especialistas ilimitados'
+      : limits.maxDoctors === 1
+        ? '1 Doctor o Especialista activo'
+        : `Hasta ${limits.maxDoctors} Doctores o Especialistas`,
+    limits.maxAppointmentsPerMonth === null
+      ? 'Citas ilimitadas'
+      : `Hasta ${formatNumber(limits.maxAppointmentsPerMonth)} citas al mes`,
+    ...(limits.voiceEnabled
+      ? [`Telefonía de Voz con IA (+52): ${formatNumber(limits.includedVoiceMinutes)} min incluidos`]
+      : []),
+  ];
+}
+
+const formatPrice = (price: number) =>
+  new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    maximumFractionDigits: 0,
+  }).format(price);
+
+const trialLimits = PLANS.trial.limits;
+
+/** Descuento anual real, calculado del catálogo (no un texto fijo). */
+const annualSavingsPct = Math.max(
+  ...PLANES_CONTRATABLES.map((slug: PlanSlug) =>
+    Math.round((1 - PLANS[slug].priceAnnualMxn / PLANS[slug].priceMonthlyMxn) * 100)
+  )
+);
+
 export function Pricing() {
   const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'ANNUAL'>('MONTHLY');
 
-  const plans = [
-    {
-      name: 'Consultorio Individual',
-      slug: 'consultorio',
-      icon: Stethoscope,
-      badge: 'Para Médicos Independientes',
-      priceMonthly: 1499,
-      priceAnnual: 1199,
-      description:
-        'Ideal para consultorios dentales o médicos privados de un solo especialista que desean automatizar WhatsApp y eliminar inasistencias.',
-      popular: false,
-      features: [
-        '1 Doctor o Especialista activo',
-        'Hasta 250 citas gestionadas al mes',
-        'WhatsApp Cloud API oficial de Meta 24/7',
-        'Escudo Anti-Inasistencias con Mercado Pago',
-        'Recordatorios automáticos 24h y 2h antes',
-        'Sincronización con Google Calendar',
-        'Bandeja web para recepcionista o doctor',
-        'Facturación fiscal CFDI 4.0 mensual',
-      ],
-      ctaText: 'Comenzar Prueba de 14 Días',
-      ctaHref: '/registro',
-    },
-    {
-      name: 'Clínica Pro',
-      slug: 'clinica-pro',
-      icon: Crown,
-      badge: 'MÁS ELEGIDO EN MÉXICO',
-      priceMonthly: 3499,
-      priceAnnual: 2799,
-      description:
-        'La solución completa con telefonía de voz en vivo (+52) y WhatsApp para clínicas dentales, dermatológicas o policlínicas con equipo.',
-      popular: true,
-      features: [
-        'Hasta 5 Doctores o gabinetes de atención',
-        'Citas ilimitadas por WhatsApp e Instagram',
-        'Telefonía de Voz con IA (+52 México) incluida (300 mins)',
-        'Triaje médico y dental con detección de urgencias',
-        'Modo Copiloto para equipo de recepción en vivo',
-        'Sincronización con Google Calendar & Cal.com',
-        'Cobro de anticipos con Mercado Pago (Tarjetas / SPEI)',
-        'Soporte técnico prioritario por WhatsApp en México',
-      ],
-      ctaText: 'Probar Clínica Pro Gratis',
-      ctaHref: '/registro',
-    },
-    {
-      name: 'Cadenas & Hospitales',
-      slug: 'cadenas',
-      icon: Building2,
-      badge: 'Multisucursal & Corporativo',
-      priceMonthly: 7999,
-      priceAnnual: 6399,
-      description:
-        'Para redes de clínicas, hospitales privados y franquicias que requieren conmutador telefónico avanzado e integraciones con su expediente clínico.',
-      popular: false,
-      features: [
-        'Doctores, recepcionistas y sucursales ilimitadas',
-        'Telefonía conmutador extendido (1,200 minutos incluidos)',
-        'Voz con IA personalizada con el nombre de tu marca',
-        'Integración con software médico o ERP vía API y Webhooks',
-        'Reglas complejas de asignación de turnos y quirófanos',
-        'Gerente de cuenta médico asignado + SLA 99.9%',
-        'Contrato corporativo y cumplimiento NOM-004-SSA3',
-        'Facturación CFDI 4.0 mensual automática',
-      ],
-      ctaText: 'Contactar a Asesor Clínico',
-      ctaHref: '/registro',
-    },
-  ];
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
+  const plans = PLANES_CONTRATABLES.map((slug) => {
+    const plan = PLANS[slug];
+    return {
+      ...PLAN_PRESENTATION[slug],
+      slug,
+      name: plan.name,
+      plan,
+      features: [...describeLimits(plan.limits), ...SHARED_FEATURES],
+    };
+  });
 
   return (
     <section id="precios" className="py-20 md:py-28 bg-white border-b border-slate-200">
@@ -105,7 +124,7 @@ export function Pricing() {
           </h2>
 
           <p className="mt-4 text-slate-600 text-base sm:text-lg leading-relaxed">
-            Sin contratos forzosos. Todos los planes incluyen 14 días de prueba completa para que evalúes el impacto en tu consultorio.
+            Sin contratos forzosos. Empiezas con {TRIAL_DURATION_DAYS} días de prueba sin tarjeta (hasta {trialLimits.maxAppointmentsPerMonth} citas y {trialLimits.includedVoiceMinutes} minutos de voz) para que evalúes el impacto en tu consultorio.
           </p>
 
           {/* Billing Cycle Switcher */}
@@ -132,7 +151,7 @@ export function Pricing() {
             >
               <span>Pago Anual</span>
               <span className="bg-amber-300 text-amber-950 text-[10px] font-black px-1.5 py-0.5 rounded">
-                2 MESES GRATIS
+                AHORRA {annualSavingsPct}%
               </span>
             </button>
           </div>
@@ -142,7 +161,7 @@ export function Pricing() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
           {plans.map((plan) => {
             const Icon = plan.icon;
-            const price = billingCycle === 'ANNUAL' ? plan.priceAnnual : plan.priceMonthly;
+            const price = billingCycle === 'ANNUAL' ? plan.plan.priceAnnualMxn : plan.plan.priceMonthlyMxn;
 
             return (
               <div
@@ -195,7 +214,9 @@ export function Pricing() {
                       </span>
                     </div>
                     <div className={`text-xs mt-1 ${plan.popular ? 'text-teal-300' : 'text-teal-700 font-medium'}`}>
-                      {billingCycle === 'ANNUAL' ? 'Facturado anualmente (Ahorro del 20%)' : 'Facturación mensual recurrente'}
+                      {billingCycle === 'ANNUAL'
+                        ? `Cobro anual de ${formatPrice(importeDelCiclo(plan.plan, 'ANNUAL'))} MXN`
+                        : 'Cobro mensual recurrente'}
                     </div>
                   </div>
 
@@ -206,8 +227,8 @@ export function Pricing() {
                     }`}>
                       Incluye:
                     </span>
-                    {plan.features.map((feat, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5 text-xs sm:text-sm">
+                    {plan.features.map((feat) => (
+                      <div key={feat} className="flex items-start gap-2.5 text-xs sm:text-sm">
                         <Check className={`w-4 h-4 shrink-0 mt-0.5 ${
                           plan.popular ? 'text-teal-400' : 'text-teal-600'
                         }`} />
@@ -222,7 +243,7 @@ export function Pricing() {
                 {/* Bottom CTA */}
                 <div className="mt-8 pt-6 border-t border-slate-200/80">
                   <Link
-                    href={plan.ctaHref}
+                    href="/registro"
                     className={`w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm transition-colors ${
                       plan.popular
                         ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-sm'
@@ -235,7 +256,7 @@ export function Pricing() {
                   <p className={`text-center text-[11px] mt-2.5 ${
                     plan.popular ? 'text-slate-400' : 'text-slate-500'
                   }`}>
-                    Prueba de 14 días sin costo
+                    Prueba de {TRIAL_DURATION_DAYS} días sin costo
                   </p>
                 </div>
 
@@ -248,15 +269,15 @@ export function Pricing() {
         <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Factura fiscal mexicana CFDI 4.0 mensual</span>
+            <span>Cancela la renovación cuando quieras desde el panel</span>
           </span>
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Paga con tarjeta de crédito, débito o transferencia SPEI</span>
+            <span>Pago con tarjeta a través de Mercado Pago</span>
           </span>
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Soporte técnico directo en México</span>
+            <span>Precios en pesos mexicanos (MXN)</span>
           </span>
         </div>
 
