@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
 import { HelpCircle, Plus, Pencil, Trash2, AlertCircle, Loader2, X } from 'lucide-react';
+import { Modal } from '@/components/ui/Modal';
 import { API_BASE_URL, apiFetch } from '@/lib/api';
 
 /**
@@ -75,6 +76,8 @@ export function FaqSection({ mode, tenantId, canEdit, onToast }: FaqSectionProps
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   const loadFaqs = useCallback(async () => {
     if (isDemo) {
@@ -127,6 +130,8 @@ export function FaqSection({ mode, tenantId, canEdit, onToast }: FaqSectionProps
     setFormError(null);
     setIsModalOpen(true);
   };
+
+  const closeModal = () => setIsModalOpen(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -324,134 +329,139 @@ export function FaqSection({ mode, tenantId, canEdit, onToast }: FaqSectionProps
         </div>
       )}
 
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-                  <HelpCircle className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    {editingId ? 'Editar Pregunta' : 'Nueva Pregunta Frecuente'}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    El Asistente IA usará esta respuesta tal cual
-                  </p>
-                </div>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        labelledBy={titleId}
+        describedBy={descriptionId}
+        dismissible={!isSubmitting}
+        panelClassName="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+              <HelpCircle className="w-4 h-4" aria-hidden="true" />
+            </div>
+            <div>
+              <h3 id={titleId} className="text-base font-bold text-slate-900">
+                {editingId ? 'Editar Pregunta' : 'Nueva Pregunta Frecuente'}
+              </h3>
+              <p id={descriptionId} className="text-xs text-slate-500">
+                El Asistente IA usará esta respuesta tal cual
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={closeModal}
+            aria-label="Cerrar"
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+          >
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            {formError && (
+              <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{formError}</span>
               </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="faq-q">
+                Pregunta del paciente *
+              </label>
+              <input
+                id="faq-q"
+                type="text"
+                required
+                maxLength={500}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="¿Tienen estacionamiento?"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+              />
             </div>
 
-            <form onSubmit={handleSubmit}>
-              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                {formError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{formError}</span>
-                  </div>
-                )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="faq-a">
+                Respuesta *
+              </label>
+              <textarea
+                id="faq-a"
+                required
+                rows={4}
+                maxLength={2000}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                placeholder="Sí, contamos con estacionamiento gratuito para pacientes en el sótano del edificio."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+              />
+            </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="faq-q">
-                    Pregunta del paciente *
-                  </label>
-                  <input
-                    id="faq-q"
-                    type="text"
-                    required
-                    maxLength={500}
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    placeholder="¿Tienen estacionamiento?"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="faq-a">
-                    Respuesta *
-                  </label>
-                  <textarea
-                    id="faq-a"
-                    required
-                    rows={4}
-                    maxLength={2000}
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    placeholder="Sí, contamos con estacionamiento gratuito para pacientes en el sótano del edificio."
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label
-                      className="block text-xs font-semibold text-slate-700 mb-1"
-                      htmlFor="faq-cat"
-                    >
-                      Categoría
-                    </label>
-                    <select
-                      id="faq-cat"
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                    >
-                      {FAQ_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      className="block text-xs font-semibold text-slate-700 mb-1"
-                      htmlFor="faq-kw"
-                    >
-                      Palabras clave
-                    </label>
-                    <input
-                      id="faq-kw"
-                      type="text"
-                      maxLength={500}
-                      value={keywords}
-                      onChange={(e) => setKeywords(e.target.value)}
-                      placeholder="estacionamiento, valet"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                    />
-                  </div>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                  htmlFor="faq-cat"
+                >
+                  Categoría
+                </label>
+                <select
+                  id="faq-cat"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                >
+                  {FAQ_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
+              <div>
+                <label
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                  htmlFor="faq-kw"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Agregar Pregunta'}
-                </button>
+                  Palabras clave
+                </label>
+                <input
+                  id="faq-kw"
+                  type="text"
+                  maxLength={500}
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                  placeholder="estacionamiento, valet"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
               </div>
-            </form>
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+            >
+              {isSubmitting ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Agregar Pregunta'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

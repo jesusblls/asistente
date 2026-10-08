@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useId } from 'react';
 import { AlertCircle, Stethoscope, X } from 'lucide-react';
+import { Modal } from '@/components/ui/Modal';
 import { ScheduleEditor, type WeeklySchedule } from '../../schedule/ScheduleEditor';
 
 export interface AddDoctorModalProps {
@@ -50,128 +51,141 @@ export function AddDoctorModal({
   isSubmitting,
   isEditing = false,
 }: AddDoctorModalProps) {
-  if (!isOpen) return null;
+  const titleId = useId();
+  const descriptionId = useId();
+  const fieldId = useId();
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-              <Stethoscope className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">
-                {isEditing ? 'Editar Especialista' : 'Registrar Nuevo Especialista'}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {isEditing
-                  ? 'Los cambios aplican de inmediato al Asistente IA'
-                  : mode === 'demo'
-                    ? 'Se agregará a la demostración interactiva'
-                    : `Se asociará a la clínica: ${tenantName || 'Activa'}`}
-              </p>
-            </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      labelledBy={titleId}
+      describedBy={descriptionId}
+      dismissible={!isSubmitting}
+      panelClassName="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+    >
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+            <Stethoscope className="w-4 h-4" aria-hidden="true" />
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div>
+            <h3 id={titleId} className="text-base font-bold text-slate-900">
+              {isEditing ? 'Editar Especialista' : 'Registrar Nuevo Especialista'}
+            </h3>
+            <p id={descriptionId} className="text-xs text-slate-500">
+              {isEditing
+                ? 'Los cambios aplican de inmediato al Asistente IA'
+                : mode === 'demo'
+                  ? 'Se agregará a la demostración interactiva'
+                  : `Se asociará a la clínica: ${tenantName || 'Activa'}`}
+            </p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar"
+          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+        >
+          <X className="w-5 h-5" aria-hidden="true" />
+        </button>
+      </div>
 
-        <form onSubmit={onSubmit}>
-          <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nombre completo del médico o especialista *
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Ej. Dra. Mariana Valdez"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-              />
+      <form onSubmit={onSubmit}>
+        <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+          {error && (
+            <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" aria-hidden="true" />
+              <span>{error}</span>
             </div>
+          )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Especialidad médica o dental *
-              </label>
-              <input
-                type="text"
-                required
-                value={specialty}
-                onChange={(e) => setSpecialty(e.target.value)}
-                placeholder="Ej. Ortodoncia y Ortopedia Maxilofacial"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Teléfono WhatsApp
-                </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+52 55 1234 5678"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Correo electrónico
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="dra.mariana@clinica.mx"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
-                />
-              </div>
-            </div>
-
-            <ScheduleEditor
-              schedule={schedule}
-              onChange={setSchedule}
-              slotDurationMinutes={slotDuration}
-              onSlotDurationChange={setSlotDuration}
+          <div>
+            <label htmlFor={`${fieldId}-1`} className="block text-xs font-semibold text-slate-700 mb-1">
+              Nombre completo del médico o especialista *
+            </label>
+            <input
+              id={`${fieldId}-1`}
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej. Dra. Mariana Valdez"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
             />
           </div>
 
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-            >
-              {isSubmitting ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Guardar Especialista'}
-            </button>
+          <div>
+            <label htmlFor={`${fieldId}-2`} className="block text-xs font-semibold text-slate-700 mb-1">
+              Especialidad médica o dental *
+            </label>
+            <input
+              id={`${fieldId}-2`}
+              type="text"
+              required
+              value={specialty}
+              onChange={(e) => setSpecialty(e.target.value)}
+              placeholder="Ej. Ortodoncia y Ortopedia Maxilofacial"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
+            />
           </div>
-        </form>
-      </div>
-    </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor={`${fieldId}-3`} className="block text-xs font-semibold text-slate-700 mb-1">
+                Teléfono WhatsApp
+              </label>
+              <input
+                id={`${fieldId}-3`}
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+52 55 1234 5678"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label htmlFor={`${fieldId}-4`} className="block text-xs font-semibold text-slate-700 mb-1">
+                Correo electrónico
+              </label>
+              <input
+                id={`${fieldId}-4`}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="dra.mariana@clinica.mx"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <ScheduleEditor
+            schedule={schedule}
+            onChange={setSchedule}
+            slotDurationMinutes={slotDuration}
+            onSlotDurationChange={setSlotDuration}
+          />
+        </div>
+
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-lg transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+          >
+            {isSubmitting ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Guardar Especialista'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
