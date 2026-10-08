@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(web): confirmar takeover y respuestas en la bandeja
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `2f20a1c`
 
 ### Qué se hizo
 En Modo En Vivo, "Tomar control" y "Enviar" de la Bandeja Omnicanal
@@ -86,7 +86,7 @@ Aquí solo se eliminó la carrera con el sondeo que quedaba.
 
 ## [2026-10-08] fix(seguridad): limitar limpiar y citas demo a la plataforma
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `efe55aa`
 
 ### Qué se hizo
 El botón **"Limpiar"** de la barra superior llamaba a
