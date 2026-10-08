@@ -12,11 +12,11 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(web): agendar en hora de CDMX y validar onboarding y agenda
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `5749706`
 
 ### Qué se hizo
 - **Hora de la cita en CDMX (alto):** el calendario armaba la fecha con
-  `new Date(\`${fecha}T${hora}:00\`)`, que usa la zona del navegador. Una
+  ``new Date(`${fecha}T${hora}:00`)``, que usa la zona del navegador. Una
   recepcionista con la laptop en otra zona (o mal configurada) agendaba a otra
   hora: las 10:00 desde Los Ángeles quedaban guardadas como 17:00Z (11:00 en
   CDMX). Ahora se convierte la hora de pared de CDMX a UTC con
