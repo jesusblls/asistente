@@ -7,6 +7,8 @@
  *  - Fechas y horas siempre presentadas en `America/Mexico_City`, nunca en la zona del navegador.
  */
 
+import { fromZonedTime } from 'date-fns-tz';
+
 export const MEXICO_CITY_TIMEZONE = 'America/Mexico_City';
 
 /**
@@ -117,6 +119,34 @@ export function formatDateKeyShort(dateKey: string): string {
     month: 'short',
     timeZone: 'UTC',
   }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
+/**
+ * Convierte una fecha (YYYY-MM-DD) y hora (HH:mm) capturadas como hora de pared
+ * de CDMX a un ISO 8601 en UTC, con `fromZonedTime` de date-fns-tz (la misma
+ * conversión que usa el SchedulerService del backend).
+ *
+ * No usar `new Date('YYYY-MM-DDTHH:mm:00')`: eso interpreta la hora en la zona
+ * del navegador, y una recepcionista fuera de CDMX (o con la laptop mal
+ * configurada) agendaría la cita a otra hora.
+ *
+ * Devuelve `null` si la fecha u hora no existen (31 de febrero, 24:30, etc.)
+ * en vez de dejar que se "desborden" silenciosamente al día siguiente.
+ */
+export function mexicoCityWallTimeToUtcIso(dateKey: string, time: string): string | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!dateMatch || !timeMatch) return null;
+
+  const [year, month, day] = dateMatch.slice(1).map(Number);
+  const [hour, minute] = timeMatch.slice(1).map(Number);
+  if (year < 1900 || month < 1 || month > 12 || hour > 23 || minute > 59) return null;
+  // Día inexistente en ese mes (p. ej. 2026-02-30).
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return null;
+
+  const utc = fromZonedTime(`${dateKey}T${time}:00`, MEXICO_CITY_TIMEZONE);
+  return Number.isNaN(utc.getTime()) ? null : utc.toISOString();
 }
 
 /** Formatea una clave YYYY-MM-DD como "10 de septiembre". */
