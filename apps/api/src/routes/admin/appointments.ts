@@ -210,6 +210,13 @@ export async function appointmentRoutes(fastify: FastifyInstance) {
 
         data.startTime = startTime;
         data.endTime = endTime;
+
+        // Cita movida a otro horario: los recordatorios enviados eran del
+        // horario anterior, así que el nuevo debe recibir los suyos.
+        if (startTime.getTime() !== existing.startTime.getTime()) {
+          data.reminderSent24h = false;
+          data.reminderSent2h = false;
+        }
       }
 
       // El candado de doble reserva sigue al horario y al estado: se recalcula
