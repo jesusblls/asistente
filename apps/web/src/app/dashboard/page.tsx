@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   PhoneCall,
@@ -30,7 +30,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function DashboardOverviewPage() {
-  const { mode, activeTenant, activeTenantId, seedTenantData } = useTenant();
+  const { mode, activeTenant, activeTenantId, seedTenantData, isPlatformAdmin, dataVersion } = useTenant();
 
   const [liveAppointments, setLiveAppointments] = useState<any[]>([]);
   const [liveConversations, setLiveConversations] = useState<any[]>([]);
@@ -78,13 +78,27 @@ export default function DashboardOverviewPage() {
   });
 
   // Manejar seed rápido
+  // Solo administradores de plataforma (la API responde 403 a los demás).
+  const [seedError, setSeedError] = useState<string | null>(null);
   const handleQuickSeed = async () => {
-    if (!activeTenantId) return;
+    if (!activeTenantId || isSeeding) return;
     setIsSeeding(true);
-    await seedTenantData(activeTenantId);
+    setSeedError(null);
+    const result = await seedTenantData(activeTenantId);
     setIsSeeding(false);
-    refreshLiveData();
+    if (!result.ok) setSeedError(result.message);
   };
+
+  // Sembrar o limpiar (aquí o desde la barra superior) sube `dataVersion`:
+  // se recarga al instante en lugar de esperar el siguiente sondeo.
+  // El ref evita refrescar de más cuando solo cambia la identidad de
+  // `refreshLiveData` (cambio de modo o de clínica).
+  const handledDataVersionRef = useRef(dataVersion);
+  useEffect(() => {
+    if (dataVersion === handledDataVersionRef.current) return;
+    handledDataVersionRef.current = dataVersion;
+    refreshLiveData();
+  }, [dataVersion, refreshLiveData]);
 
   // Métricas Demo (Showcase para Clientes)
   const demoMetrics = [
@@ -291,7 +305,7 @@ export default function DashboardOverviewPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {mode === 'live' && (
+          {mode === 'live' && isPlatformAdmin && activeTenantId && (
             <button
               onClick={handleQuickSeed}
               disabled={isSeeding}
@@ -300,6 +314,11 @@ export default function DashboardOverviewPage() {
               <Zap className="w-3.5 h-3.5 text-amber-500" />
               {isSeeding ? 'Generando...' : '+ Citas Demo'}
             </button>
+          )}
+          {seedError && (
+            <span role="alert" className="text-xs font-medium text-red-600 max-w-[16rem]">
+              {seedError}
+            </span>
           )}
 
           <Link
@@ -438,13 +457,22 @@ export default function DashboardOverviewPage() {
                         : 'Selecciona o crea una clínica en la barra superior para ver su agenda.'}
                       {activeTenantId && (
                         <div className="mt-2">
-                          <button
-                            onClick={handleQuickSeed}
-                            disabled={isSeeding}
-                            className="px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-60 transition-colors"
-                          >
-                            ⚡ Generar 4 Citas de Prueba
-                          </button>
+                          {isPlatformAdmin ? (
+                            <button
+                              onClick={handleQuickSeed}
+                              disabled={isSeeding}
+                              className="px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-60 transition-colors"
+                            >
+                              {isSeeding ? 'Generando...' : '⚡ Generar 4 Citas de Prueba'}
+                            </button>
+                          ) : (
+                            <Link
+                              href="/dashboard/calendar"
+                              className="inline-block px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors"
+                            >
+                              Agendar una cita
+                            </Link>
+                          )}
                         </div>
                       )}
                     </td>

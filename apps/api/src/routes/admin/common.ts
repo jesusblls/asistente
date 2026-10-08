@@ -1,5 +1,6 @@
 import { FastifyRequest } from 'fastify';
 import { HttpError, requireRole } from '../../lib/http.js';
+import { isPlatformAdmin, platformAdminAllowList } from '../../lib/platformAdmin.js';
 
 export function parseDate(value: unknown, field: string): Date {
   if (typeof value !== 'string' || !value.trim()) {
@@ -21,21 +22,18 @@ export function parseJsonField(value: string | null): unknown {
   }
 }
 
-export function requirePlatformAdmin(request: FastifyRequest): void {
+/**
+ * Exige un administrador de plataforma (ver `lib/platformAdmin.ts`). `accion`
+ * completa el mensaje: "Solo un administrador de plataforma puede <accion>".
+ */
+export function requirePlatformAdmin(request: FastifyRequest, accion = 'crear clínicas'): void {
   const user = requireRole(request, ['ADMIN']);
-  const allowList = (process.env.PLATFORM_ADMIN_EMAILS || '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
 
-  if (allowList.length === 0) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new HttpError(403, 'La creación de clínicas requiere configurar PLATFORM_ADMIN_EMAILS');
-    }
-    return;
+  if (platformAdminAllowList().length === 0 && process.env.NODE_ENV === 'production') {
+    throw new HttpError(403, `Para ${accion} hay que configurar PLATFORM_ADMIN_EMAILS`);
   }
 
-  if (!allowList.includes(user.email.toLowerCase())) {
-    throw new HttpError(403, 'Solo un administrador de plataforma puede crear clínicas');
+  if (!isPlatformAdmin(user)) {
+    throw new HttpError(403, `Solo un administrador de plataforma puede ${accion}`);
   }
 }

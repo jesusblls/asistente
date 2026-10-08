@@ -135,10 +135,13 @@ export async function tenantRoutes(fastify: FastifyInstance) {
 
   /**
    * Genera datos de prueba idempotentes para la clínica activa.
+   *
+   * Solo administrador de plataforma: siembra pacientes, citas y chats
+   * ficticios que se mezclarían con los reales de una clínica en operación.
    */
   fastify.post('/api/tenants/:id/seed', async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
-    requireRole(request, ['ADMIN']);
+    requirePlatformAdmin(request, 'generar datos de prueba');
     const tenantId = resolveTenantId(request, id);
     const actor = actorFromRequest(request);
 
@@ -304,18 +307,20 @@ export async function tenantRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * Limpia citas, mensajes y conversaciones de la clínica activa.
+   * Borra TODAS las citas, mensajes y conversaciones de la clínica activa.
+   *
+   * No distingue datos de prueba de datos reales: en una clínica en operación
+   * se lleva el historial de sus pacientes. Por eso es exclusivo del
+   * administrador de plataforma (sandbox y demos), nunca del ADMIN de clínica.
    */
   fastify.delete('/api/tenants/:id/reset', async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
-    // Borra el historial clínico completo de la clínica: mismo nivel de
-    // privilegio que eliminar un doctor o un servicio.
-    requireRole(request, ['ADMIN']);
+    requirePlatformAdmin(request, 'borrar el historial de una clínica');
     const tenantId = resolveTenantId(request, id);
 
     // El borrado queda registrado con sus conteos. La bitácora de auditoría
     // no se toca: es justo el rastro de que este borrado ocurrió.
-    await db.$transaction(async (tx) => {
+    const deleted = await db.$transaction(async (tx) => {
       const messages = await tx.message.deleteMany({ where: { tenantId } });
       const conversations = await tx.conversation.deleteMany({ where: { tenantId } });
       const appointments = await tx.appointment.deleteMany({ where: { tenantId } });
@@ -338,9 +343,19 @@ export async function tenantRoutes(fastify: FastifyInstance) {
         },
         tx
       );
+
+      return {
+        messages: messages.count,
+        conversations: conversations.count,
+        appointments: appointments.count,
+      };
     });
 
-    return reply.send({ success: true, message: 'Datos de prueba eliminados con éxito' });
+    return reply.send({
+      success: true,
+      deleted,
+      message: `Historial eliminado: ${deleted.appointments} citas, ${deleted.conversations} conversaciones y ${deleted.messages} mensajes`,
+    });
   });
 
   /**

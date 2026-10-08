@@ -10,6 +10,104 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(seguridad): limitar limpiar y citas demo a la plataforma
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+El botón **"Limpiar"** de la barra superior llamaba a
+`DELETE /api/tenants/:id/reset`, que borra **todas** las citas,
+conversaciones y mensajes de la clínica. No distingue datos de prueba de
+datos reales. Pero el `confirm()` del botón decía *"limpiar las citas y
+mensajes de prueba"*, y la ruta solo pedía rol `ADMIN`.
+
+**Cómo se explotaba (por accidente o a propósito):** cualquier ADMIN de una
+clínica en operación, en Modo En Vivo, pulsaba "Limpiar", aceptaba un
+diálogo que hablaba de "datos de prueba" y perdía el historial de todos sus
+pacientes. La bitácora de auditoría registraba el borrado, pero no lo
+revertía. "+ Citas Demo" tenía el mismo alcance: metía 4 pacientes y citas
+ficticios en la agenda real de la clínica. Además fallaba en silencio, y si
+salía bien recargaba la página completa.
+
+**Por qué la corrección lo cierra:**
+- `POST /seed` y `DELETE /reset` ahora usan `requirePlatformAdmin`, el mismo
+  control de `PLATFORM_ADMIN_EMAILS` que ya protegía el alta de clínicas.
+  Cualquier otro usuario, ADMIN de clínica incluido, recibe **403** y no se
+  escribe ni se borra nada. Ocultar los botones es solo comodidad; el control
+  real está en la API.
+- La regla vive en `lib/platformAdmin.ts` (`isPlatformAdmin`). La usan los
+  guardias y también `GET /auth/me`, que ahora devuelve `isPlatformAdmin`,
+  así que el panel y la API no pueden discrepar. Sin lista configurada, en
+  producción nadie es administrador de plataforma (falla cerrado) y en
+  desarrollo lo es cualquier ADMIN. Se conservó ese comportamiento del alta
+  de clínicas para no romper un clon recién levantado.
+- En el panel, "+ Citas Demo", "Limpiar" y "Crear Nuevo Cliente" solo
+  aparecen para administradores de plataforma. "Limpiar" abre un modal
+  (`ResetTenantModal`) que explica qué se borra, incluidos los pacientes
+  reales, y qué se conserva. El botón de borrar no se habilita hasta escribir
+  el nombre exacto de la clínica.
+- Las dos acciones muestran un aviso de éxito o de error con el mensaje de
+  la API. El error del reset aparece dentro del modal, porque el aviso de la
+  página queda detrás del fondo oscurecido. Ya no se recarga la página:
+  `TenantContext` sube un contador `dataVersion` y las vistas se refrescan
+  con él.
+- `reset` responde cuántos registros borró, y ese conteo es el que se
+  muestra en el aviso.
+
+Ajustes en el mismo componente:
+- La barra superior decía siempre **"WhatsApp Cloud API Activa"**, aunque la
+  clínica no tuviera WhatsApp conectado. También caía a "Sonrisas Polanco"
+  mientras cargaba. Ahora solo muestra el nombre y el teléfono reales. No se
+  añadió un indicador de canal: el estado real lo expone otra unidad
+  (`GET /api/channels`).
+- El modal "Dar de Alta Nueva Clínica" tiene ahora `role="dialog"`,
+  `aria-modal` y título enlazado. Además pone el foco inicial en el nombre,
+  cierra con Escape, mantiene Tab dentro del modal y devuelve el foco al
+  cerrar (hook `useModalDialog`). Si el alta falla, ahora se avisa; antes
+  no pasaba nada.
+- Resumen General: sus botones de sembrar siguen la misma regla. En el
+  estado vacío, quien no es administrador de plataforma ve "Agendar una
+  cita".
+- `fetchAuthMe()` comparte una sola petición en vuelo a `/auth/me` entre
+  `TenantProvider` y `OnboardingGate`, para no duplicarla al montar el panel.
+
+### Archivos tocados
+- `apps/api/src/lib/platformAdmin.ts` (nuevo): `isPlatformAdmin`, `platformAdminAllowList`.
+- `apps/api/src/routes/admin/common.ts`: `requirePlatformAdmin(request, accion)` reutiliza la regla.
+- `apps/api/src/routes/admin/tenants.ts`: seed y reset exigen administrador de plataforma; el reset devuelve conteos.
+- `apps/api/src/routes/auth.ts`: `isPlatformAdmin` en `GET /auth/me`.
+- `apps/api/src/sandbox-tools-test-suite.ts` (nuevo): 15 pruebas.
+- `apps/api/src/audit-test-suite.ts`, `apps/api/src/security-test-suite.ts`: declaran su administrador de plataforma (antes dependían de que la lista estuviera vacía).
+- `apps/web/src/context/TenantContext.tsx`: `isPlatformAdmin`, `dataVersion`; seed y reset devuelven `{ ok, message }`.
+- `apps/web/src/lib/api.ts`: `fetchAuthMe()`.
+- `apps/web/src/components/auth/OnboardingGate.tsx`: usa `fetchAuthMe()`.
+- `apps/web/src/components/dashboard/DashboardShell.tsx`: herramientas de sandbox condicionadas, avisos de éxito o error, encabezado honesto, accesibilidad del modal.
+- `apps/web/src/components/dashboard/ResetTenantModal.tsx` (nuevo).
+- `apps/web/src/hooks/useModalDialog.ts` (nuevo).
+- `apps/web/src/app/dashboard/page.tsx`: siembra solo para administrador de plataforma, error visible, refresco por `dataVersion`.
+
+### Verificación
+- `npm run build` limpio; `npm test` 15/15 suites (incluye la nueva
+  `sandbox-tools`: el ADMIN de clínica y Recepción reciben 403 en seed y reset
+  sin que cambie ningún conteo; el administrador de plataforma recibe 200;
+  `/auth/me` reporta el indicador; sin lista, falla cerrado en producción).
+- `audit` y `security` también pasan con `PLATFORM_ADMIN_EMAILS` ajeno
+  exportado en el entorno.
+- `npm run lint --workspace=apps/web`: 0 errores, 9 avisos (los mismos de antes).
+- E2E (API en 3107 y web en 3207, clínicas desechables ya borradas):
+  - `curl` como ADMIN de clínica a reset y a seed: 403, y la conversación
+    sigue ahí.
+  - Playwright como ADMIN de clínica: sin "Limpiar", sin "+ Citas Demo" y
+    sin "WhatsApp Cloud API Activa".
+  - Playwright como administrador de plataforma: "+ Citas Demo" muestra el
+    aviso sin recargar.
+  - Modal de "Limpiar": el foco entra al campo; con un nombre incompleto el
+    botón queda deshabilitado; Escape cierra; con el nombre exacto borra y
+    avisa con los conteos.
+  - Modal de alta de clínica: el foco entra al nombre y Escape lo cierra.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`

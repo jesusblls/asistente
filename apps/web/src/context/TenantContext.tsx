@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL, apiFetch, isAuthenticated, getSessionTenant } from '../lib/api';
+import { API_BASE_URL, apiFetch, fetchAuthMe, isAuthenticated, getSessionTenant } from '../lib/api';
 
 export type DashboardMode = 'live' | 'demo';
 
@@ -56,8 +56,32 @@ interface TenantContextType {
     address?: string;
   }) => Promise<TenantItem | null>;
   updateTenant: (id: string, data: Partial<TenantItem>) => Promise<TenantItem | null>;
-  seedTenantData: (tenantId: string) => Promise<boolean>;
-  resetTenantData: (tenantId: string) => Promise<boolean>;
+  seedTenantData: (tenantId: string) => Promise<SandboxActionResult>;
+  resetTenantData: (tenantId: string) => Promise<SandboxActionResult>;
+  /**
+   * Si la sesión es de un administrador de plataforma (`PLATFORM_ADMIN_EMAILS`).
+   * Solo ellos ven `+ Citas Demo` y `Limpiar`; la API lo vuelve a verificar.
+   */
+  isPlatformAdmin: boolean;
+  /** Sube tras sembrar o limpiar la clínica: las vistas lo usan para recargar. */
+  dataVersion: number;
+}
+
+export interface SandboxActionResult {
+  ok: boolean;
+  /** Mensaje listo para mostrar en un toast, de éxito o de error. */
+  message: string;
+}
+
+async function readSandboxResult(res: Response, fallbackError: string): Promise<SandboxActionResult> {
+  let body: { message?: string; error?: string } = {};
+  try {
+    body = await res.json();
+  } catch {
+    // Respuesta sin JSON (p. ej. un proxy caído): se usa el mensaje genérico.
+  }
+  if (res.ok) return { ok: true, message: body.message || 'Listo' };
+  return { ok: false, message: body.error || body.message || fallbackError };
 }
 
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
@@ -82,6 +106,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     }
   });
   const [loadingTenants, setLoadingTenants] = useState<boolean>(true);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [dataVersion, setDataVersion] = useState(0);
 
   const setMode = useCallback((newMode: DashboardMode) => {
     setModeState(newMode);
@@ -163,7 +189,15 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         if (active) setLoadingTenants(false);
       }
     };
+    const loadSessionFlags = async () => {
+      if (!isAuthenticated()) return;
+      // Sin respuesta (null) se asume que no es administrador de plataforma:
+      // las herramientas destructivas quedan ocultas, nunca expuestas por error.
+      const data = await fetchAuthMe();
+      if (active) setIsPlatformAdmin(data?.isPlatformAdmin === true);
+    };
     init();
+    loadSessionFlags();
     return () => {
       active = false;
     };
@@ -200,26 +234,30 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         const res = await apiFetch(`${API_BASE_URL}/api/tenants/${tenantId}/seed`, {
           method: 'POST',
         });
-        return res.ok;
+        const result = await readSandboxResult(res, 'No se pudieron generar los datos de prueba');
+        if (result.ok) setDataVersion((v) => v + 1);
+        return result;
       } catch (e) {
         console.error('Error poblando datos de prueba:', e);
-        return false;
+        return { ok: false, message: 'Sin conexión con la API: no se generaron datos de prueba' };
       }
     },
     []
   );
 
-  // Limpiar datos de prueba
+  // Borrar TODO el historial clínico de la clínica (citas, chats y mensajes)
   const resetTenantData = useCallback(
     async (tenantId: string) => {
       try {
         const res = await apiFetch(`${API_BASE_URL}/api/tenants/${tenantId}/reset`, {
           method: 'DELETE',
         });
-        return res.ok;
+        const result = await readSandboxResult(res, 'No se pudo limpiar la clínica');
+        if (result.ok) setDataVersion((v) => v + 1);
+        return result;
       } catch (e) {
         console.error('Error reseteando clínica:', e);
-        return false;
+        return { ok: false, message: 'Sin conexión con la API: no se pudo confirmar el borrado' };
       }
     },
     []
@@ -265,6 +303,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         updateTenant,
         seedTenantData,
         resetTenantData,
+        isPlatformAdmin,
+        dataVersion,
       }}
     >
       {children}
