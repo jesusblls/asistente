@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(seguridad)!: exigir VOICE_STREAM_TOKEN en producción
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `c3ae695`
 
 ### Qué se hizo
 `VOICE_STREAM_TOKEN` era opcional y `voiceStreamService.ts` solo validaba el
