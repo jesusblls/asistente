@@ -274,19 +274,19 @@ Cuando DeepSeek V4.1 Flash procesa la conversación, dispone de 8 declaraciones 
 
 ### 5.3 Motor de Respaldo Heurístico (13 Intenciones)
 
-Si no se dispone de conexión a DeepSeek o falla el servicio externo, el agente activa su motor heurístico (`handleFallbackProcessing`), garantizando **cero tiempo de inactividad**:
+Si no se dispone de conexión a DeepSeek o falla el servicio externo, el agente activa su motor heurístico (`handleFallbackProcessing`), garantizando **cero tiempo de inactividad**. Excepción: si DeepSeek falla **después** de que una herramienta ya agendó, confirmó o canceló en ese turno, no se corre el respaldo (podría repetir la acción); se responde con un resumen de lo ya hecho (`summarizeTurnMutations`):
 
 - **Intención 0: Urgencias Dentales Agudas:** Detecta dolor severo (nivel ≥ 7, abscesos, traumatismos) y canaliza con el cirujano maxilofacial o endodoncista el mismo día.
-- **Intención 1: Confirmación de Asistencia:** Detecta frases como `"asistencia"`, `"confirmo"`, `"sí confirmo"`, `"allá nos vemos"`. Actualiza la cita en BD y devuelve confirmación con dirección y valet parking.
+- **Intención 1: Confirmación de Asistencia:** Exige intención afirmativa clara (`"sí, confirmo"`, `"Confirmar Asistencia"`, `"allá nos vemos"`; `"sí"` solo si el asistente acaba de pedir la confirmación). Las preguntas (`"¿cómo confirmo?"`) y negativas (`"no puedo confirmar"`) no tocan la cita: se explican o se ofrece reagendar/cancelar (`classifyConfirmIntent`). La nota registra el canal real.
 - **Intención 2: Agradecimientos y Cortesías:** Responde amablemente a `"gracias"`, `"muchas gracias"`, `"excelente día"`, recordando el horario de su cita agendada si existe.
 - **Intención 3: Consulta de Cita:** Responde a `"¿cuándo es mi cita?"`, `"¿a qué hora es?"`, consultando la cita en BD y mostrándola en horario de CDMX.
 - **Intención 4: Cancelación de Cita:** Cancela la cita activa sin penalizaciones ante expresiones como `"no voy a poder ir"`, `"cancelar cita"`.
-- **Intención 5: Reagendar Cita:** Ofrece de inmediato los 3 mejores horarios del día siguiente al solicitar `"reagendar"` o `"cambiar fecha"`.
-- **Intención 6: Selección de Turno (1, 2, 3 o por hora):** Permite al paciente responder con `"la 1"`, `"el 2"`, `"a las 4"` para apartar el slot y formalizar la cita.
+- **Intención 5: Reagendar Cita:** Ofrece los 3 próximos horarios reales (buscando hasta 14 días) para el servicio de la cita actual al solicitar `"reagendar"` o `"cambiar fecha"`.
+- **Intención 6: Selección de Turno (1, 2, 3 o por hora):** Resuelve `"la 1"`, `"segunda"`, `"a las 10:50"` contra las opciones exactas del último mensaje. En un reagendado, `bookAppointment({ replacesAppointmentId })` cancela la cita anterior y crea la nueva en la misma transacción (conserva el anticipo ya pagado).
 - **Intención 7: Respuestas Afirmativas Contextuales:** Si el mensaje previo del asistente ofrecía agendar y el paciente dice `"sí"`, `"por favor"`, `"va"`, despliega los horarios disponibles.
 - **Intención 8: Detección de Tratamiento Específico:** Identifica menciones de `"limpieza"`, `"blanqueamiento"`, `"resina"`, `"muela del juicio"` y ofrece el precio en MXN y slots de agenda.
 - **Intención 9: Precios y Menú de Servicios (Opción 2):** Envía la lista de precios oficiales de la clínica en Pesos Mexicanos.
-- **Intención 10: Ubicación, Estacionamiento y Seguros (Opción 3):** Explica dirección física, valet parking, pagos a MSI y aseguradoras con convenio de reembolso.
+- **Intención 10: Ubicación, Estacionamiento y Seguros (Opción 3):** Responde solo con la dirección del tenant y sus FAQs más relevantes (`rankFaqItems`); si no hay dato oficial, no lo inventa y ofrece comunicar con recepción.
 - **Intención 11: Solicitud General de Cita (Opción 1):** Presenta slots para el día siguiente con opciones numeradas.
 - **Intención 12: Saludo Inicial y Menú Principal:** Despliega el menú de bienvenida con las opciones 1️⃣, 2️⃣ y 3️⃣.
 
