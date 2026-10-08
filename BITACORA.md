@@ -44,6 +44,40 @@ migrada y sembrada: `npm run test:stress` 44/44 con `TZ=UTC`,
 
 ---
 
+## [2026-10-08] fix(deploy): retención aunque falle la copia externa del respaldo
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La revisión de código de `deploy/backup.sh` encontró tres problemas:
+
+- **Con el remoto de rclone caído, el disco se llenaba.** La copia externa
+  fallida salía del script antes de la retención, así que cada noche se
+  sumaba un respaldo local y nunca se borraba ninguno, en el mismo disco que
+  la base. Ahora la retención corre igual y el script sale con error **al
+  final**, para que cron lo siga reportando.
+- **`.env.production` se leía distinto que Compose.** Un `POSTGRES_DB=x   #
+  comentario`, fin de línea CRLF o `export POSTGRES_USER=...` daban un valor
+  que Compose no usa, y `pg_dump` apuntaba a una base inexistente todas las
+  noches. Se normalizan igual que Compose.
+- El volcado se descomprimía tres veces para revisarlo; ahora la cabecera y
+  el primer `CREATE TABLE` se buscan en una sola lectura que corta al
+  encontrarlos.
+
+En `deploy/README.md`, la prueba de restauración no decía `cd
+~/apps/asistente` y usa rutas relativas; también aclara la Opción A.
+
+### Archivos tocados
+- `deploy/backup.sh`, `deploy/README.md`.
+
+### Verificación
+`bash -n` y `shellcheck` limpios. Con `docker` y `rclone` falsos: volcado
+bueno → 0; vacío → 1; `pg_dump` falla → 1; rclone falla → borra el respaldo
+vencido y sale 1 con el local creado; `.env` con `export`, CRLF y comentario
+final → `pg_dump -U pguser ... clinica`.
+
+---
+
 ## [2026-10-08] docs(todo): volver a llevar la lista viva de pendientes
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

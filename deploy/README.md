@@ -193,15 +193,18 @@ define el destino en la línea de cron:
 15 3 * * * BACKUP_RCLONE_REMOTE=b2:asistente-backups /home/<usuario>/apps/asistente/deploy/backup.sh >> /home/<usuario>/backups/backup.log 2>&1
 ```
 
-Si la copia falla, el script termina con error aunque el respaldo local se
-haya creado. La retención del destino remoto se configura en el propio
-bucket (regla de ciclo de vida), no en este script.
+Si la copia falla, el respaldo local queda creado y la retención local se
+aplica igual (para que un remoto caído no llene el disco), pero el script
+termina con error para que cron lo reporte. La retención del destino remoto
+se configura en el propio bucket (regla de ciclo de vida), no en este script.
 
 **4. Probar una restauración** al menos una vez, y después de vez en cuando:
 un respaldo que nunca se restauró no está comprobado. Hazlo en una base
-**aparte**, nunca sobre la de producción:
+**aparte**, nunca sobre la de producción (en la Opción A cambia los `-f` por
+`--profile standalone`):
 
 ```bash
+cd ~/apps/asistente
 DC="docker compose --env-file deploy/.env.production -f docker-compose.yml -f deploy/docker-compose.proxy-externo.yml"
 $DC exec -T postgres createdb -U asistente asistente_restore_test
 gunzip -c ~/backups/<archivo>.sql.gz | $DC exec -T postgres psql -q -v ON_ERROR_STOP=1 -U asistente asistente_restore_test

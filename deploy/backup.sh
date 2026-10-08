@@ -49,12 +49,22 @@ cd "$ASISTENTE_DIR" || fail "no existe ASISTENTE_DIR=$ASISTENTE_DIR"
 [[ -f "$ENV_FILE" ]] || fail "no existe $ASISTENTE_DIR/$ENV_FILE"
 
 # Lee una variable de .env.production sin ejecutar el archivo (no se hace
-# `source`: es un archivo de datos, no un script).
+# `source`: es un archivo de datos, no un script). Imita lo que hace Compose
+# con el mismo archivo: acepta `export`, quita el fin de línea CRLF, el
+# comentario final ` # ...` en valores sin comillas, espacios y comillas
+# envolventes. Si leyera otro valor que Compose, pg_dump apuntaría a una base
+# que no existe.
 env_value() {
-  local value
-  value="$(grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
-  value="${value%\"}"; value="${value#\"}"
-  value="${value%\'}"; value="${value#\'}"
+  local line value
+  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENV_FILE" | tail -n 1 || true)"
+  value="${line#*=}"
+  value="${value%$'\r'}"
+  case "$value" in
+    \"*) value="${value#\"}"; value="${value%%\"*}" ;;
+    \'*) value="${value#\'}"; value="${value%%\'*}" ;;
+    *) value="${value%%[[:space:]]#*}"
+       value="${value%"${value##*[![:space:]]}"}" ;;
+  esac
   printf '%s' "$value"
 }
 POSTGRES_USER="${POSTGRES_USER:-$(env_value POSTGRES_USER)}"
@@ -89,29 +99,34 @@ log "Volcando $POSTGRES_DB (modo $BACKUP_COMPOSE_MODE)..."
   || fail "pg_dump falló; no se generó respaldo"
 
 # Un pg_dump que "termina bien" sin datos (base equivocada, servicio
-# reiniciándose) produciría un gzip válido pero inútil.
-# Las revisiones corren con pipefail apagado: `grep -q` corta la lectura en
-# cuanto encuentra la línea, gzip recibe SIGPIPE y, con pipefail, eso
-# contaría como falla aunque el respaldo esté bien.
+# reiniciándose) produciría un gzip válido pero inútil. Se revisa en una sola
+# lectura que corta en cuanto encuentra la cabecera y el primer CREATE TABLE
+# (el esquema va al inicio del volcado, así que no se descomprime entero).
+# Corre con pipefail apagado: al cortar awk, gzip recibe SIGPIPE y con
+# pipefail eso contaría como falla aunque el respaldo esté bien.
 gzip -t "$TMP" || fail "el archivo comprimido está corrupto"
-if ! (set +o pipefail; gzip -dc "$TMP" | head -n 50 | grep -q 'PostgreSQL database dump'); then
-  fail "el volcado no parece un dump de PostgreSQL"
-fi
-if ! (set +o pipefail; gzip -dc "$TMP" | grep -q '^CREATE TABLE'); then
-  fail "el volcado no contiene ninguna tabla"
+if ! (set +o pipefail; gzip -dc "$TMP" | awk '
+    NR <= 50 && /PostgreSQL database dump/ { header = 1 }
+    /^CREATE TABLE/ { table = 1 }
+    header && table { ok = 1; exit }
+    END { exit !ok }'); then
+  fail "el volcado no trae la cabecera de pg_dump o no contiene ninguna tabla"
 fi
 
 mv "$TMP" "$FINAL"
 trap - EXIT
 log "Respaldo listo: $FINAL ($(du -h "$FINAL" | cut -f1))"
 
+REMOTE_FAILED=0
 if [[ -n "$BACKUP_RCLONE_REMOTE" ]]; then
   log "Copiando a $BACKUP_RCLONE_REMOTE..."
-  rclone copy "$FINAL" "$BACKUP_RCLONE_REMOTE" || fail "falló la copia externa a $BACKUP_RCLONE_REMOTE"
+  rclone copy "$FINAL" "$BACKUP_RCLONE_REMOTE" || REMOTE_FAILED=1
 fi
 
-# La retención va al final y solo tras un respaldo exitoso: si el volcado de
-# hoy falla, no se borra ninguno de los anteriores. Solo toca los archivos
+# La retención va después del respaldo y solo si este salió bien: si el
+# volcado de hoy falla, no se borra ninguno de los anteriores. Sí corre
+# aunque falle la copia externa: si no, con el remoto caído los respaldos
+# locales se acumularían sin límite en el mismo disco que la base. Solo toca los archivos
 # `asistente-auto-*` de este script: los respaldos manuales previos a una
 # actualización (`asistente-<fecha>.sql.gz`, ver README) no se borran solos.
 # -mtime +N: modificados hace más de N*24 h.
@@ -120,4 +135,10 @@ DELETED="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'asistente-auto-*.sql.gz
 if [[ -n "$DELETED" ]]; then
   log "Eliminados por retención (> $BACKUP_RETENTION_DAYS días):"
   printf '%s\n' "$DELETED"
+fi
+
+# Al final, para que la falla de la copia externa no impida la retención,
+# pero cron la siga reportando como error.
+if (( REMOTE_FAILED )); then
+  fail "falló la copia externa a $BACKUP_RCLONE_REMOTE (el respaldo local sí quedó: $FINAL)"
 fi
