@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { db, hashPassword, isEncryptedCredential } from '@asistente/database';
 import { buildServer } from './server.js';
 import { WhatsAppService } from './services/whatsappService.js';
+import { drainQueue, jobQueue } from './services/queue/handlers.js';
 
 process.env.JWT_SECRET ||= 'channels-test-secret-at-least-32-characters';
 process.env.META_VERIFY_TOKEN ||= 'test-meta-token';
@@ -323,7 +324,23 @@ async function runChannelTests() {
       headers: adminA,
       payload: { text: 'Respuesta manual' },
     });
+
+    // Un envío por la cola sin credenciales no debe gastar reintentos: ninguno
+    // va a funcionar, y mientras tanto el mensaje se vería "en camino".
+    const queuedId = await jobQueue.enqueue({
+      type: 'WHATSAPP_SEND',
+      tenantId: clinicA.tenant.id,
+      dedupeKey: `wa-sin-credenciales:${suffix}`,
+      payload: { kind: 'TEXT', toPhoneE164: '+525511112222', text: 'Desde la cola' },
+    });
+    await drainQueue();
+    const queuedJob = queuedId ? await db.job.findUnique({ where: { id: queuedId } }) : null;
     process.env.NODE_ENV = originalNodeEnv;
+    assert(
+      queuedJob?.status === 'DEAD' && queuedJob.attempts === 1,
+      'En producción sin credenciales, el trabajo de la cola falla al primer intento'
+    );
+    if (queuedId) await db.job.deleteMany({ where: { id: queuedId } });
     assert(
       replyRes.statusCode === 200 && JSON.parse(replyRes.body).deliveryStatus === 'FAILED',
       'La respuesta manual queda FAILED, no SENT'

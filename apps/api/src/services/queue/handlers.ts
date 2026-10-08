@@ -480,6 +480,19 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
 }
 
 async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobContext): Promise<void> {
+  // En producción, sin credenciales de WhatsApp (ni de la clínica ni de la
+  // plataforma) ningún reintento va a funcionar: se falla de inmediato para
+  // que el mensaje quede FAILED en la bandeja en vez de pasar horas en cola.
+  if (process.env.NODE_ENV === 'production') {
+    const credentials = await WhatsAppService.resolveCredentials({
+      tenantId: context.tenantId,
+      phoneNumberId: payload.kind === 'TEXT' ? payload.phoneNumberId : undefined,
+    });
+    if (!credentials) {
+      throw new PermanentJobError('WhatsApp no está configurado para esta clínica');
+    }
+  }
+
   if (payload.kind === 'TEXT') {
     const delivered = await WhatsAppService.sendMessage({
       tenantId: context.tenantId,
@@ -522,6 +535,8 @@ async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobCon
     }
 
     const delivered = await WhatsAppService.sendMessage({
+      // Sin tenantId saldría del número global en vez del de la clínica.
+      tenantId: appointment.tenantId,
       toPhoneE164: appointment.patient.phoneE164,
       text,
     });

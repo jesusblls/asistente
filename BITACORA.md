@@ -10,6 +10,38 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] fix(webhooks): enviar avisos de anticipo desde el número de la clínica
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Dos huecos que aparecieron al integrar #12 (WhatsApp por clínica) con #13
+(anticipos):
+
+1. **Aviso de anticipo desde el número equivocado.** #13 escribió el envío del
+   aviso ("recibimos tu anticipo", recordatorio, liberación) antes de que #12
+   resolviera las credenciales por clínica, y no pasaba `tenantId`. Con los
+   dos juntos, ese aviso salía del número global de la plataforma y no del
+   de la clínica. Fuera de la ventana de 24 h de ese número, Meta lo
+   rechazaba. Era el único envío sin `tenantId` (se revisaron todos).
+2. **Reintentos inútiles sin credenciales.** #12 dejó anotado que, en
+   producción y sin credenciales, un trabajo `WHATSAPP_SEND` agotaba todos sus
+   reintentos (horas con backoff) antes de quedar FAILED, y mientras tanto el
+   mensaje se veía "en camino" en la bandeja. Ahora el handler revisa las
+   credenciales antes de enviar y lanza `PermanentJobError`: el trabajo queda
+   DEAD al primer intento y el hook de dead-letter marca el mensaje FAILED.
+   En desarrollo no cambia nada (se conserva la simulación).
+
+### Archivos tocados
+- `apps/api/src/services/queue/handlers.ts` — `tenantId` en el aviso de anticipo y verificación de credenciales al inicio de `processWhatsAppSend`.
+- `apps/api/src/channels-test-suite.ts` — caso nuevo.
+
+### Verificación
+- Suite de canales 34/34: en producción sin credenciales, el trabajo de la
+  cola queda DEAD con un solo intento.
+- `npm run build`, `npm test` 20/20 suites, `npm run test:stress` 44/44 y
+  `npm run test:e2e` 13/13.
+
 ## [2026-10-08] fix(payments): acreditar el anticipo de una cita reagendada
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
