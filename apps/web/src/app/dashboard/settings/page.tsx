@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   PhoneCall,
   MessageSquare,
-  CreditCard,
   ShieldCheck,
   CheckCircle2,
   Sparkles,
@@ -13,21 +12,11 @@ import {
   Save,
   RefreshCw,
   Info,
-  HeartHandshake,
-  Stethoscope,
-  Zap,
   Building2,
   AlertTriangle,
-  Check,
-  Radio,
-  ExternalLink,
 } from 'lucide-react';
 import { useTenant } from '@/context/TenantContext';
-import { formatMexicanPhone } from '@/lib/format';
-
-/** Teléfono de la clínica con valor de respaldo cuando aún no se configura. */
-const formatTenantPhone = (phone?: string | null): string =>
-  formatMexicanPhone(phone) || '+52 (55) 5512-3456';
+import { ChannelsPanel } from '@/components/dashboard/settings/ChannelsPanel';
 
 const DEMO_SETTINGS = {
   name: 'Clínica Dental Sonrisas Polanco',
@@ -38,47 +27,10 @@ const DEMO_SETTINGS = {
     '¡Hola! Bienvenido a Clínica Dental Sonrisas Polanco. ¿En qué podemos apoyarte hoy? Puedes agendar una consulta de valoración o consultar nuestros servicios.',
   emergencyInstructions:
     'En caso de traumatismo facial grave, pérdida de conciencia o dolor incapacitante, indicar al paciente acudir al Hospital Español de inmediato o marcar al 911.',
-  tone: 'empathetic',
 };
 
-const AI_TONES = [
-  {
-    id: 'empathetic',
-    name: 'Empático & Resolutivo',
-    badge: 'Recomendado',
-    icon: HeartHandshake,
-    description:
-      'Cálido, comprensivo y paciente. Ideal para pacientes con molestia o fobia dental. Prioriza generar confianza y tranquilidad con cortesía mexicana.',
-    sample:
-      '«¡Hola! Con mucho gusto te apoyo a revisar los horarios de los doctores. ¿Tienes alguna molestia o dolor actualmente?»',
-    tags: ['Calidez mexicana', 'Contención de ansiedad', 'Resolutivo'],
-  },
-  {
-    id: 'formal',
-    name: 'Formal & Médico',
-    badge: 'Especialidades',
-    icon: Stethoscope,
-    description:
-      'Sobrio, clínico y riguroso. Emplea terminología odontológica precisa, ideal para clínicas de especialidades y procedimientos quirúrgicos.',
-    sample:
-      '«Buenas tardes. Con gusto verifico la agenda del especialista para su valoración diagnóstica y plan de tratamiento integral.»',
-    tags: ['Protocolo clínico', 'Terminología médica', 'Sobriedad'],
-  },
-  {
-    id: 'agile',
-    name: 'Ágil & Ejecutivo',
-    badge: 'Express',
-    icon: Zap,
-    description:
-      'Dinámico, conciso y directo al punto. Optimizado para confirmaciones rápidas en menos de 45 segundos y pacientes con poco tiempo.',
-    sample:
-      '«Hola. Disponemos de citas hoy a las 4:00 PM y 5:30 PM para tu valoración. ¿Cuál horario prefieres reservar?»',
-    tags: ['Respuesta rápida', 'Agendamiento veloz', 'Llamadas cortas'],
-  },
-];
-
 export default function SettingsPage() {
-  const { mode, setMode, activeTenant, updateTenant, refreshTenants, loadingTenants } = useTenant();
+  const { mode, setMode, activeTenant, updateTenant, refreshTenants } = useTenant();
 
   // Estado del formulario para modo Live con sincronización reactiva al cambiar activeTenant
   const [prevTenantId, setPrevTenantId] = useState(activeTenant?.id);
@@ -109,31 +61,24 @@ export default function SettingsPage() {
     });
   }
 
-  const [selectedTone, setSelectedTone] = useState<string>('empathetic');
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sincronizar tono guardado en almacenamiento local
-  useEffect(() => {
-    if (!activeTenant) return;
-    try {
-      const savedTone = localStorage.getItem(`asistente_ai_tone_${activeTenant.id}`);
-      if (savedTone) {
-        queueMicrotask(() => setSelectedTone(savedTone));
-      }
-    } catch {
-      // Ignorar en SSR
-    }
-  }, [activeTenant]);
+  // Un solo temporizador: un aviso nuevo no debe desaparecer por el timeout del anterior.
+  const notify = useCallback((tone: 'success' | 'error', text: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ tone, text });
+    toastTimer.current = setTimeout(() => setToast(null), 4500);
+  }, []);
 
   // Manejador de guardado en tiempo real
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
     if (mode === 'demo') {
-      setToastMessage('Modo Showcase: los parámetros mostrados son de muestra. Cambia a "En Vivo" para guardar cambios reales.');
-      setTimeout(() => setToastMessage(null), 4000);
+      notify('success', 'Modo Showcase: los parámetros mostrados son de muestra. Cambia a "En Vivo" para guardar cambios reales.');
       return;
     }
 
@@ -154,58 +99,47 @@ export default function SettingsPage() {
       const res = await updateTenant(activeTenant.id, payload);
 
       if (res) {
-        try {
-          localStorage.setItem(`asistente_ai_tone_${activeTenant.id}`, selectedTone);
-        } catch (e) {}
-
         setSaveStatus('success');
-        setToastMessage('Configuración guardada en tiempo real');
+        notify('success', 'Datos de la clínica guardados');
         await refreshTenants();
 
         setTimeout(() => {
           setSaveStatus('idle');
         }, 3500);
-        setTimeout(() => {
-          setToastMessage(null);
-        }, 4000);
       } else {
         setSaveStatus('error');
-        setToastMessage('No fue posible guardar los cambios. Verifica la conexión.');
-        setTimeout(() => setToastMessage(null), 4000);
+        notify('error', 'No fue posible guardar los cambios. Verifica la conexión.');
       }
     } catch (err) {
       console.error('Error guardando configuración de clínica:', err);
       setSaveStatus('error');
-      setToastMessage('Error inesperado al conectar con el servidor');
-      setTimeout(() => setToastMessage(null), 4000);
+      notify('error', 'Error inesperado al conectar con el servidor');
     } finally {
       setIsSaving(false);
     }
   };
 
   const isDemo = mode === 'demo';
-  const displayPhone = isDemo
-    ? DEMO_SETTINGS.phoneE164
-    : formatTenantPhone(formData.phoneE164 || activeTenant?.phoneE164);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 w-full max-w-7xl mx-auto">
       {/* Toast Flotante de Notificación */}
-      {toastMessage && (
+      {toast && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-5 duration-300"
+          className="fixed bottom-6 right-4 left-4 sm:left-auto sm:right-6 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-5 duration-300"
         >
-          <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-white">{toastMessage}</p>
-            <p className="text-xs text-slate-400">
-              Sincronizado con agentes Twilio Voice (+52) y WhatsApp Cloud API
-            </p>
-          </div>
+          {toast.tone === 'success' ? (
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center shrink-0 border border-red-500/30">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+          )}
+          <p className="text-sm font-semibold text-white">{toast.text}</p>
         </div>
       )}
 
@@ -231,8 +165,9 @@ export default function SettingsPage() {
           <p className="text-sm text-slate-500 mt-1">
             {isDemo
               ? 'Parámetros modelo predeterminados para demostraciones de recepción virtual en clínicas de México'
-              : `Gestionando: ${activeTenant?.name || 'Clínica Activa'} • Conexión de telefonía Twilio Voice (+52), WhatsApp Cloud API y Mercado Pago`}
+              : `Gestionando: ${activeTenant?.name || 'Clínica Activa'} • WhatsApp, llamadas y pagos`}
           </p>
+          <p className="text-xs text-slate-400 mt-1">Motor de IA: DeepSeek</p>
         </div>
       </div>
 
@@ -252,7 +187,7 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs text-purple-700 mt-1 leading-relaxed">
                 Estás visualizando la configuración recomendada para clínicas dentales de alta gama en México.
-                Para personalizar tu propia clínica y sincronizar cambios en tiempo real con Twilio y WhatsApp, activa el modo <strong className="font-semibold text-purple-900">&quot;En Vivo&quot;</strong>.
+                Para configurar tu propia clínica y su número de WhatsApp, activa el modo <strong className="font-semibold text-purple-900">&quot;En Vivo&quot;</strong>.
               </p>
             </div>
           </div>
@@ -272,14 +207,10 @@ export default function SettingsPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-emerald-900">Clínica Activa y Conectada en Producción</h2>
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-200 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                  Sincronización Inmediata
-                </span>
+                <h2 className="text-sm font-bold text-emerald-900">Configuración de tu clínica</h2>
               </div>
               <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
-                Los ajustes se actualizan en vivo en la base de datos multi-tenant de tu clínica y se reflejan instantáneamente en las respuestas del asistente en llamadas telefónicas y WhatsApp.
+                Los datos que guardes aquí los usa el asistente desde el siguiente mensaje o llamada. Abajo ves el estado real de cada canal.
               </p>
             </div>
           </div>
@@ -291,211 +222,13 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Estado de Canales Conectados */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
-        {/* Twilio Voice */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="p-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 shadow-xs">
-                <PhoneCall className="w-5 h-5" />
-              </span>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {isDemo ? 'Conectado (Demo)' : 'Conectado +52'}
-              </span>
-            </div>
-            <div className="mt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-slate-900 text-sm">Llamadas Twilio México</h3>
-                {isDemo && (
-                  <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
-                    Showcase
-                  </span>
-                )}
-              </div>
-              <p className="font-mono text-sm text-slate-800 mt-1.5 font-bold tabular-nums">
-                {displayPhone}
-              </p>
-              <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
-                Streaming WebSockets bidireccional • Latencia media: <span className="font-semibold text-slate-700 tabular-nums">540ms</span> • Interrupción inteligente por voz (Barge-in).
-              </p>
-            </div>
-          </div>
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Audio μ-law 8kHz</span>
-            <span className="text-blue-600 font-medium">Barge-in Activo</span>
-          </div>
-        </div>
-
-        {/* WhatsApp Cloud API */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-xs">
-                <MessageSquare className="w-5 h-5" />
-              </span>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                {isDemo ? 'Verificado (Demo)' : 'Meta Cloud API'}
-              </span>
-            </div>
-            <div className="mt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-slate-900 text-sm">WhatsApp Business Cloud</h3>
-                {isDemo && (
-                  <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
-                    Showcase
-                  </span>
-                )}
-              </div>
-              <p className="font-mono text-sm text-slate-800 mt-1.5 font-bold tabular-nums">
-                {isDemo ? 'WABA ID: 49219012903' : `Línea: ${displayPhone}`}
-              </p>
-              <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
-                Plantillas oficiales Meta verificadas • Botones interactivos de confirmación y cancelación instantánea 24/7.
-              </p>
-            </div>
-          </div>
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Webhooks v21.0</span>
-            <span className="text-emerald-600 font-medium">Cero Latencia</span>
-          </div>
-        </div>
-
-        {/* Pasarela Mercado Pago */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="p-2.5 rounded-xl bg-sky-50 text-sky-600 border border-sky-100 shadow-xs">
-                <CreditCard className="w-5 h-5" />
-              </span>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                Activo (MXN)
-              </span>
-            </div>
-            <div className="mt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-slate-900 text-sm">Mercado Pago & SPEI</h3>
-                {isDemo && (
-                  <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
-                    Showcase
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-700 mt-1.5 font-semibold">
-                Escudo Anti-Inasistencias con Anticipos
-              </p>
-              <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
-                Cobro de depósitos de garantía mediante Tarjetas de débito/crédito, transferencias SPEI inmediatas y OXXO Pay.
-              </p>
-            </div>
-          </div>
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Checkout Pro / API</span>
-            <span className="text-sky-600 font-medium">Moneda MXN</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Selector de Tono y Estilo del Asistente IA */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 lg:p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-base lg:text-lg font-bold text-slate-900 tracking-tight font-sans">
-                Personalidad y Tono del Asistente IA
-              </h2>
-              {isDemo && (
-                <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-full">
-                  Showcase
-                </span>
-              )}
-            </div>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Selecciona el estilo de comunicación de la recepcionista virtual en llamadas telefónicas y mensajes de WhatsApp.
-            </p>
-          </div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200 shrink-0 shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-            Motor: Gemini 2.5 Flash
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
-          {AI_TONES.map((tone) => {
-            const isSelected = selectedTone === tone.id;
-            const Icon = tone.icon;
-
-            return (
-              <div
-                key={tone.id}
-                onClick={() => {
-                  if (!isDemo) {
-                    setSelectedTone(tone.id);
-                  }
-                }}
-                className={`p-5 lg:p-6 rounded-2xl border-2 transition-all text-left relative flex flex-col justify-between ${
-                  isSelected
-                    ? 'border-teal-600 bg-teal-50/30 shadow-sm ring-2 ring-teal-500/20'
-                    : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
-                } ${isDemo ? 'cursor-default' : 'cursor-pointer'}`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`p-2 rounded-xl border ${
-                          isSelected
-                            ? 'bg-teal-100 text-teal-700 border-teal-200'
-                            : 'bg-slate-100 text-slate-600 border-slate-200'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                      </span>
-                      <div>
-                        <span className="text-sm font-bold text-slate-900 block leading-tight">
-                          {tone.name}
-                        </span>
-                        <span className="text-[10px] font-semibold text-slate-500">
-                          {tone.badge}
-                        </span>
-                      </div>
-                    </div>
-                    {isSelected ? (
-                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs shadow-xs">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="w-6 h-6 rounded-full border-2 border-slate-300 hover:border-slate-400 transition-colors" />
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-600 leading-relaxed mb-4">
-                    {tone.description}
-                  </p>
-
-                  <div className="bg-slate-50/90 p-3.5 rounded-xl border border-slate-200/80 mb-4 text-xs text-slate-700 italic shadow-2xs leading-relaxed">
-                    {tone.sample}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
-                  {tone.tags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md border border-slate-200/60"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Estado real de los canales (WhatsApp propio, llamadas y pagos) */}
+      <ChannelsPanel
+        isDemo={isDemo}
+        demoPhone={DEMO_SETTINGS.phoneE164}
+        tenantId={activeTenant?.id}
+        notify={notify}
+      />
 
       {/* Formulario de Datos de la Clínica */}
       <form
@@ -586,7 +319,7 @@ export default function SettingsPage() {
               }`}
             />
             <p className="text-xs text-slate-400">
-              Número vinculado para recibir llamadas Twilio y mensajes de WhatsApp (+52 formato E.164).
+              Teléfono principal de la clínica (+52, formato E.164); con él se identifican las llamadas entrantes. El número de WhatsApp se configura en la sección de canales.
             </p>
           </div>
 
@@ -721,7 +454,7 @@ export default function SettingsPage() {
             ) : saveStatus === 'success' ? (
               <span className="flex items-center gap-2 text-emerald-700 font-semibold bg-emerald-50 px-3.5 py-2 rounded-xl border border-emerald-200 animate-in fade-in duration-300 shadow-2xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Configuración guardada en tiempo real en la base de datos viva
+                Datos de la clínica guardados
               </span>
             ) : saveStatus === 'error' ? (
               <span className="flex items-center gap-2 text-red-600 font-medium bg-red-50 px-3.5 py-2 rounded-xl border border-red-200">
@@ -730,7 +463,7 @@ export default function SettingsPage() {
               </span>
             ) : (
               <span className="text-slate-400">
-                Guarda los cambios para sincronizarlos de inmediato con la telefonía y WhatsApp.
+                El asistente usará los datos guardados desde el siguiente mensaje o llamada.
               </span>
             )}
           </div>

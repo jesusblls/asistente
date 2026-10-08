@@ -206,6 +206,7 @@ export async function conversationRoutes(fastify: FastifyInstance) {
       let delivered: boolean | null = null;
       if (conversation.channel === 'WHATSAPP') {
         delivered = await WhatsAppService.sendMessage({
+          tenantId: user.tenantId,
           toPhoneE164: conversation.patient.phoneE164,
           text,
         });

@@ -1,3 +1,4 @@
+import { db, decryptCredentials } from '@asistente/database';
 import { createLogger } from '@asistente/observability';
 import { maskPhone } from '../lib/webhookSecurity.js';
 
@@ -8,6 +9,12 @@ const logger = createLogger('whatsapp');
  */
 
 export interface SendWhatsAppParams {
+  /**
+   * Clínica que envía. Con ella se usan las credenciales de su propio número
+   * (`ChannelConfig` WHATSAPP); sin ella solo queda el número global de la
+   * plataforma, que no es el de ninguna clínica en particular.
+   */
+  tenantId?: string | null;
   phoneNumberId?: string;
   accessToken?: string;
   toPhoneE164: string;
@@ -17,6 +24,8 @@ export interface SendWhatsAppParams {
 
 export interface AppointmentConfirmationDetails {
   id: string;
+  /** La cita de Prisma ya lo trae; se usa para enviar desde el número de su clínica. */
+  tenantId?: string | null;
   startTime: Date | string;
   patient: {
     fullName: string;
@@ -44,20 +53,125 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Versión de Graph API usada para mensajes y verificación de números. */
+export const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
+
+/** Forma del JSON cifrado en `ChannelConfig.credentials` para WHATSAPP. */
+export interface WhatsAppChannelCredentials {
+  phoneNumberId?: string;
+  accessToken?: string;
+  displayPhoneNumber?: string;
+  wabaId?: string;
+}
+
+export type WhatsAppCredentialSource = 'CLINIC' | 'PLATFORM';
+
+export interface ResolvedWhatsAppCredentials {
+  phoneNumberId: string;
+  accessToken: string;
+  source: WhatsAppCredentialSource;
+}
+
+/**
+ * Caché corta de las credenciales por clínica. Cada envío consultaría y
+ * descifraría la fila de `ChannelConfig`; con 30 s de vida se ahorra eso en
+ * ráfagas (respuesta + confirmación de cita). Las rutas de canales invalidan la
+ * entrada del proceso que atendió el cambio; si hay varias réplicas de la API,
+ * las demás lo toman al vencer la entrada (máximo 30 s).
+ */
+const CREDENTIALS_TTL_MS = 30_000;
+const credentialsCache = new Map<
+  string,
+  { value: WhatsAppChannelCredentials | null; expiresAt: number }
+>();
+
+async function loadClinicCredentials(tenantId: string): Promise<WhatsAppChannelCredentials | null> {
+  const cached = credentialsCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  let value: WhatsAppChannelCredentials | null = null;
+  try {
+    const config = await db.channelConfig.findFirst({
+      where: { tenantId, channelType: 'WHATSAPP', isActive: true },
+    });
+    if (config) {
+      value = JSON.parse(decryptCredentials(config.credentials)) as WhatsAppChannelCredentials;
+    }
+  } catch (error) {
+    // Error de base o fila ilegible (llave rotada sin re-cifrar, JSON corrupto):
+    // se trata como "sin número propio" solo para este envío. No se guarda en
+    // caché para que un tropiezo momentáneo no desvíe los envíos de un minuto.
+    logger.error('No se pudieron leer las credenciales de WhatsApp de la clínica', error, { tenantId });
+    return null;
+  }
+
+  credentialsCache.set(tenantId, { value, expiresAt: Date.now() + CREDENTIALS_TTL_MS });
+  return value;
+}
+
 export class WhatsAppService {
+  /** Olvida las credenciales en caché de una clínica (tras guardarlas o borrarlas). */
+  static invalidateCredentials(tenantId: string): void {
+    credentialsCache.delete(tenantId);
+  }
+
+  /**
+   * Credenciales con las que se envía a nombre de una clínica: primero su
+   * propio número (`ChannelConfig`), después el número global de la plataforma
+   * (`META_WHATSAPP_TOKEN` / `META_PHONE_NUMBER_ID`). `null` si no hay ninguno.
+   *
+   * Si el paciente escribió a otro número (`phoneNumberId` del webhook distinto
+   * al de la clínica, p. ej. el compartido de la plataforma) se contesta desde
+   * ese mismo número: Meta solo permite texto libre dentro de la ventana de 24 h
+   * del número que recibió el mensaje.
+   */
+  static async resolveCredentials(params: {
+    tenantId?: string | null;
+    phoneNumberId?: string;
+    accessToken?: string;
+  }): Promise<ResolvedWhatsAppCredentials | null> {
+    const platformToken = params.accessToken || process.env.META_WHATSAPP_TOKEN;
+
+    if (params.tenantId) {
+      const clinic = await loadClinicCredentials(params.tenantId);
+      const repliesElsewhere =
+        Boolean(params.phoneNumberId) && params.phoneNumberId !== clinic?.phoneNumberId && Boolean(platformToken);
+      if (clinic?.accessToken && clinic.phoneNumberId && !repliesElsewhere) {
+        return { accessToken: clinic.accessToken, phoneNumberId: clinic.phoneNumberId, source: 'CLINIC' };
+      }
+    }
+
+    const accessToken = platformToken;
+    const phoneNumberId = params.phoneNumberId || process.env.META_PHONE_NUMBER_ID;
+    if (accessToken && phoneNumberId) {
+      return { accessToken, phoneNumberId, source: 'PLATFORM' };
+    }
+    return null;
+  }
+
   /**
    * Envía un mensaje de texto o interactivo a un paciente en México, con reintentos.
+   * Devuelve `true` solo si Meta aceptó el mensaje (o en la simulación de desarrollo).
    */
   static async sendMessage(params: SendWhatsAppParams): Promise<boolean> {
-    const { phoneNumberId, accessToken, toPhoneE164, text, interactiveButtons } = params;
+    const { tenantId, toPhoneE164, text, interactiveButtons } = params;
 
     // Normalizar formato de destinatario para Meta (sin signo +)
     const recipientPhone = toPhoneE164.replace(/\D/g, '');
 
-    const activeToken = accessToken || process.env.META_WHATSAPP_TOKEN;
-    const activePhoneId = phoneNumberId || process.env.META_PHONE_NUMBER_ID;
+    const credentials = await this.resolveCredentials(params);
 
-    if (!activeToken || !activePhoneId) {
+    if (!credentials) {
+      // En producción no hay simulación: reportar `true` marcaría el mensaje
+      // como SENT en la bandeja aunque el paciente nunca lo recibió.
+      if (process.env.NODE_ENV === 'production') {
+        logger.error('WhatsApp sin credenciales: el mensaje no se envió', undefined, {
+          tenantId: tenantId ?? null,
+          to: maskPhone(toPhoneE164),
+        });
+        return false;
+      }
+
       logger.info('Simulación WhatsApp: mensaje enviado', {
         to: maskPhone(toPhoneE164),
         text,
@@ -66,7 +180,8 @@ export class WhatsAppService {
       return true;
     }
 
-    const url = `https://graph.facebook.com/v21.0/${activePhoneId}/messages`;
+    const activeToken = credentials.accessToken;
+    const url = `${META_GRAPH_BASE}/${credentials.phoneNumberId}/messages`;
 
     let body: Record<string, unknown>;
     if (interactiveButtons && interactiveButtons.length > 0) {
@@ -161,6 +276,7 @@ ${service.requiredDepositMxn > 0 ? `💳 *Anticipo:* $${service.requiredDepositM
 Te esperamos con 10 minutos de anticipación. Si requieres reagendar o tienes dudas, puedes responder a este mensaje en cualquier momento.`;
 
     return this.sendMessage({
+      tenantId: appointment.tenantId,
       toPhoneE164: patient.phoneE164,
       text: message,
       interactiveButtons: [

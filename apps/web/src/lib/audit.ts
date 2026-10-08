@@ -411,6 +411,9 @@ export function describeEvent(event: AuditEvent): EventSentence {
       }
       if (event.entityType === 'SERVICE') return sentence(`agregó el servicio ${name ?? 'nuevo'}`);
       if (event.entityType === 'TENANT') return sentence('dio de alta la clínica', false, name);
+      if (event.entityType === 'CHANNEL_CONFIG') {
+        return sentence('vinculó el número de WhatsApp', false, metaString(event, 'displayPhoneNumber'));
+      }
       return sentence('creó un registro');
     }
 
@@ -427,6 +430,9 @@ export function describeEvent(event: AuditEvent): EventSentence {
           (FIELD_LABELS[field] ?? field).toLowerCase()
         );
         return sentence('cambió la configuración de la clínica', false, fields.join(', ') || null);
+      }
+      if (event.entityType === 'CHANNEL_CONFIG') {
+        return sentence('actualizó el número de WhatsApp', false, metaString(event, 'displayPhoneNumber'));
       }
       return sentence('modificó un registro');
     }
@@ -452,6 +458,9 @@ export function describeEvent(event: AuditEvent): EventSentence {
       }
       if (event.entityType === 'SERVICE') {
         return sentence(`eliminó el servicio${name ? ` ${name}` : ''}${withAppointments}`);
+      }
+      if (event.entityType === 'CHANNEL_CONFIG') {
+        return sentence('desvinculó el número de WhatsApp', false, metaString(event, 'displayPhoneNumber'));
       }
       return sentence('eliminó un registro');
     }

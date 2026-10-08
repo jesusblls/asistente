@@ -11,6 +11,7 @@ import { onboardingRoutes } from './onboarding.js';
 import { subscriptionRoutes } from './subscription.js';
 import { auditRoutes } from './audit.js';
 import { queueRoutes } from './queue.js';
+import { channelRoutes } from './channels.js';
 
 export async function adminPlugin(fastify: FastifyInstance) {
   // Todo el panel administrativo exige sesión válida.
@@ -28,6 +29,7 @@ export async function adminPlugin(fastify: FastifyInstance) {
   await fastify.register(subscriptionRoutes);
   await fastify.register(auditRoutes);
   await fastify.register(queueRoutes);
+  await fastify.register(channelRoutes);
 }
 
 export * from './schemas.js';
@@ -44,3 +46,4 @@ export { onboardingRoutes } from './onboarding.js';
 export { subscriptionRoutes } from './subscription.js';
 export { auditRoutes } from './audit.js';
 export { queueRoutes } from './queue.js';
+export { channelRoutes } from './channels.js';
