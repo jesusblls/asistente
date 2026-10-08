@@ -10,6 +10,64 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] build(deploy): script de respaldo automático de la base
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Producción no tenía respaldos automáticos: solo los `pg_dump` manuales del
+procedimiento de actualización, y el README todavía sugería un `tar` del
+volumen con los contenedores detenidos. Si el disco del VPS fallaba, la
+pérdida era todo lo ocurrido desde la última actualización.
+
+`deploy/backup.sh` (para cron):
+- `pg_dump` en caliente vía `docker compose exec -T postgres`, comprimido.
+  `BACKUP_COMPOSE_MODE=proxy|standalone` elige la invocación de la Opción B
+  o la A: con otros `-f`, Compose valida otra configuración.
+- `umask 077` antes de crear nada: el respaldo manual del 2026-10-07 quedó en
+  `664` con datos de pacientes.
+- **Falla ruidosamente**: `set -euo pipefail`, se escribe a un `.partial` y
+  solo se renombra si el gzip es íntegro, trae la cabecera de `pg_dump` y al
+  menos un `CREATE TABLE`. Un volcado vacío de una base equivocada sería un
+  gzip válido pero inútil, y la retención acabaría borrando los buenos.
+- Retención (14 días por defecto) **después** del respaldo exitoso y solo
+  sobre `asistente-auto-*`: los respaldos manuales previos a actualizar no
+  se borran solos.
+- Copia externa opcional con `rclone` (`BACKUP_RCLONE_REMOTE`). Se verifica
+  que rclone exista antes de volcar, no después.
+- `POSTGRES_USER`/`POSTGRES_DB` se leen de `.env.production` sin hacer
+  `source` del archivo.
+
+Un detalle que la prueba atrapó en la revisión: con `pipefail`,
+`gzip -dc | grep -q` falla aunque encuentre la línea, porque `grep` corta y
+gzip recibe SIGPIPE; esas revisiones corren con `pipefail` apagado.
+
+`deploy/README.md` documenta probarlo a mano, la línea de `crontab -e`, la
+copia fuera del VPS y cómo **probar una restauración** en una base aparte.
+
+### Archivos tocados
+- `deploy/backup.sh` (nuevo).
+- `deploy/README.md` — sección "Respaldos automáticos"; la nota vieja de
+  `tar` apunta a ella.
+
+### Verificación
+- `bash -n` y `shellcheck` 0.11 sin hallazgos.
+- Corrido localmente con un `docker` falso en el `PATH`: volcado bueno →
+  exit 0, archivo `600`, borra un `asistente-auto-*` de 2025 y conserva un
+  `asistente-*` manual de la misma fecha; volcado sin tablas → exit 1 sin
+  archivo; `docker` que falla → exit 1 sin `.partial` residual; modo
+  `standalone` arma `--profile standalone`; `BACKUP_RCLONE_REMOTE` sin rclone
+  y retención `0` → exit 1.
+- No se corrió contra el Postgres de producción (no se accede al servidor
+  desde esta tarea).
+
+### Pendientes derivados
+- **Instalar el cron en el VPS** y configurar la copia externa con rclone
+  (lo hace el dueño; pasos en `deploy/README.md`).
+- Hacer una restauración de prueba con el primer respaldo automático.
+
+---
+
 ## [2026-10-08] build(deploy): healthchecks de api y web en compose
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
