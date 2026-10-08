@@ -312,7 +312,13 @@ export async function getPlanSummary(tenantId: string, now: Date = new Date()) {
   const [suscripcion, doctors, appointments, voiceSeconds] = await Promise.all([
     db.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { billingCycle: true, currentPeriodEnd: true, mpPreapprovalId: true },
+      select: {
+        billingCycle: true,
+        currentPeriodEnd: true,
+        mpPreapprovalId: true,
+        pendingPlanSlug: true,
+        pendingBillingCycle: true,
+      },
     }),
     db.doctor.count({ where: { tenantId, isActive: true } }),
     countAppointmentsThisPeriod(tenantId, now),
@@ -330,6 +336,18 @@ export async function getPlanSummary(tenantId: string, now: Date = new Date()) {
     currentPeriodEnd: suscripcion.currentPeriodEnd?.toISOString() ?? null,
     /** Solo si existe, nunca el id: el panel no necesita la referencia de cobro. */
     tieneSuscripcion: suscripcion.mpPreapprovalId !== null,
+    /**
+     * Cambio de plan solicitado que espera la confirmación del cobro. Es solo
+     * informativo: los cupos (`limits`) siguen saliendo del plan activo.
+     */
+    planPendiente:
+      suscripcion.pendingPlanSlug && isPlanSlug(suscripcion.pendingPlanSlug)
+        ? {
+            planSlug: suscripcion.pendingPlanSlug,
+            planName: PLANS[suscripcion.pendingPlanSlug].name,
+            billingCycle: suscripcion.pendingBillingCycle,
+          }
+        : null,
     period: usagePeriod(now),
     limits: state.limits,
     usage: {
