@@ -184,6 +184,11 @@ model Appointment {
   depositAmountMxn   Float?
   depositPaymentUrl  String?
   paymentReferenceId String?
+  /// Límite para pagar el anticipo antes de liberar el horario. Solo se llena
+  /// cuando el link se envió al paciente automáticamente (ver api/services/deposits).
+  depositDeadlineAt     DateTime?
+  /// Cuándo se envió el único recordatorio de pago del anticipo.
+  depositReminderSentAt DateTime?
   channelOrigin      String   @default("WHATSAPP")  // WHATSAPP, INSTAGRAM, MESSENGER, PHONE_CALL, WEBCHAT
   symptoms           String?
   notes              String?
@@ -206,6 +211,7 @@ model Appointment {
 
   @@index([tenantId, startTime])
   @@index([doctorId, startTime])
+  @@index([paymentStatus, depositDeadlineAt])
 }
 
 model Conversation {

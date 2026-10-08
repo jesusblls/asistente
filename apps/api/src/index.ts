@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { buildServer } from './server.js';
 import { jobQueue, startQueueWorker } from './services/queue/handlers.js';
+import { startDepositSweeper, stopDepositSweeper } from './services/deposits/depositSweeper.js';
 
 async function main() {
   const server = await buildServer();
@@ -14,6 +15,12 @@ async function main() {
     // poder escalarlo aparte (QUEUE_WORKER_ENABLED=false en las instancias web).
     if (process.env.QUEUE_WORKER_ENABLED !== 'false') {
       startQueueWorker();
+    }
+
+    // Barrido de anticipos (No-Show Shield): recuerda y libera horarios con
+    // anticipo vencido. Es seguro en varias instancias; se puede apagar aparte.
+    if (process.env.DEPOSITS_SWEEP_ENABLED !== 'false') {
+      startDepositSweeper();
     }
 
     server.log.info(`🚀 Servidor Asistente Omnicanal activo en: ${address}`);
@@ -31,6 +38,7 @@ async function main() {
     server.log.info(`Señal ${signal} recibida: cerrando ordenadamente`);
     try {
       await server.close();
+      await stopDepositSweeper();
       await jobQueue.stop();
     } catch (error) {
       server.log.error(error);

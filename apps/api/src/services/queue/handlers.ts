@@ -3,6 +3,8 @@ import { OmnichannelAgent } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
 import { WhatsAppService } from '../whatsappService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
+import { ensureDepositLink } from '../deposits/depositLink.js';
+import { buildDepositNotice, type DepositNoticeKind } from '../deposits/depositMessages.js';
 
 /**
  * Handlers concretos de la cola y la instancia compartida (`jobQueue`).
@@ -34,7 +36,8 @@ export type WhatsAppSendPayload =
       messageId?: string;
       interactiveButtons?: { id: string; title: string }[];
     }
-  | { kind: 'APPOINTMENT_CONFIRMATION'; appointmentId: string; tenantId: string };
+  | { kind: 'APPOINTMENT_CONFIRMATION'; appointmentId: string; tenantId: string }
+  | { kind: 'DEPOSIT_NOTICE'; notice: DepositNoticeKind; appointmentId: string; tenantId: string };
 
 export interface VoicePostCallPayload {
   tenantId: string;
@@ -194,10 +197,43 @@ async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobCon
     throw new PermanentJobError(`Cita ${payload.appointmentId} no encontrada en la clínica`);
   }
 
-  const delivered = await WhatsAppService.sendAppointmentConfirmation(appointment);
+  if (payload.kind === 'DEPOSIT_NOTICE') {
+    // El texto se decide al enviar: si el estado cambió mientras el trabajo
+    // esperaba (p. ej. pagó antes del recordatorio), el aviso ya no aplica.
+    const text = buildDepositNotice(payload.notice, appointment);
+    if (!text) {
+      context.logger.info('Aviso de anticipo omitido: la cita cambió de estado', {
+        appointmentId: appointment.id,
+        notice: payload.notice,
+      });
+      return;
+    }
+
+    const delivered = await WhatsAppService.sendMessage({
+      toPhoneE164: appointment.patient.phoneE164,
+      text,
+    });
+    if (!delivered) throw new Error('Meta no aceptó el aviso de anticipo');
+
+    context.logger.info('Aviso de anticipo enviado', {
+      appointmentId: appointment.id,
+      notice: payload.notice,
+    });
+    return;
+  }
+
+  // Cita con anticipo: el link de pago va dentro de la confirmación.
+  const withDeposit = await ensureDepositLink(appointment, {
+    isFinalAttempt: context.attempt >= context.maxAttempts,
+  });
+
+  const delivered = await WhatsAppService.sendAppointmentConfirmation(withDeposit);
   if (!delivered) throw new Error('Meta no aceptó la confirmación de cita');
 
-  context.logger.info('Confirmación de cita enviada', { appointmentId: appointment.id });
+  context.logger.info('Confirmación de cita enviada', {
+    appointmentId: appointment.id,
+    depositLink: Boolean(withDeposit.depositPaymentUrl),
+  });
 }
 
 async function processVoiceFollowUp(payload: VoicePostCallPayload): Promise<void> {

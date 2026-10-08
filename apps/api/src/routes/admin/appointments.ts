@@ -1,6 +1,11 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { appointmentSlotKey, db, diffChanges, recordAudit } from '@asistente/database';
-import { SchedulerService, MercadoPagoService, roundMxn } from '@asistente/ai-agent';
+import {
+  DepositLinkUnavailableError,
+  SchedulerService,
+  MercadoPagoService,
+  roundMxn,
+} from '@asistente/ai-agent';
 import { actorFromRequest } from '../../lib/audit.js';
 import {
   HttpError,
@@ -222,6 +227,17 @@ export async function appointmentRoutes(fastify: FastifyInstance) {
         });
       }
 
+      // Si recepción reprograma, cambia el estado o toca el cobro, el límite
+      // automático de pago deja de aplicar: desde ahí lo gestiona una persona,
+      // y el barrido de anticipos no debe cancelar la cita con un plazo viejo
+      // (p. ej. una cita que el barrido liberó y recepción reactivó).
+      if (
+        existing.depositDeadlineAt &&
+        (data.startTime !== undefined || data.status !== undefined || touchesPayment)
+      ) {
+        data.depositDeadlineAt = null;
+      }
+
       try {
         const updated = await db.$transaction(async (tx) => {
           const row = await tx.appointment.update({
@@ -280,16 +296,25 @@ export async function appointmentRoutes(fastify: FastifyInstance) {
         throw new HttpError(400, 'Esta cita no tiene un anticipo configurado');
       }
 
-      const preference = await MercadoPagoService.createDepositPreference({
-        appointmentId: id,
-        tenantId: user.tenantId,
-        amountMxn,
-        serviceName: appointment.service.name,
-        patientName: appointment.patient.fullName,
-        auditActor: actorFromRequest(request),
-      });
+      try {
+        const preference = await MercadoPagoService.createDepositPreference({
+          appointmentId: id,
+          tenantId: user.tenantId,
+          amountMxn,
+          serviceName: appointment.service.name,
+          patientName: appointment.patient.fullName,
+          auditActor: actorFromRequest(request),
+        });
 
-      return reply.send(preference);
+        return reply.send(preference);
+      } catch (error) {
+        // El manejador global oculta los 5xx como "Error interno"; aquí el
+        // motivo (falta configurar Mercado Pago) sí le sirve a recepción.
+        if (error instanceof DepositLinkUnavailableError) {
+          throw new HttpError(503, error.message);
+        }
+        throw error;
+      }
     }
   );
 
