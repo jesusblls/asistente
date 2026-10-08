@@ -39,6 +39,7 @@ export const AUDIT_ENTITY_TYPES = [
   'MESSAGE',
   'AUDIT_LOG',
   'FAQ_ITEM',
+  'CHANNEL_CONFIG',
 ] as const;
 
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];

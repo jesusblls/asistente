@@ -168,6 +168,7 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
 async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobContext): Promise<void> {
   if (payload.kind === 'TEXT') {
     const delivered = await WhatsAppService.sendMessage({
+      tenantId: context.tenantId,
       phoneNumberId: payload.phoneNumberId,
       toPhoneE164: payload.toPhoneE164,
       text: payload.text,
@@ -209,6 +210,7 @@ async function processVoiceFollowUp(payload: VoicePostCallPayload): Promise<void
   }
 
   const delivered = await WhatsAppService.sendMessage({
+    tenantId: tenant.id,
     toPhoneE164: payload.toPhoneE164,
     text: `🦷 *${tenant.name}*\n\n¡Muchas gracias por comunicarte con nosotros por teléfono!\n\nSi necesitas agendar o consultar cualquier duda sobre tus tratamientos, puedes escribirnos por este mismo chat de WhatsApp las 24 horas del día.`,
   });

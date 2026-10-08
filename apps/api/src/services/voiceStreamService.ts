@@ -296,6 +296,7 @@ export class VoiceStreamService {
                     callSid,
                   });
                   return WhatsAppService.sendMessage({
+                    tenantId: tenant.id,
                     toPhoneE164: fromPhone,
                     text: buildVoiceFollowUpMessage(tenant),
                   });

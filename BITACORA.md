@@ -10,6 +10,86 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] feat(api): número de WhatsApp propio por clínica
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Decisión del dueño: cada clínica atiende desde su propio número de WhatsApp.
+`ChannelConfig` (credenciales cifradas) ya existía y el webhook de entrada lo
+leía para enrutar, pero nada creaba filas y **todos** los envíos salían con
+`META_WHATSAPP_TOKEN`/`META_PHONE_NUMBER_ID` globales. Peor: sin token,
+`WhatsAppService` registraba "Simulación" y devolvía `true` también en
+producción, así que la bandeja marcaba SENT mensajes que nunca salieron.
+
+- **API `/api/channels`** (solo ADMIN, siempre la clínica de la sesión):
+  `GET` (estado real de WhatsApp/voz/Mercado Pago; del token solo los últimos
+  4), `PUT /whatsapp` (valida, cifra con `encryptCredentials`, audita sin
+  secretos; vacío en el token conserva el guardado), `POST /whatsapp/test`
+  (`GET /{phone-number-id}` en Graph, sin enviar nada) y `DELETE /whatsapp`.
+  Entidad de auditoría nueva `CHANNEL_CONFIG`, con frases en la bitácora del panel.
+- **Por qué se verifica con Meta al guardar:** el webhook enruta por
+  `phoneNumberId`. Sin verificar, un admin podía capturar el ID de otra
+  clínica (o el compartido de la plataforma) con un token cualquiera y
+  recibir en su bandeja los mensajes de pacientes ajenos. En producción solo se
+  guarda si Meta confirma que ese token controla ese número; el ID global de la
+  plataforma se rechaza siempre; y la comprobación de duplicados corre bajo
+  `pg_advisory_xact_lock` dentro de la transacción, porque el ID va cifrado y
+  no admite índice único. En desarrollo se permite guardar sin verificar
+  (sandbox sin red) y la respuesta lo dice.
+- **`WhatsAppService`** resuelve credenciales por `tenantId` (número propio →
+  número global). Si el paciente escribió a otro número (p. ej. el
+  compartido), contesta desde ese mismo número, porque Meta solo acepta texto
+  libre dentro de la ventana de 24 h del número que recibió. Caché de 30 s,
+  invalidada al guardar/borrar, y sin cachear errores de base. En producción
+  sin credenciales devuelve `false` (el mensaje queda FAILED); en desarrollo
+  se conserva la simulación.
+- Los envíos pasan `tenantId` (respuesta manual, outbox, seguimiento de voz;
+  la confirmación de cita lo toma de la propia cita).
+- **Configuración (`/dashboard/settings`):** las tarjetas ya no dicen
+  "Conectado" siempre: muestran el estado de `GET /api/channels` (número
+  propio / compartido / sin configurar; voz y pagos "no disponible aún" si la
+  plataforma no los tiene). Formulario de WhatsApp con guardar, "Probar
+  conexión" y quitar. Se quitaron la latencia inventada "540ms", el toast que
+  decía sincronizar con Twilio/WhatsApp y el selector de tono de IA, que solo
+  vivía en localStorage y no hacía nada en el backend. El motor se rotula
+  DeepSeek (decía "Gemini 2.5 Flash").
+
+### Archivos tocados
+- `apps/api/src/routes/admin/channels.ts` (nuevo) y registro en `routes/admin/index.ts`.
+- `apps/api/src/services/whatsappService.ts` — resolución por clínica, caché, sin simulación en producción.
+- `apps/api/src/routes/admin/conversations.ts`, `services/queue/handlers.ts`, `services/voiceStreamService.ts` — pasan `tenantId` (una línea cada uno).
+- `packages/database/src/audit.ts` — entidad `CHANNEL_CONFIG`.
+- `apps/web/src/components/dashboard/settings/ChannelsPanel.tsx` (nuevo), `apps/web/src/app/dashboard/settings/page.tsx`, `apps/web/src/lib/audit.ts`.
+- `apps/api/src/channels-test-suite.ts` (nuevo).
+
+### Verificación
+- `channels-test-suite.ts` 33/33: CRUD, el token nunca sale en respuestas ni
+  en auditoría y queda cifrado, aislamiento entre clínicas, 403 a no ADMIN,
+  409 por número duplicado o compartido, rechazo en producción de un número
+  que el token no controla, envío con las credenciales de cada clínica (fetch
+  simulado), respuesta desde el número al que escribió el paciente, y en
+  producción sin credenciales la respuesta manual queda FAILED.
+- `npm run build` limpio; `npm test` 15/15 suites; `npm run lint` de web sin
+  advertencias nuevas.
+- `npm run test:stress` falla en la sección 5 ("fuera del horario de
+  atención") de `packages/ai-agent`, que este cambio no toca: depende de la
+  hora del día en que corre.
+- E2E (API 3106 + web 3206): admin de prueba guarda credenciales falsas, la
+  tarjeta pasa de "Número compartido" a "Número propio", el panel avisa
+  "Guardado sin verificar" y "Probar conexión" muestra que Meta rechazó el
+  token; `GET /api/channels` y el HTML no contienen el token. Clínica borrada.
+
+### Pendientes derivados
+- En producción sin credenciales, el trabajo `WHATSAPP_SEND` reintenta hasta
+  agotarse antes de quedar FAILED; convendría marcarlo como error permanente.
+- El encabezado de `DashboardShell` sigue diciendo "WhatsApp Cloud API Activa"
+  sin consultar el estado real.
+- La caché de credenciales es por proceso: con varias réplicas, un cambio
+  tarda hasta 30 s en verse en las demás.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`
