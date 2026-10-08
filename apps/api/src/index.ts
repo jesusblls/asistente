@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { buildServer } from './server.js';
 import { jobQueue, startQueueWorker } from './services/queue/handlers.js';
+import {
+  remindersEnabled,
+  startReminderSweeper,
+  stopReminderSweeper,
+} from './services/reminders/reminderService.js';
 
 async function main() {
   const server = await buildServer();
@@ -14,6 +19,13 @@ async function main() {
     // poder escalarlo aparte (QUEUE_WORKER_ENABLED=false en las instancias web).
     if (process.env.QUEUE_WORKER_ENABLED !== 'false') {
       startQueueWorker();
+    }
+
+    // Barrido de recordatorios de 24 h y 2 h. Es seguro correrlo en varias
+    // instancias a la vez: cada cita se reclama con un candado en la base de
+    // datos. Se apaga con REMINDERS_ENABLED=false.
+    if (remindersEnabled()) {
+      startReminderSweeper();
     }
 
     server.log.info(`🚀 Servidor Asistente Omnicanal activo en: ${address}`);
@@ -31,6 +43,7 @@ async function main() {
     server.log.info(`Señal ${signal} recibida: cerrando ordenadamente`);
     try {
       await server.close();
+      await stopReminderSweeper();
       await jobQueue.stop();
     } catch (error) {
       server.log.error(error);

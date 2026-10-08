@@ -10,6 +10,88 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-08] feat(api): enviar recordatorios de cita de 24 h y 2 h
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La landing promete recordatorios por WhatsApp 24 h y 2 h antes de la cita, y
+`Appointment` ya tenía `reminderSent24h` / `reminderSent2h`, pero nada leía ni
+marcaba esas banderas: ningún paciente recibía recordatorio.
+
+Se agregó un barrido periódico (`services/reminders/reminderService.ts`) que
+arranca junto al worker de la cola en `index.ts` y se detiene en el apagado
+ordenado. Cada `REMINDER_SWEEP_INTERVAL_MS` (5 min por defecto; se apaga con
+`REMINDERS_ENABLED=false` y nunca corre con `NODE_ENV=test`):
+
+- Busca citas vigentes (no `CANCELLED`/`NO_SHOW`/`COMPLETED`) de clínicas
+  activas, con teléfono, en la ventana de 2 h `(ahora, +2 h]` y en la de 24 h
+  `(+2 h, +24 h]`. Una cita que ya está dentro de las 2 h no recibe el de 24 h.
+- **Candado idempotente:** reclama cada cita con
+  `updateMany where reminderSentX = false` y, en la misma transacción, inserta
+  la fila `Job` de tipo `WHATSAPP_SEND`. Con varias instancias de la API solo
+  una obtiene `count = 1`; si el proceso muere a la mitad, se revierten
+  bandera y envío juntos. Se descartó `jobQueue.enqueue` porque escribe con el
+  cliente global y no puede participar de la transacción; por eso se replica
+  aquí su regla de reemplazar un trabajo `DEAD` con la misma `dedupeKey` y se
+  respeta `JOBS_MAX_ATTEMPTS`. No se agregó un tipo de trabajo nuevo ni se
+  tocó `handlers.ts`: se reutiliza el payload `TEXT` con los mismos botones
+  `confirm_<id>` / `reschedule_<id>` de la confirmación, que el webhook y el
+  agente ya saben interpretar.
+- El texto (en español) lleva clínica, especialista, tratamiento, fecha y
+  hora en la zona de la clínica (`America/Mexico_City` por defecto), dirección,
+  link de anticipo si está pendiente, y pide responder *Confirmo* o *Reagendar*.
+- Si el paciente tiene chat de WhatsApp, el recordatorio se guarda como
+  `Message` `SYSTEM` para que recepción lo vea en la bandeja y el agente tenga
+  el contexto al recibir la respuesta. El cambio de bandera se audita como
+  `SYSTEM` (§ 5.6: modificación de cita sin intervención del paciente).
+- Se salta, sin marcar la bandera (para que salga si la causa se corrige a
+  tiempo): clínica suspendida según `resolveTenantPlan`, conversación en
+  takeover humano (§ 1.5) y canal de WhatsApp propio con credenciales
+  ilegibles (caer al número global enviaría desde el WhatsApp de otra clínica).
+- No se recuerda una cita agendada cuando ya estaba dentro de la ventana: la
+  confirmación de la reserva acaba de salir con los mismos datos y botones.
+- Paginación por cursor `(startTime, id)`: las citas saltadas no tapan el
+  lote para las demás clínicas.
+
+Además, el `PATCH /api/appointments/:id` reinicia ambas banderas cuando cambia
+el horario: sin eso, una cita reagendada después de su recordatorio nunca
+recibía el del nuevo horario. La `dedupeKey` incluye el horario para que el
+recordatorio nuevo no choque con el anterior.
+
+### Archivos tocados
+- `apps/api/src/services/reminders/reminderService.ts` — barrido, candado y texto (nuevo).
+- `apps/api/src/index.ts` — arranque y apagado del barrido.
+- `apps/api/src/routes/admin/appointments.ts` — reinicio de banderas al reagendar.
+- `apps/api/src/reminders-test-suite.ts` — suite nueva (29 casos).
+- `.env.example` — `REMINDERS_ENABLED` y `REMINDER_SWEEP_INTERVAL_MS`.
+
+### Verificación
+- `reminders-test-suite.ts` 29/29: 24 h y 2 h una sola vez, cancelada/completada/
+  pasada/fuera de ventana/sin teléfono/clínica suspendida/takeover/agendada
+  dentro de la ventana sin recordatorio, segundo barrido idempotente, dos
+  barridos simultáneos encolan una sola vez, la cita pasa de 24 h a 2 h sin
+  repetir, y la reagendada recibe el suyo.
+- `npm run build` limpio; `npm test` 15/15 suites.
+- `npm run test:stress` 28/29: la falla ("fuera del horario de atención del
+  especialista") está en `packages/ai-agent`, que este cambio no toca, y
+  depende de la hora de ejecución.
+- E2E: API en el puerto 3101 con barrido cada 5 s y sin token de Meta; cita a
+  20 h → trabajo `reminder-24h:...` en `DONE`, bandera marcada, envío
+  simulado en el log con la hora correcta en CDMX. Clínica de prueba borrada.
+
+### Pendientes derivados
+- **Plantillas de WhatsApp:** Meta solo acepta mensajes libres dentro de las
+  24 h posteriores al último mensaje del paciente. Fuera de esa ventana (el
+  caso común de un recordatorio) el envío real falla, el trabajo termina
+  `DEAD` y el mensaje queda `FAILED` en la bandeja. Hace falta aprobar una
+  plantilla de recordatorio en Meta y que `WhatsAppService` pueda enviarla.
+- El texto y el formato de fecha repiten parte de
+  `WhatsAppService.sendAppointmentConfirmation`, y la lectura del
+  `phoneNumberId` repite la de `routes/webhooks.ts`; conviene extraer ambos.
+
+---
+
 ## [2026-10-07] fix(auth): pedir recargar si falta la aceptación legal
 
 **Autor:** Claude Opus 5.5 · **Commit:** `1a11f79`
