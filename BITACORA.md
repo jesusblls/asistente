@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-08] fix(payments): completar el flujo de anticipos con recordar y liberar
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `7f42e0b`
 
 ### Qué se hizo
 El No-Show Shield estaba a medias. Se encontraron cinco huecos:
