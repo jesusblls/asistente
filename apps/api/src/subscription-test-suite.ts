@@ -7,7 +7,7 @@
  * importe anunciado, que un reenvío del webhook no regale un mes, y que
  * cancelar no corte un servicio ya pagado.
  */
-import { db, resolveTenantPlan } from '@asistente/database';
+import { db, getPlanSummary, resolveTenantPlan } from '@asistente/database';
 import { buildServer } from './server.js';
 import { computeMercadoPagoSignature } from './lib/webhookSecurity.js';
 import { SubscriptionService, mapearEstado } from '@asistente/ai-agent';
@@ -28,6 +28,8 @@ interface EstadoMock {
   montoPago: number;
   /** Id que devolverá el siguiente alta. Mercado Pago nunca repite uno. */
   siguientePreapprovalId: string;
+  /** Simula que Mercado Pago falla al cancelar una autorización. */
+  cancelacionFalla: boolean;
   /** Cuerpos enviados a Mercado Pago, para poder inspeccionarlos. */
   enviados: { url: string; method: string; body: Record<string, unknown> | null }[];
 }
@@ -38,6 +40,7 @@ const mock: EstadoMock = {
   preapprovalIdDelPago: '',
   montoPago: 3499,
   siguientePreapprovalId: 'preapproval-mp-123',
+  cancelacionFalla: false,
   enviados: [],
 };
 
@@ -79,6 +82,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       );
     }
     if (method === 'PUT') {
+      if (mock.cancelacionFalla) {
+        return new Response('{"message":"internal_error"}', { status: 500 });
+      }
       return new Response(JSON.stringify({ id: mock.siguientePreapprovalId, status: 'cancelled' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -190,9 +196,21 @@ async function run() {
       'Crear el link NO activa el plan: eso lo decide el cobro confirmado'
     );
     assert(
-      trasCheckout.mpPreapprovalId === 'preapproval-mp-123' &&
-        trasCheckout.planSlug === 'clinica-pro',
-      'Se guarda la referencia de la suscripción y el plan pretendido'
+      trasCheckout.planSlug === 'trial' && trasCheckout.mpPreapprovalId === null,
+      'Abrir el checkout NO cambia el plan activo ni la autorización vigente'
+    );
+    assert(
+      trasCheckout.pendingPreapprovalId === 'preapproval-mp-123' &&
+        trasCheckout.pendingPlanSlug === 'clinica-pro' &&
+        trasCheckout.pendingBillingCycle === 'MONTHLY',
+      'El plan pedido y su autorización quedan como cambio pendiente de pago'
+    );
+    const resumenPendiente = await getPlanSummary(clinica.id);
+    assert(
+      resumenPendiente.planSlug === 'trial' &&
+        JSON.stringify(resumenPendiente.limits) === JSON.stringify(PLANS.trial.limits) &&
+        resumenPendiente.planPendiente?.planSlug === 'clinica-pro',
+      'Los cupos siguen siendo los de la prueba: abrir el link de Pro no regala Pro'
     );
 
     let rechazoTrial = false;
@@ -215,20 +233,14 @@ async function run() {
     // ---------------------------------------------------------------------
     mock.preapprovalStatus = 'authorized';
     const estado = await SubscriptionService.syncFromPreapproval('preapproval-mp-123');
-    const activa = await db.tenant.findUniqueOrThrow({ where: { id: clinica.id } });
+    const autorizada = await db.tenant.findUniqueOrThrow({ where: { id: clinica.id } });
     assert(
-      estado === 'ACTIVE' && activa.subscriptionStatus === 'ACTIVE',
-      'Una suscripción autorizada deja la clínica activa'
+      estado === null &&
+        autorizada.planSlug === 'trial' &&
+        autorizada.subscriptionStatus === 'TRIALING' &&
+        autorizada.pendingPreapprovalId === 'preapproval-mp-123',
+      'Autorizar la tarjeta no promueve el plan: lo decide el primer cobro aprobado'
     );
-    assert(
-      activa.trialEndsAt === null,
-      'Al activarse se limpia la prueba, para que no la vuelva a suspender al vencer'
-    );
-
-    mock.preapprovalStatus = 'paused';
-    await SubscriptionService.syncFromPreapproval('preapproval-mp-123');
-    const pausada = await db.tenant.findUniqueOrThrow({ where: { id: clinica.id } });
-    assert(pausada.subscriptionStatus === 'PAST_DUE', 'Una suscripción pausada marca pago vencido');
 
     // ---------------------------------------------------------------------
     console.log('\n▶ Cobros periódicos');
@@ -241,7 +253,18 @@ async function run() {
     const finPrimerPeriodo = pagada.currentPeriodEnd;
     assert(
       aplicado && pagada.subscriptionStatus === 'ACTIVE' && finPrimerPeriodo !== null,
-      'Un cobro aprobado reactiva la clínica y fija hasta cuándo está pagada'
+      'Un cobro aprobado activa la clínica y fija hasta cuándo está pagada'
+    );
+    assert(
+      pagada.planSlug === 'clinica-pro' &&
+        pagada.mpPreapprovalId === 'preapproval-mp-123' &&
+        pagada.pendingPreapprovalId === null &&
+        pagada.pendingPlanSlug === null,
+      'El primer cobro aprobado promueve el cambio pendiente a plan activo'
+    );
+    assert(
+      pagada.trialEndsAt === null,
+      'Al activarse se limpia la prueba, para que no la vuelva a suspender al vencer'
     );
 
     const diasCubiertos = Math.round(
@@ -277,6 +300,18 @@ async function run() {
       'Un cobro rechazado no extiende el servicio'
     );
 
+    mock.preapprovalStatus = 'paused';
+    await SubscriptionService.syncFromPreapproval('preapproval-mp-123');
+    const pausada = await db.tenant.findUniqueOrThrow({ where: { id: clinica.id } });
+    assert(pausada.subscriptionStatus === 'PAST_DUE', 'Una suscripción pausada marca pago vencido');
+
+    mock.preapprovalStatus = 'authorized';
+    const reautorizada = await SubscriptionService.syncFromPreapproval('preapproval-mp-123');
+    assert(
+      reautorizada === 'ACTIVE',
+      'Cuando Mercado Pago reanuda la suscripción vigente, la clínica vuelve a quedar activa'
+    );
+
     // ---------------------------------------------------------------------
     console.log('\n▶ Ciclo anual');
     // ---------------------------------------------------------------------
@@ -297,6 +332,200 @@ async function run() {
       recurrenciaAnual?.frequency === 12 &&
         recurrenciaAnual?.transaction_amount === 1199 * 12,
       'El ciclo anual pide un cargo cada 12 meses por el precio anunciado × 12'
+    );
+
+    // ---------------------------------------------------------------------
+    console.log('\n▶ Cambio de plan de una clínica activa');
+    // ---------------------------------------------------------------------
+    const finVigente = new Date(Date.now() + 20 * 86_400_000);
+    const activaConsultorio = await nuevaClinica({
+      planSlug: 'consultorio',
+      subscriptionStatus: 'ACTIVE',
+      trialEndsAt: null,
+      mpPreapprovalId: 'preapproval-mp-viejo',
+      billingCycle: 'MONTHLY',
+      currentPeriodEnd: finVigente,
+    });
+    mock.siguientePreapprovalId = 'preapproval-mp-nuevo';
+    await SubscriptionService.createCheckout({
+      tenantId: activaConsultorio.id,
+      planSlug: 'clinica-pro',
+      billingCycle: 'ANNUAL',
+      payerEmail: 'admin@clinica.mx',
+      backUrl: 'x',
+      auditActor: ACTOR,
+    });
+    const enCambio = await db.tenant.findUniqueOrThrow({ where: { id: activaConsultorio.id } });
+    assert(
+      enCambio.planSlug === 'consultorio' &&
+        enCambio.mpPreapprovalId === 'preapproval-mp-viejo' &&
+        resolveTenantPlan(enCambio).limits.maxDoctors === PLANS.consultorio.limits.maxDoctors,
+      'Una clínica activa que abre el checkout de Pro conserva su plan y cupos hasta pagar'
+    );
+
+    // La suscripción vieja sigue cobrando mientras tanto: sus notificaciones
+    // deben seguir encontrando a la clínica.
+    mock.preapprovalIdDelPago = 'preapproval-mp-viejo';
+    mock.pagoStatus = 'approved';
+    const cobroViejo = await SubscriptionService.handleAuthorizedPayment('pago-viejo-001');
+    const trasCobroViejo = await db.tenant.findUniqueOrThrow({ where: { id: activaConsultorio.id } });
+    assert(
+      cobroViejo &&
+        trasCobroViejo.planSlug === 'consultorio' &&
+        trasCobroViejo.pendingPreapprovalId === 'preapproval-mp-nuevo',
+      'Un cobro de la suscripción vigente se aplica a la clínica sin promover el cambio pendiente'
+    );
+    mock.preapprovalStatus = 'authorized';
+    assert(
+      (await SubscriptionService.syncFromPreapproval('preapproval-mp-viejo')) === 'ACTIVE',
+      'Una notificación del preapproval vigente sigue resolviendo la clínica durante el cambio'
+    );
+
+    mock.preapprovalStatus = 'paused';
+    const pendientePausado = await SubscriptionService.syncFromPreapproval('preapproval-mp-nuevo');
+    const trasPausaPendiente = await db.tenant.findUniqueOrThrow({
+      where: { id: activaConsultorio.id },
+    });
+    assert(
+      pendientePausado === null &&
+        trasPausaPendiente.subscriptionStatus === 'ACTIVE' &&
+        trasPausaPendiente.planSlug === 'consultorio',
+      'Un problema con el preapproval pendiente no degrada la suscripción vigente'
+    );
+
+    mock.preapprovalIdDelPago = 'preapproval-mp-nuevo';
+    mock.enviados = [];
+    const primerCobroNuevo = await SubscriptionService.handleAuthorizedPayment('pago-nuevo-001');
+    const promovida = await db.tenant.findUniqueOrThrow({ where: { id: activaConsultorio.id } });
+    assert(
+      primerCobroNuevo &&
+        promovida.planSlug === 'clinica-pro' &&
+        promovida.billingCycle === 'ANNUAL' &&
+        promovida.mpPreapprovalId === 'preapproval-mp-nuevo' &&
+        promovida.pendingPreapprovalId === null,
+      'El primer cobro aprobado del preapproval nuevo promueve el plan y el ciclo'
+    );
+    assert(
+      mock.enviados.some(
+        (e) =>
+          e.method === 'PUT' &&
+          e.url.endsWith('/preapproval/preapproval-mp-viejo') &&
+          e.body?.status === 'cancelled'
+      ),
+      'Tras promover, se cancela en Mercado Pago la suscripción anterior para no cobrar doble'
+    );
+
+    mock.preapprovalStatus = 'cancelled';
+    const avisoViejo = await SubscriptionService.syncFromPreapproval('preapproval-mp-viejo');
+    const trasAvisoViejo = await db.tenant.findUniqueOrThrow({ where: { id: activaConsultorio.id } });
+    assert(
+      avisoViejo === null && trasAvisoViejo.subscriptionStatus === 'ACTIVE',
+      'La notificación de cancelación de la suscripción sustituida no cancela a la clínica'
+    );
+
+    // Si Mercado Pago falla al cancelar la anterior, el cambio pagado se
+    // activa igual: el error se registra para cancelarla a mano.
+    const conFalla = await nuevaClinica({
+      planSlug: 'consultorio',
+      subscriptionStatus: 'ACTIVE',
+      trialEndsAt: null,
+      mpPreapprovalId: 'preapproval-mp-viejo-2',
+      billingCycle: 'MONTHLY',
+      currentPeriodEnd: finVigente,
+    });
+    mock.siguientePreapprovalId = 'preapproval-mp-nuevo-2';
+    await SubscriptionService.createCheckout({
+      tenantId: conFalla.id,
+      planSlug: 'clinica-pro',
+      billingCycle: 'MONTHLY',
+      payerEmail: 'admin@clinica.mx',
+      backUrl: 'x',
+      auditActor: ACTOR,
+    });
+    mock.preapprovalIdDelPago = 'preapproval-mp-nuevo-2';
+    mock.pagoStatus = 'approved';
+    mock.cancelacionFalla = true;
+    let promoviaPeseAFalla = false;
+    try {
+      promoviaPeseAFalla = await SubscriptionService.handleAuthorizedPayment('pago-nuevo-2-001');
+    } finally {
+      mock.cancelacionFalla = false;
+    }
+    const trasFalla = await db.tenant.findUniqueOrThrow({ where: { id: conFalla.id } });
+    assert(
+      promoviaPeseAFalla &&
+        trasFalla.planSlug === 'clinica-pro' &&
+        trasFalla.mpPreapprovalId === 'preapproval-mp-nuevo-2',
+      'Un fallo al cancelar la suscripción anterior no bloquea la activación del plan pagado'
+    );
+
+    // Un segundo checkout sustituye al primero sin confirmar y lo cancela.
+    mock.siguientePreapprovalId = 'preapproval-mp-abandonado';
+    await SubscriptionService.createCheckout({
+      tenantId: conFalla.id,
+      planSlug: 'cadenas',
+      billingCycle: 'MONTHLY',
+      payerEmail: 'admin@clinica.mx',
+      backUrl: 'x',
+      auditActor: ACTOR,
+    });
+    mock.siguientePreapprovalId = 'preapproval-mp-definitivo';
+    mock.enviados = [];
+    await SubscriptionService.createCheckout({
+      tenantId: conFalla.id,
+      planSlug: 'consultorio',
+      billingCycle: 'MONTHLY',
+      payerEmail: 'admin@clinica.mx',
+      backUrl: 'x',
+      auditActor: ACTOR,
+    });
+    const reemplazo = await db.tenant.findUniqueOrThrow({ where: { id: conFalla.id } });
+    assert(
+      reemplazo.pendingPreapprovalId === 'preapproval-mp-definitivo' &&
+        reemplazo.pendingPlanSlug === 'consultorio' &&
+        mock.enviados.some(
+          (e) => e.method === 'PUT' && e.url.endsWith('/preapproval/preapproval-mp-abandonado')
+        ),
+      'Un checkout nuevo sustituye al pendiente anterior y lo cancela en Mercado Pago'
+    );
+
+    mock.preapprovalIdDelPago = 'preapproval-mp-abandonado';
+    const cobroAbandonado = await SubscriptionService.handleAuthorizedPayment('pago-abandonado-001');
+    assert(
+      !cobroAbandonado,
+      'Un cobro de un checkout sustituido no se acredita a la clínica'
+    );
+
+    await SubscriptionService.cancel(conFalla.id, ACTOR);
+    const canceladaConPendiente = await db.tenant.findUniqueOrThrow({ where: { id: conFalla.id } });
+    assert(
+      canceladaConPendiente.subscriptionStatus === 'CANCELED' &&
+        canceladaConPendiente.pendingPreapprovalId === null,
+      'Cancelar descarta también el cambio pendiente, para que no reactive la suscripción después'
+    );
+
+    // Una clínica en prueba que solo abrió el checkout también puede
+    // arrepentirse: no hay suscripción vigente, pero sí una autorización viva.
+    const soloPendiente = await nuevaClinica();
+    mock.siguientePreapprovalId = 'preapproval-mp-solo-pendiente';
+    await SubscriptionService.createCheckout({
+      tenantId: soloPendiente.id,
+      planSlug: 'clinica-pro',
+      billingCycle: 'MONTHLY',
+      payerEmail: 'admin@clinica.mx',
+      backUrl: 'x',
+      auditActor: ACTOR,
+    });
+    mock.enviados = [];
+    await SubscriptionService.cancel(soloPendiente.id, ACTOR);
+    const pruebaTrasCancelar = await db.tenant.findUniqueOrThrow({ where: { id: soloPendiente.id } });
+    assert(
+      pruebaTrasCancelar.pendingPreapprovalId === null &&
+        pruebaTrasCancelar.subscriptionStatus === 'TRIALING' &&
+        mock.enviados.some(
+          (e) => e.method === 'PUT' && e.url.endsWith('/preapproval/preapproval-mp-solo-pendiente')
+        ),
+      'Cancelar un checkout pendiente lo cancela en Mercado Pago sin tocar la prueba en curso'
     );
 
     // ---------------------------------------------------------------------

@@ -38,6 +38,16 @@ model Tenant {
   /// no extienda el periodo dos veces.
   lastPaymentId         String?
 
+  /// Cambio de plan solicitado pero aún no pagado. El checkout escribe aquí y
+  /// NO en `planSlug`/`mpPreapprovalId`: los cupos salen del plan activo, y
+  /// abrir el link de Mercado Pago no es haber pagado. El webhook que confirma
+  /// el cobro de esta autorización la promueve a activa y cancela la anterior.
+  pendingPlanSlug       String?
+  /// MONTHLY | ANNUAL del cambio pendiente.
+  pendingBillingCycle   String?
+  /// Preapproval del cambio pendiente. Único por la misma razón que el activo.
+  pendingPreapprovalId  String?           @unique
+
   /// Paso del asistente de configuración inicial; null cuando ya terminó.
   /// Sin esto la IA atendería pacientes con horarios y precios inventados.
   onboardingStep        String?

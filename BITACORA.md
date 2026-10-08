@@ -744,6 +744,92 @@ quedan fuera de este cambio a propósito; se atienden por separado.
   - `body` con `overflow: hidden` mientras está abierto;
   - la X devuelve el foco.
 - Capturas revisadas: el aspecto es idéntico.
+## [2026-10-08] fix(payments): no activar el plan contratado antes del cobro
+
+**Autor:** Claude Opus 5.5 · **Commit:** `5868531`
+
+### Qué se hizo
+`SubscriptionService.createCheckout` escribía el plan pedido en `planSlug` y
+la nueva autorización en `mpPreapprovalId` en cuanto se abría el link de
+Mercado Pago. Como `resolveTenantPlan` deriva los cupos de `planSlug`, eso
+causaba dos problemas:
+
+1. **Plan regalado.** Una clínica en prueba, o una activa en "Consultorio",
+   llamaba a `POST /api/subscription/checkout` con `clinica-pro`, no pagaba,
+   y aun así obtenía los cupos de Pro (citas ilimitadas, 300 min de voz).
+2. **Suscripción huérfana.** Pisar `mpPreapprovalId` desconectaba la
+   suscripción vigente de la clínica. Mercado Pago la seguía cobrando, pero
+   sus webhooks ya no encontraban clínica, así que esos cobros entraban y no
+   se acreditaban a nadie.
+
+La prueba de la suite que exigía que `planSlug` cambiara al abrir el checkout
+estaba fijando el bug como comportamiento esperado. Se corrigió.
+
+**Cambio.** Se agregaron tres columnas: `pendingPlanSlug`,
+`pendingBillingCycle` y `pendingPreapprovalId` (única), en la migración
+`0006`. Ahora el checkout solo escribe en ellas. Los cupos siguen saliendo
+del plan activo.
+
+El **primer cobro aprobado** del preapproval pendiente
+(`subscription_authorized_payment`) lo promueve: pasa a `planSlug`,
+`billingCycle` y `mpPreapprovalId`, y queda auditado como `PLAN_ACTIVADO`.
+Después se cancela en Mercado Pago la autorización anterior. Si esa
+cancelación falla, se registra con `logger.error` para cancelarla a mano,
+sin revertir un cambio que ya está pagado. Que el preapproval llegue como
+`authorized` **no** promueve nada, porque autorizar la tarjeta no es haber
+cobrado: el cargo todavía puede rechazarse.
+
+Antes, la clínica en prueba quedaba `ACTIVE` con solo esa autorización.
+Ahora queda activa con el cobro, que en la práctica llega casi al mismo
+tiempo. En cambio, si el pendiente se cancela en Mercado Pago, se descarta
+sin tocar la suscripción vigente.
+
+**Otras decisiones:**
+- **Webhooks durante el cambio.** Las notificaciones se emparejan con la
+  clínica por cualquiera de los dos ids, el activo o el pendiente. Así, la
+  suscripción vieja sigue cobrando y acreditándose mientras la nueva espera
+  su primer cobro. Una vez promovida la nueva, la notificación
+  `cancelled` del preapproval viejo ya no corresponde a ninguno de los dos
+  ids, así que no cancela a la clínica.
+- **Carreras.** Toda decisión se toma sobre la fila bloqueada
+  (`SELECT … FOR UPDATE`) y releída: el checkout, la sincronización, el
+  cobro y la cancelación. La revisión de código encontró que, sin el
+  bloqueo, dos webhooks simultáneos o un checkout concurrente podían
+  promover dos veces, aplicar un estado a la suscripción equivocada o
+  cancelar en Mercado Pago una suscripción recién pagada.
+- **Checkout sustituido.** Un segundo checkout sustituye al pendiente
+  anterior y lo cancela en Mercado Pago, sin bloquear el nuevo. Si ese
+  pendiente ya estaba autorizado, se habría cobrado sin acreditarse.
+- **Cobros no acreditables.** Un cobro aprobado de un preapproval sustituido
+  o sin clínica se registra como `error` ("revisar y reembolsar"), no como
+  `warn`, porque es dinero recibido sin acreditar.
+- **Cancelar.** `cancel()` también cancela el pendiente, para que no
+  reactive la suscripción después. Además permite cancelar un checkout
+  pendiente aunque no haya suscripción vigente, como una clínica en prueba
+  que se arrepiente; en ese caso la prueba en curso no se toca.
+- **Panel.** `getPlanSummary` expone `planPendiente`, solo informativo. No
+  se tocó la página de suscripción porque otra unidad la está editando.
+
+**Descartado:** promover el plan con el preapproval `authorized`. Así lo
+hacía el código anterior, pero dejaba Pro activo y la suscripción vieja
+cancelada aunque el primer cargo fuera rechazado.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma` — columnas `pending*` en `Tenant`.
+- `packages/database/prisma/migrations/0006_subscription_pending_plan/migration.sql` — SQL escrito a mano.
+- `packages/ai-agent/src/payment/subscriptionService.ts` — checkout pendiente, promoción en el primer cobro, búsqueda por ambos ids, bloqueo de fila, cancelación de la autorización sustituida.
+- `packages/database/src/plan.ts` — `planPendiente` en el resumen del panel.
+- `apps/api/src/subscription-test-suite.ts` — se corrigió la prueba que fijaba el bug y se agregaron casos de cambio de plan.
+
+### Verificación
+- `npm run build` limpio. `prisma migrate deploy`, y luego `prisma migrate diff --from-schema-datasource --to-schema-datamodel`: diff vacío.
+- Suite de suscripciones: 44/44. Cubre que abrir el checkout no cambia los cupos, que el primer cobro promueve, que se pide la cancelación del preapproval viejo, que su webhook sigue encontrando a la clínica durante el cambio, que un fallo de Mercado Pago al cancelar no bloquea la activación, el checkout sustituido y la cancelación con pendiente.
+- `npm test`: todas las suites pasan salvo `queue-test-suite`, que falla por una carrera en la tabla `Job`, compartida con otros procesos que corrían a la vez (P2025 en `markDead`). Corrida sola pasa 28/28.
+- `npm run test:stress`: 28/29. La falla ("fuera del horario de atención" en el flujo de anticipos) depende de la hora en que se corre. Esa suite no usa código de suscripciones.
+- E2E contra la API en el puerto 3104, con un mock local de Mercado Pago y webhooks firmados:
+  - Una clínica registrada en prueba abre el checkout de Pro y `/auth/me` sigue mostrando los cupos de prueba.
+  - El preapproval `authorized` no promueve el plan; el cobro aprobado sí.
+  - Un cambio posterior a Consultorio deja Pro vigente hasta el cobro y después cancela el preapproval viejo (se vio el `PUT /preapproval/<viejo>`).
 
 ---
 
