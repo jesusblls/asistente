@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, MessageSquare, PhoneCall, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronDown } from 'lucide-react';
+import { PLANS, TRIAL_DURATION_DAYS } from '@asistente/shared-types';
 
 type FaqCategory = 'TODAS' | 'TELEFONIA' | 'ANTICIPOS' | 'LEGAL';
 
@@ -13,22 +15,22 @@ export function FaqSection() {
     {
       category: 'TELEFONIA' as const,
       q: '¿Cómo funciona la conexión con el número telefónico actual de mi clínica en México?',
-      a: 'Es muy sencillo: no necesitas cambiar tu número de teléfono actual (+52). Configuramos un desvío condicional de llamadas (call forwarding) desde tu proveedor de telefonía (Telmex, Totalplay, Izzi, Telcel o Axtel). Si tu recepcionista está ocupada o llaman fuera de horario comercial, la llamada se transfiere automáticamente a AsistentePro en menos de medio segundo.',
+      a: 'No necesitas cambiar tu número de teléfono actual (+52). Se configura un desvío condicional de llamadas (call forwarding) desde tu proveedor de telefonía hacia la línea de AsistentePro. Si tu recepcionista está ocupada o llaman fuera de horario, la llamada pasa a la IA. La telefonía de voz está incluida en los planes Clínica Pro y Cadenas & Hospitales.',
     },
     {
       category: 'TELEFONIA' as const,
       q: '¿Los pacientes notan que están hablando con una Inteligencia Artificial?',
-      a: 'Nuestra tecnología de voz sobre Twilio SIP Trunking opera con latencia inferior a 600ms y síntesis de voz natural con acento y modismos de cortesía mexicanos («Con mucho gusto le agendo», «Permítame consultar la agenda de la doctora»). El 94% de los pacientes cree que está hablando con una recepcionista humana en el consultorio.',
+      a: 'La voz opera sobre Twilio Voice con una meta de respuesta inferior a 600 ms, voz natural y modismos de cortesía mexicanos («Con mucho gusto le agendo», «Permítame consultar la agenda de la doctora»), y el paciente puede interrumpirla en cualquier momento. Si el paciente prefiere hablar con una persona, puede pedir que lo comuniquen con recepción.',
     },
     {
       category: 'ANTICIPOS' as const,
       q: '¿Cómo funciona el Escudo Anti-Inasistencias con Mercado Pago?',
-      a: 'Cuando un paciente solicita una cita, el sistema genera automáticamente un enlace de cobro de anticipo ($200 a $500 MXN) vía Mercado Pago. El paciente puede pagar con tarjeta de crédito, débito, transferencia SPEI o depósito en OXXO. El dinero se deposita directamente en la cuenta bancaria de tu clínica. Esto reduce las inasistencias de un 30% a menos del 5%.',
+      a: 'Para los servicios que tú marques con anticipo (por ejemplo, $200 a $500 MXN), al agendar el sistema genera un enlace de pago de Mercado Pago y la cita queda con el anticipo pendiente. Cuando Mercado Pago confirma el pago, la cita pasa a pagada automáticamente y el paciente recibe su confirmación por WhatsApp. Un paciente que ya pagó tiene mucho más compromiso de asistir.',
     },
     {
       category: 'LEGAL' as const,
       q: '¿Qué sucede si un paciente llama con una urgencia médica o dental severa?',
-      a: 'El motor de triaje clínico de AsistentePro está entrenado para identificar palabras y síntomas de alarma (dolor insoportable, traumatismo, hemorragias o fiebres altas). En esos casos, el sistema prioriza el caso con alerta roja, asigna espacios de sobrecupo de emergencia y envía una notificación instantánea al WhatsApp del doctor en guardia.',
+      a: 'El motor de triaje identifica síntomas de alarma. Ante una emergencia vital (dificultad para respirar, dolor en el pecho, hemorragia que no para, pérdida de conocimiento) NO intenta agendar: indica llamar al 911 o acudir a urgencias de inmediato y pasa la conversación a tu equipo. Ante una urgencia dental aguda (dolor intenso, absceso, diente roto) recomienda atención prioritaria el mismo día con indicaciones preventivas.',
     },
     {
       category: 'TELEFONIA' as const,
@@ -37,18 +39,13 @@ export function FaqSection() {
     },
     {
       category: 'LEGAL' as const,
-      q: '¿Cumplen con la legislación de datos personales y salud en México (LFPDPPP y NOM-004)?',
-      a: 'Absolutamente. Toda la información de pacientes, citas y transacciones está cifrada bajo estándares bancarios AES-256. Cumplimos estrictamente con la Ley Federal de Protección de Datos Personales en Posesión de Particulares (LFPDPPP) y los lineamientos de confidencialidad del expediente clínico NOM-004-SSA3. Tus datos nunca se comparten con terceros.',
+      q: '¿Cómo protegen los datos de mis pacientes?',
+      a: 'Toda la comunicación viaja por HTTPS, las contraseñas se guardan con hash y las credenciales de tus canales (WhatsApp, Twilio) se almacenan cifradas. Cada clínica está aislada: nadie de otra clínica puede ver tus pacientes ni tus citas. Además, cada acceso y cambio del personal sobre expedientes, citas y conversaciones queda en una bitácora de auditoría que no se puede editar ni borrar. El tratamiento de datos personales se describe en nuestro Aviso de Privacidad.',
     },
     {
       category: 'ANTICIPOS' as const,
-      q: '¿Emiten factura fiscal mexicana con CFDI 4.0 deducible?',
-      a: 'Sí. Todos nuestros planes emiten factura fiscal mexicana automática con CFDI 4.0 y desglose de IVA para que tu contador pueda deducirla al 100% como gasto operativo de tu consultorio.',
-    },
-    {
-      category: 'ANTICIPOS' as const,
-      q: '¿Necesito ingresar mi tarjeta de crédito para la prueba gratis de 14 días?',
-      a: 'No. Puedes activar tu prueba gratuita de 14 días sin ingresar ninguna tarjeta de crédito. Tendrás acceso al panel completo, conmutador de prueba y simulador de WhatsApp para comprobar los resultados antes de tomar una decisión.',
+      q: `¿Necesito ingresar mi tarjeta de crédito para la prueba gratis de ${TRIAL_DURATION_DAYS} días?`,
+      a: `No. Puedes activar tu prueba gratuita de ${TRIAL_DURATION_DAYS} días sin ingresar ninguna tarjeta. Durante la prueba tienes acceso al panel, hasta ${PLANS.trial.limits.maxAppointmentsPerMonth} citas y ${PLANS.trial.limits.includedVoiceMinutes} minutos de voz para comprobar los resultados antes de elegir un plan.`,
     },
   ];
 
@@ -67,7 +64,7 @@ export function FaqSection() {
           </h2>
 
           <p className="mt-4 text-slate-600 text-base sm:text-lg leading-relaxed">
-            Todo lo que necesitas saber sobre la integración técnica, legalidad, costos y funcionamiento diario en México.
+            Lo que necesitas saber sobre la integración técnica, la seguridad, los costos y el funcionamiento diario en México.
           </p>
 
           {/* Category Filter Chips */}
@@ -103,7 +100,7 @@ export function FaqSection() {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              Anticipos & Facturación CFDI
+              Anticipos & Planes
             </button>
             <button
               type="button"
@@ -114,7 +111,7 @@ export function FaqSection() {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              Seguridad & Triaje (NOM-004)
+              Seguridad & Triaje
             </button>
           </div>
         </div>
@@ -159,19 +156,23 @@ export function FaqSection() {
         {/* Support Banner */}
         <div className="mt-12 bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-3">
           <h3 className="font-bold text-slate-900 text-base">
-            ¿Tienes alguna pregunta sobre tu conmutador o software médico?
+            ¿Prefieres comprobarlo tú mismo?
           </h3>
           <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto">
-            Nuestro equipo de soporte técnico clínico en Ciudad de México puede asesorarte de inmediato por WhatsApp.
+            Prueba el simulador como si fueras un paciente, o crea la cuenta de tu clínica y úsala {TRIAL_DURATION_DAYS} días sin tarjeta.
           </p>
-          <div className="pt-1">
-            <a
-              href="https://wa.me/525549128830?text=Hola,%20tengo%20dudas%20sobre%20AsistentePro%20para%20mi%20cl%C3%ADnica"
-              target="_blank"
-              rel="noopener noreferrer"
+          <div className="pt-1 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href="/registro"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs sm:text-sm transition-colors"
             >
-              <span>Hablar con un Asesor Clínico (+52)</span>
+              <span>Crear cuenta de prueba</span>
+            </Link>
+            <a
+              href="#demo"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm transition-colors"
+            >
+              <span>Probar el simulador</span>
             </a>
           </div>
         </div>

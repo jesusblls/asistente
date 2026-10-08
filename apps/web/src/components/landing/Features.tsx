@@ -113,15 +113,15 @@ export function Features() {
               <div className="lg:col-span-7 space-y-5">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-sky-50 text-sky-800 border border-sky-200 text-xs font-bold">
                   <PhoneCall className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Twilio SIP Trunking Sub-600ms</span>
+                  <span>Twilio Voice · Respuesta sub-600 ms</span>
                 </div>
 
                 <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                  Atiende hasta 50 llamadas simultáneas con voz mexicana natural
+                  Contesta tus llamadas con voz mexicana natural
                 </h3>
 
                 <p className="text-slate-600 text-base leading-relaxed">
-                  Conecta tu línea telefónica fija o celular actual (Telmex, Totalplay, Izzi, Telcel) sin cambiar de número. La IA contesta al primer timbrado con entonación humana y acento de México, resuelve dudas de tratamientos y agenda la cita directamente en la base de datos de tu clínica.
+                  Conecta tu línea telefónica fija o celular actual sin cambiar de número. La IA contesta con entonación cálida y acento de México, resuelve dudas de tratamientos y agenda la cita directamente en la agenda de tu clínica.
                 </p>
 
                 <div className="space-y-2.5 pt-2">
@@ -135,7 +135,7 @@ export function Features() {
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Grabación y transcripción médica:</strong> Cada llamada queda registrada en el expediente del paciente para consulta de recepción.</span>
+                    <span><strong>Transcripción en la bandeja:</strong> Cada turno de la llamada queda guardado como conversación para que recepción la consulte.</span>
                   </div>
                 </div>
               </div>
@@ -158,7 +158,7 @@ export function Features() {
                 </div>
 
                 <div className="bg-slate-50 rounded-xl p-3.5 text-xs text-slate-700 space-y-2 border border-slate-100">
-                  <p className="font-semibold text-slate-900">Transcripción clínica en tiempo real:</p>
+                  <p className="font-semibold text-slate-900">Transcripción de la llamada:</p>
                   <p className="italic text-slate-600 leading-relaxed">
                     «Buenas tardes, hablo para saber si la Dra. Morales atiende urgencias de dolor dental hoy en Polanco...»
                   </p>
@@ -169,7 +169,7 @@ export function Features() {
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
-                  <span>Operado vía Twilio SIP México</span>
+                  <span>Operado vía Twilio Voice</span>
                   <span className="text-emerald-700 font-semibold">Conexión Segura</span>
                 </div>
               </div>
@@ -186,25 +186,21 @@ export function Features() {
                 </div>
 
                 <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                  Atención oficial sin riesgo de bloqueo en el canal predilecto de México
+                  Atención por WhatsApp con la API oficial de Meta
                 </h3>
 
                 <p className="text-slate-600 text-base leading-relaxed">
-                  El 96% de los pacientes en México prefiere agendar y recibir recordatorios por WhatsApp. Operamos directamente sobre los servidores oficiales de Meta Cloud API con cero riesgo de suspensión de tu línea comercial.
+                  Tus pacientes ya usan WhatsApp todos los días. Operamos sobre la API oficial de WhatsApp Business (Meta Cloud API), no sobre aplicaciones no autorizadas que ponen en riesgo tu número.
                 </p>
 
                 <div className="space-y-2.5 pt-2">
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Tarjetas interactivas con botones:</strong> Confirmación en 1 clic, ubicación en Google Maps y pago de anticipo.</span>
+                    <span><strong>Mensajes interactivos con botones:</strong> Confirmar asistencia o pedir reagendar con 1 clic, y link de pago del anticipo.</span>
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Recordatorios a las 24h y 2h antes:</strong> Solicitan confirmación de asistencia y liberan el horario si el paciente avisa que no podrá ir.</span>
-                  </div>
-                  <div className="flex items-start gap-2.5 text-sm text-slate-700">
-                    <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Envío de indicaciones previas:</strong> Instrucciones preoperatorias, ayuno o preparación según el procedimiento médico.</span>
+                    <span><strong>Recordatorios a las 24h y 2h antes:</strong> Solicitan confirmación de asistencia para que sepas a tiempo quién no podrá ir.</span>
                   </div>
                 </div>
               </div>
@@ -227,14 +223,14 @@ export function Features() {
                 <div className="bg-slate-50 rounded-xl p-3 text-xs space-y-2 border border-slate-100 text-slate-800">
                   <p className="font-semibold text-slate-900">¡Tu cita ha sido agendada con éxito!</p>
                   <p className="text-slate-600">🗓 Mañana 4:00 PM • Dra. Sofía Morales</p>
-                  <p className="text-slate-600">📍 Av. Pdte. Masaryk 101, Polanco V Secc, CDMX</p>
+                  <p className="text-slate-600">📍 Dirección de tu clínica</p>
                   
                   <div className="pt-2 border-t border-slate-200 flex flex-col gap-1.5">
                     <button type="button" className="w-full py-1.5 bg-emerald-600 text-white font-bold rounded-lg text-center text-[11px]">
                       Confirmar Asistencia (1 clic)
                     </button>
                     <button type="button" className="w-full py-1.5 bg-white border border-slate-200 text-slate-700 font-medium rounded-lg text-center text-[11px]">
-                      Ver Ubicación en Waze / Google Maps
+                      Reagendar Cita
                     </button>
                   </div>
                 </div>
@@ -248,7 +244,7 @@ export function Features() {
               <div className="lg:col-span-7 space-y-5">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-xs font-bold">
                   <Stethoscope className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Criterio Clínico NOM-024 & NOM-004</span>
+                  <span>Protocolo de triaje en 3 niveles</span>
                 </div>
 
                 <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -266,7 +262,7 @@ export function Features() {
                     </div>
                     <div>
                       <div className="text-xs font-bold text-rose-900">🚨 Nivel 1: Emergencia Vital (911)</div>
-                      <p className="text-xs text-slate-600 mt-0.5">Dificultad respiratoria, dolor en pecho, traumatismo severo. NO agenda cita rutinaria: instruye acudir a urgencias de inmediato y alerta al personal.</p>
+                      <p className="text-xs text-slate-600 mt-0.5">Dificultad respiratoria, dolor en pecho, traumatismo severo. NO agenda cita: indica llamar al 911 o acudir a urgencias de inmediato y pasa la conversación a recepción.</p>
                     </div>
                   </div>
 
@@ -276,7 +272,7 @@ export function Features() {
                     </div>
                     <div>
                       <div className="text-xs font-bold text-amber-900">⚠️ Nivel 2: Urgencia Médica o Dental Aguda</div>
-                      <p className="text-xs text-slate-600 mt-0.5">Dolor insoportable (escala ≥ 7), flemón o infección. Ofrece sobrecupo prioritario el mismo día con especialista adecuado e indicaciones preventivas.</p>
+                      <p className="text-xs text-slate-600 mt-0.5">Dolor insoportable (escala ≥ 7), flemón o infección. Recomienda atención prioritaria el mismo día con el especialista adecuado e indicaciones preventivas.</p>
                     </div>
                   </div>
 
@@ -304,13 +300,13 @@ export function Features() {
                     <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-bold">Nivel 2</span>
                   </div>
                   <p className="text-xs text-slate-700 leading-relaxed">
-                    Paciente describe inflamación y dolor punzante tras 24 horas. Derivado automáticamente con el Cirujano Maxilofacial en turno para espacio de 5:30 PM.
+                    Paciente describe inflamación y dolor punzante tras 24 horas. Se recomienda atención prioritaria hoy con Cirugía Maxilofacial y Endodoncia.
                   </p>
                 </div>
 
                 <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 flex items-center justify-between border border-slate-100">
-                  <span>Alerta enviada a WhatsApp de Recepción</span>
-                  <span className="text-emerald-600 font-bold">Entregado</span>
+                  <span>Clasificación visible en la bandeja de recepción</span>
+                  <span className="text-amber-700 font-bold">Prioridad</span>
                 </div>
               </div>
             </div>
@@ -326,25 +322,25 @@ export function Features() {
                 </div>
 
                 <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                  Reduce hasta un 80% las inasistencias cobrando anticipos en pesos MXN
+                  Reduce las inasistencias cobrando anticipos en pesos MXN
                 </h3>
 
                 <p className="text-slate-600 text-base leading-relaxed">
-                  Las clínicas en México pierden hasta el 35% de sus ingresos por pacientes que no se presentan a su cita. AsistentePro genera links oficiales de cobro de anticipo ($200 a $500 MXN) que se acreditan directo a la cuenta bancaria de tu consultorio.
+                  Cada paciente que no llega es un espacio que nadie más pudo ocupar. Para los servicios que tú definas, AsistentePro genera un link de pago de Mercado Pago por el anticipo (por ejemplo, $200 a $500 MXN) y confirma la cita cuando el pago se acredita.
                 </p>
 
                 <div className="space-y-2.5 pt-2">
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Múltiples métodos de pago:</strong> Tarjetas de crédito/débito, transferencias SPEI y depósitos en OXXO.</span>
+                    <span><strong>Anticipo por servicio:</strong> Tú decides qué tratamientos lo requieren y de cuánto es, en pesos.</span>
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Depósito íntegro a tu banco:</strong> El dinero entra a la cuenta CLABE de tu clínica sin intermediarios sospechosos.</span>
+                    <span><strong>Confirmación automática:</strong> Al acreditarse el pago, la cita pasa a pagada y el paciente recibe su confirmación por WhatsApp.</span>
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Política de cancelación respetuosa:</strong> Si el paciente avisa con más de 12 horas, el saldo se aplica a su reprogramación.</span>
+                    <span><strong>Estado visible para recepción:</strong> Cada cita muestra si el anticipo está pendiente o pagado.</span>
                   </div>
                 </div>
               </div>
@@ -368,7 +364,7 @@ export function Features() {
                   
                   <div className="flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Anticipo pagado vía SPEI BBVA • Cita Confirmada</span>
+                    <span>Anticipo pagado • Cita confirmada</span>
                   </div>
 
                   <div className="text-[11px] text-slate-400 text-center">
@@ -393,7 +389,7 @@ export function Features() {
                 </h3>
 
                 <p className="text-slate-600 text-base leading-relaxed">
-                  No buscamos reemplazar al personal humano, sino liberarlo del 75% del trabajo telefónico repetitivo (precios, ubicación, horarios) para que pueda atender con calidez y esmero a los pacientes en sala de espera.
+                  No buscamos reemplazar al personal humano, sino liberarlo del trabajo telefónico repetitivo (precios, ubicación, horarios) para que pueda atender con calidez y esmero a los pacientes en sala de espera.
                 </p>
 
                 <div className="space-y-2.5 pt-2">
@@ -407,7 +403,7 @@ export function Features() {
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-slate-700">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                    <span><strong>Sugerencias en 1 clic:</strong> La IA redacta borradores de respuesta que el personal puede revisar y enviar en segundos.</span>
+                    <span><strong>Respuesta directa desde el panel:</strong> Mientras la IA está en pausa, el personal contesta por WhatsApp desde la misma bandeja.</span>
                   </div>
                 </div>
               </div>

@@ -5,11 +5,12 @@ import {
   Calculator, 
   TrendingUp, 
   ShieldCheck, 
-  ArrowRight,
-  Sparkles,
-  Building2,
-  Stethoscope
+  ArrowRight
 } from 'lucide-react';
+import { PLANS } from '@asistente/shared-types';
+
+/** Fracción de inasistencias que el cálculo supone evitable. Es un supuesto, no un dato medido. */
+const RECOVERY_ASSUMPTION = 0.8;
 
 export function RoiCalculator() {
   const [monthlyAppointments, setMonthlyAppointments] = useState<number>(180);
@@ -31,13 +32,14 @@ export function RoiCalculator() {
   const lostAppointments = Math.round(monthlyAppointments * (noShowRate / 100));
   const lostRevenueMxn = lostAppointments * averageTicket;
 
-  // 80% reduction in no-shows
-  const recoveredAppointments = Math.round(lostAppointments * 0.8);
+  // Supuesto explícito del cálculo (se muestra al usuario): el anticipo y los
+  // recordatorios evitan 8 de cada 10 inasistencias. No es una cifra medida.
+  const recoveredAppointments = Math.round(lostAppointments * RECOVERY_ASSUMPTION);
   const monthlyRecoveredMxn = recoveredAppointments * averageTicket;
   const annualRecoveredMxn = monthlyRecoveredMxn * 12;
 
-  // Plan Pro Cost = $3,499 MXN
-  const subscriptionCostMxn = 3499;
+  // Mismo precio que la sección de precios y que el cobro real.
+  const subscriptionCostMxn = PLANS['clinica-pro'].priceMonthlyMxn;
   const netMonthlyProfit = monthlyRecoveredMxn - subscriptionCostMxn;
   const roiPercentage = Math.round((netMonthlyProfit / subscriptionCostMxn) * 100);
 
@@ -48,6 +50,8 @@ export function RoiCalculator() {
       maximumFractionDigits: 0,
     }).format(val);
   };
+
+  const formatSignedMxn = (val: number) => `${val < 0 ? '-' : '+'}${formatMxn(Math.abs(val))}`;
 
   return (
     <section id="calculadora" className="py-20 md:py-28 bg-slate-50 border-b border-slate-200">
@@ -178,7 +182,7 @@ export function RoiCalculator() {
                 />
                 <div className="flex justify-between text-[11px] text-slate-400 font-medium">
                   <span>10% (Bajo)</span>
-                  <span>28% (Promedio en México)</span>
+                  <span>28%</span>
                   <span>45% (Crítico)</span>
                 </div>
               </div>
@@ -188,10 +192,10 @@ export function RoiCalculator() {
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-600 space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-slate-800">
                 <ShieldCheck className="w-4 h-4 text-teal-600" />
-                <span>¿Por qué funciona el 80% de reducción?</span>
+                <span>Supuesto del cálculo: se evitan {Math.round(RECOVERY_ASSUMPTION * 100)}% de las inasistencias</span>
               </div>
               <p className="text-slate-500 leading-relaxed">
-                Un anticipo de $200 a $500 MXN genera compromiso formal del paciente. Si además recibe recordatorios automáticos interactivos 24h y 2h antes por WhatsApp, las ausencias caen a menos del 5%.
+                Un anticipo de $200 a $500 MXN genera compromiso formal del paciente, y los recordatorios automáticos por WhatsApp 24h y 2h antes le permiten avisar a tiempo. Es una estimación ilustrativa: el resultado real depende de tu clínica y de tus pacientes.
               </p>
             </div>
           </div>
@@ -206,7 +210,7 @@ export function RoiCalculator() {
               {/* Big recovered amount */}
               <div className="mb-6">
                 <span className="text-xs text-slate-400 block mb-1">
-                  Pesos Mensuales Recuperados
+                  Pesos Mensuales Recuperados (estimado)
                 </span>
                 <div className="text-3xl sm:text-4xl font-extrabold text-emerald-400 tracking-tight tabular-nums">
                   {formatMxn(monthlyRecoveredMxn)}
@@ -226,7 +230,7 @@ export function RoiCalculator() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Costo mensual Plan Clínica Pro:</span>
+                  <span className="text-slate-400">Costo mensual Plan {PLANS['clinica-pro'].name}:</span>
                   <span className="font-semibold text-slate-300 tabular-nums">
                     -{formatMxn(subscriptionCostMxn)}/mes
                   </span>
@@ -234,8 +238,8 @@ export function RoiCalculator() {
 
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800">
                   <span className="text-white font-bold">Ganancia Neta Extra:</span>
-                  <span className="text-emerald-400 font-extrabold text-base tabular-nums">
-                    +{formatMxn(netMonthlyProfit)}/mes
+                  <span className={`font-extrabold text-base tabular-nums ${netMonthlyProfit < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {formatSignedMxn(netMonthlyProfit)}/mes
                   </span>
                 </div>
 
@@ -250,7 +254,7 @@ export function RoiCalculator() {
                   <span className="text-xs text-teal-200">Retorno de Inversión (ROI):</span>
                   <span className="text-sm font-extrabold text-teal-300 flex items-center gap-1 tabular-nums">
                     <TrendingUp className="w-4 h-4" />
-                    +{roiPercentage}%
+                    {roiPercentage < 0 ? '' : '+'}{roiPercentage}%
                   </span>
                 </div>
               </div>
@@ -266,7 +270,7 @@ export function RoiCalculator() {
                 <ArrowRight className="w-4 h-4" />
               </a>
               <p className="text-center text-[11px] text-slate-400 mt-2">
-                Sin contratos forzosos • Factura CFDI 4.0 mensual
+                Sin contratos forzosos • Estimación ilustrativa
               </p>
             </div>
 

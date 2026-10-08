@@ -46,9 +46,9 @@ interface ChatMessage {
 const CLINIC_PRESETS = {
   DENTAL: {
     name: 'Sonrisas Polanco (CDMX)',
-    doctor: 'Dra. Sofía Morales G. • Céd. 8492019',
+    doctor: 'Dra. Sofía Morales G.',
     assistant: 'Sofía (Asistente Dental IA)',
-    phone: '+52 (55) 4912-8830',
+    phone: 'Línea +52 · CDMX',
     greeting: '¡Hola! Bienvenido a Clínica Dental Sonrisas Polanco. Soy Sofía, tu asistente inteligente. ¿Te gustaría agendar una cita de limpieza, valoración o presentas alguna molestia que te duela mucho?',
     prompts: [
       { label: '🚨 Dolor fuerte de muela (Urgencia)', text: 'Tengo un dolor muy fuerte y punzante en una muela desde anoche, ¡apenas puedo masticar!' },
@@ -59,22 +59,22 @@ const CLINIC_PRESETS = {
   },
   MEDICINA: {
     name: 'Centro Médico Providencia (Guadalajara)',
-    doctor: 'Dr. Roberto Villaseñor • Céd. 6310294',
+    doctor: 'Dr. Roberto Villaseñor',
     assistant: 'Mariana (Asistente Médica IA)',
-    phone: '+52 (33) 3810-5400',
+    phone: 'Línea +52 · GDL',
     greeting: 'Buenas tardes, te comunicas a Centro Médico Providencia. Soy Mariana. ¿Deseas agendar con alguno de nuestros especialistas o requieres atención prioritaria el día de hoy?',
     prompts: [
       { label: '🚨 Fiebre alta y dificultad al respirar', text: 'Mi familiar tiene fiebre de 39°C y le cuesta un poco respirar desde la madrugada.' },
       { label: '📅 Consulta de Medicina Interna', text: 'Necesito una consulta de seguimiento para control de presión arterial con Medicina Interna.' },
       { label: '💵 Costo de consulta general', text: '¿Cuál es el costo de la consulta de medicina general y expiden receta médica?' },
-      { label: '🛡️ ¿Tienen convenio con aseguradoras?', text: '¿Aceptan seguros de gastos médicos mayores como GNP, MetLife o AXA?' },
+      { label: '💳 Formas de pago', text: '¿Qué formas de pago aceptan para la consulta?' },
     ]
   },
   DERMA: {
     name: 'DermoSkin Instituto (San Pedro MTY)',
-    doctor: 'Dra. Marcela Garza T. • Céd. 9104821',
+    doctor: 'Dra. Marcela Garza T.',
     assistant: 'Elena (Asistente Dermo IA)',
-    phone: '+52 (81) 8356-9020',
+    phone: 'Línea +52 · MTY',
     greeting: '¡Hola! Bienvenida a DermoSkin San Pedro. Soy Elena, asistente de la Dra. Garza. ¿Te gustaría agendar una valoración de piel o consultar información sobre tratamientos láser?',
     prompts: [
       { label: '🚨 Reacción alérgica aguda en piel', text: 'Me salió un sarpullido rojo muy repentino con ardor intenso tras aplicar una crema.' },
@@ -203,7 +203,7 @@ export function InteractiveDemo() {
           title: '🚨 Triaje Nivel 1: Urgencia Hospitalaria / Alerta Médica',
           color: 'bg-rose-50 text-rose-700 border-rose-200',
         };
-        aiResponse = 'Por los síntomas de compromiso respiratorio o fiebre aguda que mencionas, es fundamental una valoración médica presencial prioritaria inmediata. Hemos canalizado el aviso de urgencia a la guardia médica y reservado un espacio de sobrecupo inmediato. Si la falta de aire empeora, por favor acude a urgencias hospitalarias o llama al 911.';
+        aiResponse = 'Por los síntomas que describes, necesitas atención médica inmediata. Por favor llama al 911 o acude ahora mismo al servicio de urgencias más cercano; no esperes a una cita. Ya avisé a nuestro equipo de recepción para que te contacte.';
       } else if (lower.includes('dolor') || lower.includes('muela') || lower.includes('sarpullido') || lower.includes('urgencia')) {
         triageData = {
           level: 'URGENCY',
@@ -236,10 +236,10 @@ export function InteractiveDemo() {
       } else if (lower.includes('tarjeta') || lower.includes('meses') || lower.includes('msi') || lower.includes('seguro') || lower.includes('pago')) {
         triageData = {
           level: 'PAYMENT',
-          title: '💳 Triaje: Formas de Pago, Seguros y Facturación CFDI 4.0',
+          title: '💳 Triaje: Formas de Pago',
           color: 'bg-amber-50 text-amber-800 border-amber-200',
         };
-        aiResponse = `Aceptamos todas las tarjetas de crédito/débito, transferencias SPEI y Mercado Pago. Contamos con 3 y 6 Meses Sin Intereses en tratamientos calificados y emitimos factura fiscal CFDI 4.0 deducible de impuestos. También entregamos informes para reembolso de aseguradoras (GNP, AXA, MetLife).`;
+        aiResponse = `Aceptamos tarjetas de crédito y débito, efectivo y pago en línea con Mercado Pago. Para algunos tratamientos pedimos un anticipo que puedes pagar con el link que te enviamos por WhatsApp. ¿Te gustaría agendar una cita?`;
       } else {
         triageData = {
           level: 'INFO',
@@ -301,12 +301,12 @@ export function InteractiveDemo() {
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white tracking-tight leading-tight">
-            Prueba cómo atiende a tus pacientes en vivo: <br />
+            Prueba cómo atendería a tus pacientes: <br />
             <span className="text-teal-400">Teléfono (+52) o WhatsApp</span>
           </h2>
           
           <p className="mt-4 text-slate-300 text-base sm:text-lg leading-relaxed">
-            Interactúa como si fueras un paciente. Observa cómo identifica urgencias en segundos, habla con acento y calidez de México, y confirma citas protegiendo el espacio con anticipo.
+            Interactúa como si fueras un paciente. Es una simulación con clínicas y respuestas de ejemplo: muestra cómo identifica urgencias, habla con calidez mexicana y confirma citas protegiendo el espacio con anticipo.
           </p>
         </div>
 
@@ -435,7 +435,7 @@ export function InteractiveDemo() {
                     </h4>
                     <p className="text-xs text-teal-400 flex items-center gap-1.5 mt-0.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span>Línea {clinic.phone}</span>
+                      <span>{clinic.phone}</span>
                       <span className="text-slate-500">•</span>
                       <span className="font-mono text-slate-300 tabular-nums">{formatTimer(callDuration)}</span>
                     </p>
@@ -558,7 +558,7 @@ export function InteractiveDemo() {
                           <div className="mt-3 pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                             <span className="flex items-center gap-1 text-emerald-400">
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Sincronizado con Google Cal</span>
+                              <span>Registrada en la agenda</span>
                             </span>
                             <span>Aviso 24h por WhatsApp</span>
                           </div>
