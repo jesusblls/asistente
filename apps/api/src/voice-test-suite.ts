@@ -761,6 +761,30 @@ async function runVoiceTests(): Promise<void> {
     );
   }
 
+  section('📅 Cita agendada por teléfono');
+  {
+    const bookedIds: string[] = [];
+    const bookingSession = new VoiceCallSession(
+      buildSessionDeps({
+        agent: new FakeAgent({
+          replyText: 'Listo, su cita quedó agendada.',
+          appointmentBooked: { id: 'appt-voz-1' },
+        }),
+        onAppointmentBooked: async (appointmentId: string) => {
+          bookedIds.push(appointmentId);
+        },
+      })
+    );
+    for (let i = 0; i < 3; i += 1) bookingSession.handleMedia(mulawToBase64(toneFrame()));
+    for (let i = 0; i < 4; i += 1) bookingSession.handleMedia(mulawToBase64(silenceFrame));
+
+    const notified = await waitFor(() => bookedIds.length > 0);
+    assert(
+      notified && bookedIds[0] === 'appt-voz-1',
+      'una cita agendada por teléfono pide su confirmación por WhatsApp (con el link de anticipo)'
+    );
+  }
+
   section('☎️ Transferencia a recepción humana');
   {
     let handoverCalled = false;

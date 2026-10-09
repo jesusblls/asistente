@@ -4,7 +4,7 @@ import { OmnichannelAgent, normalizeMexicanPhone } from '@asistente/ai-agent';
 import { createLogger, maskPhone } from '@asistente/observability';
 import { WhatsAppService } from './whatsappService.js';
 import { safeEqual } from '../lib/webhookSecurity.js';
-import { enqueueVoiceFollowUp } from './queue/handlers.js';
+import { enqueueAppointmentConfirmation, enqueueVoiceFollowUp } from './queue/handlers.js';
 import {
   VoiceCallSession,
   isVoicePipelineEnabled,
@@ -60,6 +60,8 @@ export interface VoiceStreamDependencies {
     callSid: string;
     fromPhone: string;
   }) => Promise<boolean> | boolean;
+  /** Cita agendada en la llamada (por defecto encola la confirmación por WhatsApp). */
+  onAppointmentBooked?: (params: { tenant: VoiceTenant; appointmentId: string }) => Promise<unknown> | unknown;
   /**
    * Verifica el cupo de voz del plan antes de contestar. Lanza `PlanLimitError`
    * para rechazar la llamada. Inyectable para que las pruebas del stream no
@@ -327,6 +329,12 @@ export class VoiceStreamService {
                     text: buildVoiceFollowUpMessage(tenant),
                   });
                 }
+              },
+              onAppointmentBooked: async (appointmentId: string) => {
+                if (deps.onAppointmentBooked) {
+                  return deps.onAppointmentBooked({ tenant, appointmentId });
+                }
+                return enqueueAppointmentConfirmation(tenant.id, appointmentId);
               },
               onHumanHandover: async () => {
                 if (deps.redirectToHuman) {

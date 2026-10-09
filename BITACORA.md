@@ -10,6 +10,35 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-09] fix(voice): confirmar por whatsapp las citas agendadas por teléfono
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Pendiente que dejó la unidad de anticipos (#13): solo las citas agendadas por
+chat encolaban la confirmación por WhatsApp. Por esa confirmación llega el
+link de anticipo y queda la fecha límite de pago. Una cita agendada por
+teléfono:
+- se quedaba en `DEPOSIT_PENDING` sin que el paciente supiera cómo pagar;
+- no tenía comprobante escrito de fecha, hora y dirección.
+
+La sesión de voz tiene un callback nuevo, `onAppointmentBooked`, que se
+dispara cuando el agente agenda durante la llamada. Por defecto encola la
+misma confirmación que usa el chat, ahora en
+`enqueueAppointmentConfirmation()`, compartida por los dos canales. La clave
+de deduplicación por cita evita mandarla dos veces. Si encolar falla, se
+registra y la llamada sigue: la cita ya quedó agendada.
+
+### Archivos tocados
+- `apps/api/src/services/voice/pipeline.ts` — callback `onAppointmentBooked`.
+- `apps/api/src/services/voiceStreamService.ts` — conecta el callback con la cola (inyectable en pruebas).
+- `apps/api/src/services/queue/handlers.ts` — `enqueueAppointmentConfirmation()` compartida.
+- `apps/api/src/voice-test-suite.ts` — caso nuevo.
+
+### Verificación
+`npm test`: voz 90/90 y 20/20 suites; `npm run test:stress` 44/44;
+`npm run build` limpio.
+
 ## [2026-10-09] fix(api): reportar la api enferma si no hay base de datos
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

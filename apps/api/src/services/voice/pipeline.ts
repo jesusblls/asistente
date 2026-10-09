@@ -194,6 +194,12 @@ export interface VoiceCallSessionDeps {
   notifyFollowUp?: () => Promise<unknown> | unknown;
   /** Transfiere la llamada en curso a recepción humana (Twilio redirect). */
   onHumanHandover?: () => Promise<unknown> | unknown;
+  /**
+   * Cita agendada durante la llamada. Normalmente encola la confirmación por
+   * WhatsApp, que es por donde llega el link de anticipo: sin ella, una cita
+   * agendada por teléfono nunca recibía cómo pagar y quedaba sin comprobante.
+   */
+  onAppointmentBooked?: (appointmentId: string) => Promise<unknown> | unknown;
   config?: Partial<VoicePipelineConfig>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -611,6 +617,18 @@ export class VoiceCallSession {
 
     if (response?.appointmentBooked) {
       this.appointmentBooked = true;
+      const bookedId = (response.appointmentBooked as { id?: unknown }).id;
+      if (typeof bookedId === 'string' && this.deps.onAppointmentBooked) {
+        try {
+          await this.deps.onAppointmentBooked(bookedId);
+        } catch (error) {
+          // La cita ya quedó agendada; no se corta la llamada por la confirmación.
+          this.logger.warn('No se pudo encolar la confirmación de la cita por WhatsApp', {
+            callSid: this.callSid,
+            err: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
 
     if (response?.requiresHumanHandover) {

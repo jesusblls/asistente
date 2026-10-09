@@ -465,18 +465,29 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
   });
 
   if (turn.appointmentBookedId) {
-    const appointmentId = turn.appointmentBookedId;
-    await jobQueue.enqueue({
-      type: 'WHATSAPP_SEND',
-      tenantId: conversation.tenantId,
-      dedupeKey: `wa-confirm:${appointmentId}`,
-      payload: {
-        kind: 'APPOINTMENT_CONFIRMATION',
-        appointmentId,
-        tenantId: conversation.tenantId,
-      } satisfies WhatsAppSendPayload,
-    });
+    await enqueueAppointmentConfirmation(conversation.tenantId, turn.appointmentBookedId);
   }
+}
+
+/**
+ * Confirmación de cita por WhatsApp (con el link de anticipo si aplica). La
+ * usan los dos canales que agendan: el chat y la llamada. La clave de
+ * deduplicación por cita evita mandarla dos veces si ambos la piden.
+ */
+export async function enqueueAppointmentConfirmation(
+  tenantId: string,
+  appointmentId: string
+): Promise<string | null> {
+  return jobQueue.enqueue({
+    type: 'WHATSAPP_SEND',
+    tenantId,
+    dedupeKey: `wa-confirm:${appointmentId}`,
+    payload: {
+      kind: 'APPOINTMENT_CONFIRMATION',
+      appointmentId,
+      tenantId,
+    } satisfies WhatsAppSendPayload,
+  });
 }
 
 async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobContext): Promise<void> {
