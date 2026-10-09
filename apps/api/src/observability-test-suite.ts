@@ -46,6 +46,20 @@ async function runObservabilityTests() {
         Array.isArray(healthBody.metrics),
       '/health reporta estado de cola, worker y métricas'
     );
+    assert(healthBody.database === 'ok', '/health verifica la base de datos');
+
+    const degradedApp = await buildServer({
+      logger: false,
+      checkDatabase: async () => {
+        throw new Error('base caída');
+      },
+    });
+    const degraded = await degradedApp.inject({ method: 'GET', url: '/health' });
+    await degradedApp.close();
+    assert(
+      degraded.statusCode === 503 && degraded.json().database === 'unavailable' && degraded.json().status === 'degraded',
+      'Con la base caída, /health responde 503 (el healthcheck de Docker la marca enferma)'
+    );
 
     console.log('\n📈 2. Contadores HTTP y latencias');
     resetObservability();

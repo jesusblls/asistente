@@ -10,6 +10,7 @@ import {
   snapshotMetrics,
   toPrometheusText,
 } from '@asistente/observability';
+import { db } from '@asistente/database';
 import { registerAuth } from './lib/auth.js';
 import { registerErrorHandler, registerRawJsonBody } from './lib/http.js';
 import { assertProductionEnv } from './lib/env.js';
@@ -30,6 +31,28 @@ export interface BuildServerOptions {
   startQueueWorker?: boolean;
   /** Reemplaza el envío de correo (pruebas). */
   sendEmail?: EmailSender;
+  /** Reemplaza la verificación de la base en `/health` (pruebas). */
+  checkDatabase?: () => Promise<void>;
+}
+
+const DB_HEALTH_TIMEOUT_MS = 2_000;
+
+/**
+ * `SELECT 1` con tope de tiempo. Una base colgada (no caída) haría esperar al
+ * healthcheck de Docker hasta su propio timeout sin decir por qué.
+ */
+async function checkDatabaseDefault(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      db.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), DB_HEALTH_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function resolveCorsOrigins(): string[] {
@@ -128,7 +151,19 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   await registerAuth(server);
   await server.register(authRoutes, { sendEmail: options.sendEmail });
 
-  server.get('/health', async () => {
+  const checkDatabase = options.checkDatabase ?? checkDatabaseDefault;
+
+  server.get('/health', async (_request, reply) => {
+    // Sin base de datos la API no puede atender nada (sesiones, citas,
+    // webhooks), aunque el proceso siga vivo. Antes respondía 200 igual, y el
+    // healthcheck de Docker la daba por sana con Postgres caído.
+    let database: 'ok' | 'unavailable' = 'ok';
+    try {
+      await checkDatabase();
+    } catch {
+      database = 'unavailable';
+    }
+
     // La salud incluye la profundidad de la cola: si se acumulan trabajos
     // PENDING/DEAD es señal de que el worker no está corriendo o de que un
     // proveedor externo está fallando. Nunca expone datos de pacientes.
@@ -139,12 +174,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
       queue = { error: 'unavailable' };
     }
 
+    if (database !== 'ok') reply.status(503);
+
     return {
-      status: 'ok',
+      status: database === 'ok' ? 'ok' : 'degraded',
       service: 'asistente-omnicanal-api',
       timestamp: new Date().toISOString(),
       country: 'Mexico (+52)',
-      channels: ['WhatsApp', 'Instagram', 'Messenger', 'Twilio Voice', 'Webchat'],
+      database,
+      // Solo los canales que el código atiende de verdad.
+      channels: ['WhatsApp', 'Voz'],
       queue,
       queueWorker: process.env.QUEUE_WORKER_ENABLED === 'false' ? 'disabled' : 'enabled',
       metrics: snapshotMetrics().slice(0, 40),

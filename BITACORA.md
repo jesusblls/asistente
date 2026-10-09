@@ -10,6 +10,32 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-09] fix(api): reportar la api enferma si no hay base de datos
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Pendiente que dejó la unidad de healthchecks (#1): `/health` respondía 200
+aunque Postgres estuviera caído, así que el healthcheck nuevo de Docker daba
+por sana una API que no podía atender nada (sesiones, citas, webhooks).
+
+`/health` ahora corre `SELECT 1` con tope de 2 s. Si falla, responde 503 con
+`status: 'degraded'` y `database: 'unavailable'`. Docker la marca enferma
+porque su healthcheck exige `r.ok`. El tope de tiempo existe porque una base
+colgada (no caída) haría esperar al healthcheck hasta su propio timeout sin
+decir por qué.
+
+De paso, `channels` dejó de anunciar Instagram, Messenger y Webchat, que no
+existen. Ahora dice WhatsApp y Voz, igual que la landing.
+
+### Archivos tocados
+- `apps/api/src/server.ts` — verificación de la base en `/health`, inyectable para pruebas (`checkDatabase`).
+- `apps/api/src/observability-test-suite.ts` — 2 casos nuevos.
+
+### Verificación
+Suite de observabilidad 12/12: con base sana, `database: 'ok'`; con la
+verificación forzada a fallar, 503 y `degraded`. `npm run build`, `npm test`.
+
 ## [2026-10-08] fix(webhooks): enviar avisos de anticipo desde el número de la clínica
 
 **Autor:** Claude Opus 5.5 · **Commit:** `48f9d1e`
