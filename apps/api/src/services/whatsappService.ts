@@ -21,6 +21,21 @@ export interface SendWhatsAppParams {
   toPhoneE164: string;
   text: string;
   interactiveButtons?: { id: string; title: string }[];
+  /**
+   * Plantilla aprobada por Meta. Fuera de la ventana de 24 h desde el último
+   * mensaje del paciente, Meta solo acepta plantillas; `text` se sigue usando
+   * para la bandeja y los logs.
+   */
+  template?: WhatsAppTemplate;
+}
+
+export interface WhatsAppTemplate {
+  name: string;
+  languageCode: string;
+  /** Valores de {{1}}, {{2}}… del cuerpo, en orden. */
+  bodyParameters: string[];
+  /** Payload de cada botón de respuesta rápida, en el orden de la plantilla. */
+  quickReplyPayloads?: string[];
 }
 
 export interface AppointmentConfirmationDetails {
@@ -190,7 +205,31 @@ export class WhatsAppService {
     const url = `${META_GRAPH_BASE}/${credentials.phoneNumberId}/messages`;
 
     let body: Record<string, unknown>;
-    if (interactiveButtons && interactiveButtons.length > 0) {
+    if (params.template) {
+      const { name, languageCode, bodyParameters, quickReplyPayloads = [] } = params.template;
+      body = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipientPhone,
+        type: 'template',
+        template: {
+          name,
+          language: { code: languageCode },
+          components: [
+            {
+              type: 'body',
+              parameters: bodyParameters.map((value) => ({ type: 'text', text: value })),
+            },
+            ...quickReplyPayloads.map((payload, index) => ({
+              type: 'button',
+              sub_type: 'quick_reply',
+              index: String(index),
+              parameters: [{ type: 'payload', payload }],
+            })),
+          ],
+        },
+      };
+    } else if (interactiveButtons && interactiveButtons.length > 0) {
       body = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',

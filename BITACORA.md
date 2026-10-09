@@ -10,6 +10,47 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-09] fix(webhooks): respetar la ventana de 24 h en los recordatorios
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Pendiente que dejó la unidad de recordatorios (#5). Meta solo acepta texto
+libre a quien escribió en las últimas 24 h; a los demás, solo plantillas
+aprobadas. La mayoría de los recordatorios caen fuera de esa ventana, así que
+en producción cada uno habría terminado en un trabajo DEAD y un mensaje
+FAILED en la bandeja.
+
+- `WhatsAppService.sendMessage` acepta una `template` opcional (nombre,
+  idioma, variables del cuerpo y payloads de botones de respuesta rápida).
+  `text` se sigue guardando para la bandeja y los logs.
+- El barrido revisa el último mensaje entrante del paciente:
+  - **ventana abierta:** texto libre con botones, como antes;
+  - **ventana cerrada y `WHATSAPP_REMINDER_TEMPLATE` configurada:** la plantilla,
+    con los mismos `confirm_<id>` / `reschedule_<id>` que ya entiende el webhook;
+  - **ventana cerrada y sin plantilla:** no se intenta y la cita **no se marca**.
+    Si el paciente escribe antes de que cierre la ventana del recordatorio, el
+    siguiente barrido lo manda. Se cuenta en
+    `appointment_reminders_outside_window_total`.
+- Contrato de la plantilla, documentado en `.env.example`: 4 variables
+  (paciente, clínica, fecha y hora, especialista) y dos botones (confirmar,
+  reagendar). Debe existir con ese nombre en la cuenta de cada número que
+  envía.
+
+### Archivos tocados
+- `apps/api/src/services/whatsappService.ts` — envío de plantillas.
+- `apps/api/src/services/queue/handlers.ts` — `template` en el payload `TEXT`.
+- `apps/api/src/services/reminders/reminderService.ts` — decisión por ventana.
+- `apps/api/src/reminders-test-suite.ts` — 3 casos nuevos.
+- `.env.example`, `deploy/.env.production.example`.
+
+### Verificación
+Suite de recordatorios 32/32: plantilla fuera de la ventana, texto libre
+dentro, nada sin plantilla (y la cita sin marcar). `npm run build`, `npm test`.
+
+### Pendientes derivados
+- **El dueño debe crear la plantilla en Meta Business**, obtener su aprobación y configurar `WHATSAPP_REMINDER_TEMPLATE` en producción.
+
 ## [2026-10-09] fix(voice): confirmar por whatsapp las citas agendadas por teléfono
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

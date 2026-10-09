@@ -1,6 +1,7 @@
 import { db, decryptCredentials, recordAudit, resolveTenantPlan } from '@asistente/database';
 import { createLogger, incrementCounter } from '@asistente/observability';
 import type { WhatsAppSendPayload } from '../queue/handlers.js';
+import type { WhatsAppTemplate } from '../whatsappService.js';
 
 /**
  * Recordatorios de cita por WhatsApp (24 h y 2 h antes).
@@ -130,6 +131,34 @@ async function resolveTenantSender(tenantId: string): Promise<string | undefined
   return null;
 }
 
+/** Ventana de servicio de WhatsApp: tras ella Meta solo acepta plantillas. */
+const WHATSAPP_SERVICE_WINDOW_MS = 24 * HOUR_MS;
+
+/**
+ * Plantilla aprobada para recordatorios, si está configurada. Meta rechaza
+ * texto libre a quien no escribió en las últimas 24 h, que es el caso de la
+ * mayoría de los recordatorios. La plantilla debe existir con el mismo nombre
+ * en la cuenta de WhatsApp Business de cada número que envía, con 4
+ * variables en el cuerpo — {{1}} paciente, {{2}} clínica, {{3}} fecha y hora,
+ * {{4}} especialista — y dos botones de respuesta rápida: confirmar y
+ * reagendar, en ese orden.
+ */
+function reminderTemplate(appointment: ReminderAppointment): WhatsAppTemplate | null {
+  const name = process.env.WHATSAPP_REMINDER_TEMPLATE?.trim();
+  if (!name) return null;
+  return {
+    name,
+    languageCode: process.env.WHATSAPP_REMINDER_TEMPLATE_LANG?.trim() || 'es_MX',
+    bodyParameters: [
+      appointment.patient.fullName,
+      appointment.tenant.name,
+      formatAppointmentDate(appointment.startTime, appointment.tenant.timezone),
+      appointment.doctor.name,
+    ],
+    quickReplyPayloads: [`confirm_${appointment.id}`, `reschedule_${appointment.id}`],
+  };
+}
+
 /** Máximo de citas revisadas por ventana y barrido (protege ante un apagón largo). */
 const MAX_PER_SWEEP = 2000;
 
@@ -193,7 +222,7 @@ async function findDueAppointments(
   });
 }
 
-type ClaimOutcome = 'ENQUEUED' | 'ALREADY_CLAIMED' | 'HUMAN_TAKEOVER';
+type ClaimOutcome = 'ENQUEUED' | 'ALREADY_CLAIMED' | 'HUMAN_TAKEOVER' | 'OUTSIDE_WINDOW';
 
 function maxAttempts(): number {
   const parsed = Number(process.env.JOBS_MAX_ATTEMPTS);
@@ -228,6 +257,22 @@ async function claimAndEnqueue(
     // debe escribirle al paciente (CLAUDE.md § 1.5). No se marca la bandera:
     // si recepción devuelve el chat a la IA a tiempo, el recordatorio aún sale.
     if (conversation?.isHandedOverToHuman) return 'HUMAN_TAKEOVER';
+
+    // ¿Está abierta la ventana de 24 h? Si no, solo una plantilla aprobada
+    // llega; mandar texto libre terminaría en un trabajo DEAD por cada cita.
+    // Sin plantilla no se reclama la cita: si el paciente escribe antes de que
+    // cierre la ventana del recordatorio, el siguiente barrido sí lo manda.
+    const lastInbound = conversation
+      ? await tx.message.findFirst({
+          where: { conversationId: conversation.id, tenantId: appointment.tenantId, direction: 'INBOUND' },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        })
+      : null;
+    const insideWindow =
+      lastInbound !== null && now.getTime() - lastInbound.createdAt.getTime() < WHATSAPP_SERVICE_WINDOW_MS;
+    const template = insideWindow ? null : reminderTemplate(appointment);
+    if (!insideWindow && !template) return 'OUTSIDE_WINDOW';
 
     const claim = await tx.appointment.updateMany({
       where: {
@@ -284,6 +329,7 @@ async function claimAndEnqueue(
         { id: `confirm_${appointment.id}`, title: 'Confirmar Asistencia' },
         { id: `reschedule_${appointment.id}`, title: 'Reagendar Cita' },
       ],
+      ...(template ? { template } : {}),
     };
 
     await tx.job.create({
@@ -363,6 +409,9 @@ export async function runReminderSweep(now: Date = new Date()): Promise<Reminder
 
     const outcome = await claimAndEnqueue(appointment, kind, sender, now);
     if (outcome !== 'ENQUEUED') {
+      if (outcome === 'OUTSIDE_WINDOW') {
+        incrementCounter('appointment_reminders_outside_window_total', { kind });
+      }
       result.skipped++;
       return;
     }

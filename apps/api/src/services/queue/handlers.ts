@@ -1,7 +1,7 @@
 import { db, recordAudit, resolveTenantPlan, type AuditActor } from '@asistente/database';
 import { OmnichannelAgent, evaluateTriage } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
-import { WhatsAppService } from '../whatsappService.js';
+import { WhatsAppService, type WhatsAppTemplate } from '../whatsappService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
 import { maskJobText } from './queue.js';
 import { ensureDepositLink } from '../deposits/depositLink.js';
@@ -42,6 +42,8 @@ export type WhatsAppSendPayload =
       /** Si viene, se actualiza `Message.deliveryStatus` con el resultado. */
       messageId?: string;
       interactiveButtons?: { id: string; title: string }[];
+      /** Plantilla aprobada, para escribir fuera de la ventana de 24 h. */
+      template?: WhatsAppTemplate;
     }
   | { kind: 'APPOINTMENT_CONFIRMATION'; appointmentId: string; tenantId: string }
   | { kind: 'DEPOSIT_NOTICE'; notice: DepositNoticeKind; appointmentId: string; tenantId: string };
@@ -511,6 +513,7 @@ async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobCon
       toPhoneE164: payload.toPhoneE164,
       text: payload.text,
       interactiveButtons: payload.interactiveButtons,
+      template: payload.template,
     });
 
     if (!delivered) throw new Error('Meta no aceptó el mensaje de WhatsApp');

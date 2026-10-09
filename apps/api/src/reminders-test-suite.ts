@@ -12,6 +12,10 @@ import { runReminderSweep } from './services/reminders/reminderService.js';
 
 process.env.META_WHATSAPP_TOKEN = '';
 process.env.META_PHONE_NUMBER_ID = '';
+// Fuera de la ventana de 24 h solo sale con plantilla aprobada; la mayoría de
+// estos pacientes no ha escrito, así que se configura una para las pruebas
+// generales y se quita en la sección que prueba la ventana.
+process.env.WHATSAPP_REMINDER_TEMPLATE = 'recordatorio_cita';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -250,6 +254,58 @@ async function runReminderTests() {
     });
     await runReminderSweep(now);
     assert((await remindersFor(in20h.id)).length === 3, 'La cita reagendada recibe su propio recordatorio de 24 h');
+
+    // Ventana de 24 h de WhatsApp.
+    const payloadOf = async (appointmentId: string) => {
+      const [job] = await remindersFor(appointmentId);
+      return job ? (JSON.parse(job.payload) as { template?: { name: string; bodyParameters: string[]; quickReplyPayloads?: string[] } }) : null;
+    };
+
+    const outsidePayload = await payloadOf(in90m.id);
+    assert(
+      outsidePayload?.template?.name === 'recordatorio_cita' &&
+        outsidePayload.template.bodyParameters.length === 4 &&
+        outsidePayload.template.quickReplyPayloads?.[0] === `confirm_${in90m.id}`,
+      'Sin mensaje reciente del paciente, el recordatorio sale con la plantilla aprobada'
+    );
+
+    const recentPatient = await db.patient.create({
+      data: { tenantId: tenant.id, fullName: 'Paciente Reciente', phoneE164: '+525587654321' },
+    });
+    const recentConversation = await db.conversation.create({
+      data: { tenantId: tenant.id, patientId: recentPatient.id, channel: 'WHATSAPP', externalChannelId: `wa-recent-${suffix}` },
+    });
+    await db.message.create({
+      data: {
+        conversationId: recentConversation.id,
+        tenantId: tenant.id,
+        direction: 'INBOUND',
+        senderRole: 'PATIENT',
+        content: 'Hola',
+        channel: 'WHATSAPP',
+        createdAt: new Date(now.getTime() - HOUR),
+      },
+    });
+    const recentAppt = await createAppointment(20 * HOUR, { patientId: recentPatient.id });
+    await runReminderSweep(now);
+    const insidePayload = await payloadOf(recentAppt.id);
+    assert(
+      insidePayload !== null && insidePayload.template === undefined,
+      'Si el paciente escribió en las últimas 24 h, sale como texto libre (sin plantilla)'
+    );
+
+    delete process.env.WHATSAPP_REMINDER_TEMPLATE;
+    const silentPatient = await db.patient.create({
+      data: { tenantId: tenant.id, fullName: 'Paciente Sin Chat', phoneE164: '+525511223399' },
+    });
+    const silentAppt = await createAppointment(20 * HOUR, { patientId: silentPatient.id });
+    await runReminderSweep(now);
+    const silentAfter = await db.appointment.findUnique({ where: { id: silentAppt.id } });
+    assert(
+      (await remindersFor(silentAppt.id)).length === 0 && silentAfter?.reminderSent24h === false,
+      'Sin plantilla ni ventana abierta no se encola nada (Meta lo rechazaría) y la cita no se marca'
+    );
+    process.env.WHATSAPP_REMINDER_TEMPLATE = 'recordatorio_cita';
   } catch (error) {
     console.error('Error inesperado en la suite de recordatorios:', error);
     failed++;
