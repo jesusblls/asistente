@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-09] feat(webhooks): avisar por correo al personal cuando la ia cede un chat
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `3f76a85`
 
 ### Qué se hizo
 Pendiente que dejó la unidad de WhatsApp (#9). Cuando la IA cede una
@@ -55,7 +55,7 @@ el correo no lleva teléfono ni texto del paciente. `npm run build`,
 
 ## [2026-10-09] docs(readme): pedir el .env de cada workspace en el setup manual
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `17822ab`
 
 ### Qué se hizo
 La Opción B del README (setup manual) solo pedía `cp .env.example .env` en la
@@ -74,7 +74,7 @@ Revisado contra `scripts/setup.sh`, que copia exactamente esos dos archivos.
 
 ## [2026-10-09] fix(seguridad): enmascarar todos los teléfonos en los logs
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `46b401a`
 
 ### Qué se hizo
 La unidad de la cola (#3) notó que `redact()` de `@asistente/observability`
@@ -109,7 +109,7 @@ con sus propios dígitos, y la hora y la fecha se conservan. `npm run build`,
 
 ## [2026-10-09] fix(webhooks): respetar la ventana de 24 h en los recordatorios
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `8d935d8`
 
 ### Qué se hizo
 Pendiente que dejó la unidad de recordatorios (#5). Meta solo acepta texto
@@ -150,7 +150,7 @@ dentro, nada sin plantilla (y la cita sin marcar). `npm run build`, `npm test`.
 
 ## [2026-10-09] fix(voice): confirmar por whatsapp las citas agendadas por teléfono
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `719dbbb`
 
 ### Qué se hizo
 Pendiente que dejó la unidad de anticipos (#13): solo las citas agendadas por
@@ -179,7 +179,7 @@ registra y la llamada sigue: la cita ya quedó agendada.
 
 ## [2026-10-09] fix(api): reportar la api enferma si no hay base de datos
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `eaf622d`
 
 ### Qué se hizo
 Pendiente que dejó la unidad de healthchecks (#1): `/health` respondía 200
