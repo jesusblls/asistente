@@ -20,7 +20,12 @@ import { maskJobText, requeueDeadJob, type JobType } from '../../services/queue/
  * una clínica vería trabajos de las demás.
  */
 
-const JOB_TYPES: readonly JobType[] = ['META_INBOUND_MESSAGE', 'WHATSAPP_SEND', 'VOICE_POST_CALL_FOLLOWUP'];
+const JOB_TYPES: readonly JobType[] = [
+  'META_INBOUND_MESSAGE',
+  'WHATSAPP_SEND',
+  'VOICE_POST_CALL_FOLLOWUP',
+  'STAFF_HANDOVER_ALERT',
+];
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;

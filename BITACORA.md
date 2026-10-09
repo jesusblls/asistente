@@ -10,6 +10,49 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-09] feat(webhooks): avisar por correo al personal cuando la ia cede un chat
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Pendiente que dejó la unidad de WhatsApp (#9). Cuando la IA cede una
+conversación a recepción, sea por posible emergencia vital o porque el
+paciente lo pidió, la única señal era el estado "Humano en Control" en la
+bandeja. Pero la IA calla justo en ese momento: si nadie mira el panel (de
+noche, en fin de semana), el paciente queda sin respuesta de nadie, y en una
+emergencia eso es lo peor que puede pasar.
+
+Ahora el traspaso encola un trabajo `STAFF_HANDOVER_ALERT` que manda un
+correo a cada usuario activo con rol ADMIN o RECEPTIONIST de la clínica.
+- **Por la cola:** una caída del proveedor de correo se reintenta y no
+  retrasa la respuesta al paciente.
+- **Un correo por persona:** nadie ve los correos de sus compañeros, y un
+  buzón rechazado no tumba el aviso a los demás.
+- **Sin datos del paciente:** ni nombre, ni teléfono, ni el texto. El correo
+  sale del sistema y puede reenviarse; el detalle se consulta en el panel,
+  donde el acceso queda auditado.
+- **Asunto distinto para emergencias** ("🚨 Posible emergencia…").
+- **Enlace a la bandeja,** no a la conversación: la bandeja todavía no abre
+  una conversación por URL.
+
+Usa el mismo `sendEmail` que la recuperación de contraseña: sin
+`RESEND_API_KEY` en producción, el correo se descarta igual que aquel.
+
+### Archivos tocados
+- `apps/api/src/services/queue/handlers.ts` — encolado al ceder y handler `processStaffHandoverAlert`.
+- `apps/api/src/services/queue/queue.ts`, `apps/api/src/routes/admin/queue.ts` — tipo de trabajo nuevo.
+- `apps/api/src/services/emailService.ts` — plantilla `handoverAlertEmail`.
+- `apps/api/src/whatsapp-inbound-test-suite.ts` — 2 casos nuevos.
+
+### Verificación
+WhatsApp 25/25: la emergencia avisa a dirección y recepción, no al doctor, y
+el correo no lleva teléfono ni texto del paciente. `npm run build`,
+`npm test` 20/20 suites, `npm run test:stress` 44/44.
+
+### Pendientes derivados
+- Llega solo cuando `RESEND_API_KEY` esté configurada en producción.
+- La bandeja no abre una conversación por URL; el enlace lleva a la bandeja.
+
 ## [2026-10-09] docs(readme): pedir el .env de cada workspace en el setup manual
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

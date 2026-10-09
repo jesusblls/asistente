@@ -27,7 +27,11 @@ import {
  * inyectable, lo que permite probarlo sin red.
  */
 
-export type JobType = 'META_INBOUND_MESSAGE' | 'WHATSAPP_SEND' | 'VOICE_POST_CALL_FOLLOWUP';
+export type JobType =
+  | 'META_INBOUND_MESSAGE'
+  | 'WHATSAPP_SEND'
+  | 'VOICE_POST_CALL_FOLLOWUP'
+  | 'STAFF_HANDOVER_ALERT';
 
 export type JobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'DEAD';
 

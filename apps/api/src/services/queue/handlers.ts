@@ -2,6 +2,7 @@ import { db, recordAudit, resolveTenantPlan, type AuditActor } from '@asistente/
 import { OmnichannelAgent, evaluateTriage } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
 import { WhatsAppService, type WhatsAppTemplate } from '../whatsappService.js';
+import { handoverAlertEmail, sendEmail, type EmailSender } from '../emailService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
 import { maskJobText } from './queue.js';
 import { ensureDepositLink } from '../deposits/depositLink.js';
@@ -445,11 +446,21 @@ async function processMetaInbound(payload: MetaInboundPayload, context: JobConte
   });
 
   if (turn.handoverReason) {
-    // Recepción se entera por la bandeja omnicanal, que marca la conversación
-    // como "Humano en Control"; el log deja además la alerta para monitoreo.
+    // La bandeja marca la conversación como "Humano en Control", pero nadie
+    // la está mirando a las 3 a. m.: se avisa también por correo al personal.
     context.logger.warn('La IA cedió la conversación de WhatsApp a recepción', {
       conversationId: conversation.id,
       reason: turn.handoverReason,
+    });
+    await jobQueue.enqueue({
+      type: 'STAFF_HANDOVER_ALERT',
+      tenantId: conversation.tenantId,
+      dedupeKey: `handover-alert:${outboundMessage.id}`,
+      payload: {
+        tenantId: conversation.tenantId,
+        conversationId: conversation.id,
+        reason: turn.handoverReason,
+      } satisfies StaffHandoverAlertPayload,
     });
   }
 
@@ -577,6 +588,53 @@ async function processWhatsAppSend(payload: WhatsAppSendPayload, context: JobCon
   });
 }
 
+export interface StaffHandoverAlertPayload {
+  tenantId: string;
+  conversationId: string;
+  reason: string;
+}
+
+/** Roles que atienden conversaciones; los doctores no reciben estos avisos. */
+const HANDOVER_ALERT_ROLES = ['ADMIN', 'RECEPTIONIST'];
+
+let alertEmailSender: EmailSender = sendEmail;
+
+/** Reemplaza el envío de correo de las alertas (pruebas). */
+export function setHandoverAlertEmailSender(sender: EmailSender | null): void {
+  alertEmailSender = sender ?? sendEmail;
+}
+
+async function processStaffHandoverAlert(payload: StaffHandoverAlertPayload): Promise<void> {
+  const tenant = await db.tenant.findFirst({
+    where: { id: payload.tenantId, isActive: true },
+    select: { name: true },
+  });
+  if (!tenant) throw new PermanentJobError(`Clínica ${payload.tenantId} no encontrada para la alerta`);
+
+  const staff = await db.user.findMany({
+    where: { tenantId: payload.tenantId, isActive: true, role: { in: HANDOVER_ALERT_ROLES } },
+    select: { email: true },
+  });
+  if (staff.length === 0) return;
+
+  const baseUrl = (process.env.APP_PUBLIC_URL || 'http://localhost:3001').replace(/\/$/, '');
+  // La conversación aparece arriba en la bandeja, marcada "Humano en Control".
+  const conversationUrl = `${baseUrl}/dashboard/inbox`;
+
+  // Un correo por persona (no una lista en "Para"): nadie ve los correos de
+  // sus compañeros, y un buzón rechazado no tumba el aviso a los demás.
+  const results = await Promise.allSettled(
+    staff.map((member) =>
+      alertEmailSender(
+        handoverAlertEmail({ to: member.email, clinicName: tenant.name, reason: payload.reason, conversationUrl })
+      )
+    )
+  );
+  if (results.every((result) => result.status === 'rejected')) {
+    throw new Error('No se pudo enviar la alerta de traspaso a ningún miembro del personal');
+  }
+}
+
 async function processVoiceFollowUp(payload: VoicePostCallPayload): Promise<void> {
   const tenant = await db.tenant.findFirst({ where: { id: payload.tenantId, isActive: true } });
   if (!tenant) {
@@ -598,6 +656,7 @@ export const jobHandlers: JobHandlerMap = {
   META_INBOUND_MESSAGE: processMetaInbound,
   WHATSAPP_SEND: processWhatsAppSend,
   VOICE_POST_CALL_FOLLOWUP: processVoiceFollowUp,
+  STAFF_HANDOVER_ALERT: processStaffHandoverAlert,
 };
 
 function envNumber(name: string, fallback: number): number {

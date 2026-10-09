@@ -102,3 +102,47 @@ export function passwordResetEmail(params: {
 
   return { to, subject: 'Restablece tu contraseña de AsistentePro', text, html };
 }
+
+const HANDOVER_REASON_TEXT: Record<string, { subject: string; detail: string }> = {
+  CRITICAL_EMERGENCY: {
+    subject: '🚨 Posible emergencia: un paciente necesita atención de recepción',
+    detail:
+      'El asistente detectó síntomas de una posible emergencia vital. Ya le indicó al paciente llamar al 911 o acudir a urgencias, y dejó de responder para que recepción tome la conversación.',
+  },
+  TRANSFER_REQUESTED: {
+    subject: 'Un paciente pidió hablar con recepción',
+    detail: 'El asistente le avisó al paciente que lo comunica con recepción y dejó de responder en esa conversación.',
+  },
+};
+
+/**
+ * Aviso al personal cuando la IA cede una conversación. A propósito no lleva
+ * nombre, teléfono ni el texto del paciente: el correo sale del sistema y
+ * puede reenviarse; el detalle se consulta en el panel, donde queda auditado.
+ */
+export function handoverAlertEmail(params: {
+  to: string;
+  clinicName: string;
+  reason: string;
+  conversationUrl: string;
+}): OutgoingEmail {
+  const copy = HANDOVER_REASON_TEXT[params.reason] ?? HANDOVER_REASON_TEXT.TRANSFER_REQUESTED;
+  const text = [
+    `${params.clinicName}:`,
+    '',
+    copy.detail,
+    '',
+    `Ábrela en la bandeja del panel: ${params.conversationUrl}`,
+  ].join('\n');
+  const safeUrl = escapeHtml(params.conversationUrl);
+  const html = `<!doctype html>
+<html lang="es"><body style="margin:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a">
+  <div style="max-width:480px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px">
+    <p style="margin:0 0 16px;font-size:13px;font-weight:bold;color:#0f766e;text-transform:uppercase;letter-spacing:.05em">${escapeHtml(params.clinicName)}</p>
+    <h1 style="margin:0 0 16px;font-size:18px">${escapeHtml(copy.subject)}</h1>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#475569">${escapeHtml(copy.detail)}</p>
+    <p style="margin:24px 0"><a href="${safeUrl}" style="display:inline-block;background:#0d9488;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 20px;border-radius:8px">Abrir la bandeja</a></p>
+  </div>
+</body></html>`;
+  return { to: params.to, subject: copy.subject, text, html };
+}

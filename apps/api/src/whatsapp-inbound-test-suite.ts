@@ -1,7 +1,8 @@
 import { db, encryptCredentials } from '@asistente/database';
 import { buildServer } from './server.js';
 import { computeMetaSignature } from './lib/webhookSecurity.js';
-import { drainQueue } from './services/queue/handlers.js';
+import { drainQueue, setHandoverAlertEmailSender } from './services/queue/handlers.js';
+import type { OutgoingEmail } from './services/emailService.js';
 
 /**
  * Suite del canal de WhatsApp de punta a punta (webhook -> cola -> respuesta).
@@ -275,6 +276,19 @@ async function runSuite() {
     console.log('\n🚨 a) Emergencia vital: respuesta 911 y traspaso a recepción');
     const waE = `5258${DIGITS}`;
     const sentBefore = sentTexts.length;
+    // Personal de la clínica: recepción y dirección reciben la alerta; el
+    // doctor no (no atiende la bandeja).
+    const alertEmails: OutgoingEmail[] = [];
+    setHandoverAlertEmailSender(async (email) => {
+      alertEmails.push(email);
+    });
+    await db.user.createMany({
+      data: [
+        { tenantId: tenant.id, email: `admin-${RUN_ID}@asistente.test`, name: 'Admin', role: 'ADMIN', passwordHash: 'x' },
+        { tenantId: tenant.id, email: `recep-${RUN_ID}@asistente.test`, name: 'Recepción', role: 'RECEPTIONIST', passwordHash: 'x' },
+        { tenantId: tenant.id, email: `doc-${RUN_ID}@asistente.test`, name: 'Doctor', role: 'DOCTOR', passwordHash: 'x' },
+      ],
+    });
     await postMeta(
       metaPayload([change(ACTIVE_PHONE_ID, [textMessage(waE, 'Ayuda, no puedo respirar')])])
     );
@@ -304,6 +318,19 @@ async function runSuite() {
         handoverMeta.reason === 'CRITICAL_EMERGENCY',
       'el traspaso queda auditado (AI_AGENT, UPDATE, false→true, motivo CRITICAL_EMERGENCY)'
     );
+
+    const alertRecipients = alertEmails.map((email) => email.to).sort();
+    assert(
+      alertRecipients.length === 2 &&
+        alertRecipients.every((to) => to.startsWith('admin-') || to.startsWith('recep-')) &&
+        alertEmails.every((email) => email.subject.includes('emergencia')),
+      'el traspaso por emergencia avisa por correo a dirección y recepción (no al doctor)'
+    );
+    assert(
+      alertEmails.every((email) => !email.text.includes(waE) && !email.text.includes('respirar')),
+      'el correo de alerta no lleva el teléfono ni el texto del paciente'
+    );
+    setHandoverAlertEmailSender(null);
 
     const followUp = await postMeta(
       metaPayload([change(ACTIVE_PHONE_ID, [textMessage(waE, '¿Siguen ahí?')])])
