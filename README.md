@@ -89,10 +89,13 @@ npm install
 ```
 
 #### 2. Configurar Variables de Entorno
-Copia el archivo de ejemplo a `.env` y ajusta `DATABASE_URL` a tu PostgreSQL local:
+Copia el archivo de ejemplo a `.env`, ajusta `DATABASE_URL` a tu PostgreSQL local y copia ese `.env` a los dos paquetes que lo leen por su cuenta:
 ```bash
 cp .env.example .env
+cp .env apps/api/.env
+cp .env packages/database/.env
 ```
+> **Por qué tres copias:** npm corre los scripts de cada workspace con el directorio de ese paquete como cwd, y tanto la API (`dotenv/config`) como Prisma buscan el `.env` ahí, no en la raíz. Sin las copias, `npm run db:seed` o la API fallan con *"Environment variable not found: DATABASE_URL"* aunque el `.env` de la raíz esté bien. `npm run setup` (Opción A) ya hace estas copias.
 > **Nota:** Para desarrollo local, no es indispensable contar de inmediato con API keys de DeepSeek o Twilio; el sistema incluye un **motor heurístico inteligente de 13 intenciones** y simulador de WhatsApp/Voz que funciona 100% offline.
 
 #### 3. Inicializar y Poblar la Base de Datos

@@ -10,6 +10,25 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-09] docs(readme): pedir el .env de cada workspace en el setup manual
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La Opción B del README (setup manual) solo pedía `cp .env.example .env` en la
+raíz. Pero `apps/api` y `packages/database` leen su propio `.env`, porque npm
+corre cada workspace con ese paquete como cwd. Quien siguiera el README al
+pie de la letra veía fallar `npm run db:seed` con *"Environment variable not
+found: DATABASE_URL"* teniendo el `.env` de la raíz bien configurado.
+`scripts/setup.sh` (Opción A) ya hacía las copias. El README ahora las pide y
+explica por qué.
+
+### Archivos tocados
+- `README.md`
+
+### Verificación
+Revisado contra `scripts/setup.sh`, que copia exactamente esos dos archivos.
+
 ## [2026-10-09] fix(seguridad): enmascarar todos los teléfonos en los logs
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
