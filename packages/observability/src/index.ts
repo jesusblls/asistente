@@ -26,7 +26,24 @@ const LEVEL_WEIGHT: Record<LogLevel, number> = {
 const SENSITIVE_KEY_PATTERN =
   /(password|passwd|secret|token|authorization|auth|cookie|api[_-]?key|credential|signature|hash|salt)/i;
 
-const PHONE_PATTERN = /\+?\d[\d\s().-]{7,}\d/;
+const PHONE_PATTERN = /\+?\d[\d\s().-]{7,}\d/g;
+const ISO_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Enmascara cada teléfono dentro de un texto libre. Antes solo se cambiaba el
+ * primero, y la máscara se calculaba con los dígitos de TODO el texto, así que
+ * un segundo número quedaba completo en los logs y los "últimos 3 dígitos"
+ * podían salir de una hora o un monto. Las fechas ISO (8 dígitos) y otras
+ * cifras cortas no son teléfonos: un número de México tiene 10 a 13 dígitos.
+ */
+function maskPhonesInText(value: string): string {
+  return value.replace(PHONE_PATTERN, (match) => {
+    if (ISO_DATE_PREFIX.test(match.replace(/^\+/, ''))) return match;
+    const digits = match.replace(/\D/g, '').length;
+    if (digits < 10 || digits > 13) return match;
+    return maskPhone(match);
+  });
+}
 
 /** Enmascara un teléfono conservando país y últimos 3 dígitos: +525512345678 -> "+52******678". */
 export function maskPhone(phone?: string | null): string {
@@ -59,7 +76,7 @@ export function truncate(value: string, max = 60): string {
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > 6) return '[truncated]';
   if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return PHONE_PATTERN.test(value) ? value.replace(PHONE_PATTERN, maskPhone(value)) : value;
+  if (typeof value === 'string') return maskPhonesInText(value);
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return value;
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, depth + 1));

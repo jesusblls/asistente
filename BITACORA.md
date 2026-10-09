@@ -10,6 +10,41 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-09] fix(seguridad): enmascarar todos los teléfonos en los logs
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+La unidad de la cola (#3) notó que `redact()` de `@asistente/observability`
+solo enmascaraba el primer teléfono de cada texto. Al revisarlo apareció un
+segundo error en la misma línea:
+
+```ts
+value.replace(PHONE_PATTERN, maskPhone(value))
+```
+
+1. **Un solo teléfono.** El patrón no era global, así que en "llamar al
+   +525512345678 o al 81 2865 1819" el segundo número quedaba completo en el
+   log. Es un dato personal (LFPDPPP / NOM-024) que no debe salir del sistema
+   por los logs, que se guardan y se comparten con más gente que la base.
+2. **La máscara se calculaba con el texto completo.** `maskPhone(value)`
+   recibía todo el texto, no el número encontrado, así que los "últimos 3
+   dígitos" visibles podían salir de una hora o un monto que venía después.
+
+Ahora cada coincidencia se enmascara con sus propios dígitos. Para no ocultar
+información útil para depurar, solo cuenta como teléfono una cifra de 10 a 13
+dígitos que no empiece como fecha ISO: las fechas, las horas y los montos se
+quedan intactos.
+
+### Archivos tocados
+- `packages/observability/src/index.ts` — `maskPhonesInText()`.
+- `apps/api/src/observability-test-suite.ts` — caso nuevo.
+
+### Verificación
+Observabilidad 13/13: dos teléfonos en un mismo texto quedan enmascarados
+con sus propios dígitos, y la hora y la fecha se conservan. `npm run build`,
+`npm test` 20/20 suites.
+
 ## [2026-10-09] fix(webhooks): respetar la ventana de 24 h en los recordatorios
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

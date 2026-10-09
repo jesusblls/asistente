@@ -1,4 +1,5 @@
 import {
+  redact,
   incrementCounter,
   recordTiming,
   resetObservability,
@@ -47,6 +48,16 @@ async function runObservabilityTests() {
       '/health reporta estado de cola, worker y métricas'
     );
     assert(healthBody.database === 'ok', '/health verifica la base de datos');
+
+    const masked = String(redact('Llamar al +525512345678 o al 81 2865 1819 a las 10:30 el 2026-10-08'));
+    assert(
+      !masked.includes('5512345678') &&
+        !masked.includes('2865 1819') &&
+        masked.includes('+52******678') &&
+        masked.includes('10:30') &&
+        masked.includes('2026-10-08'),
+      'El logger enmascara todos los teléfonos de un texto, con sus propios dígitos, y respeta fechas y horas'
+    );
 
     const degradedApp = await buildServer({
       logger: false,
