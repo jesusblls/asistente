@@ -38,6 +38,8 @@ export interface TenantItem {
   services: ServiceItem[];
   welcomeMessage?: string | null;
   emergencyInstructions?: string | null;
+  surveyEnabled?: boolean;
+  recallMonths?: number | null;
 }
 
 interface TenantContextType {

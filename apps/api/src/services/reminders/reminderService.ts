@@ -113,7 +113,7 @@ export function buildReminderText(appointment: ReminderAppointment, kind: Remind
  * - Con canal propio pero credenciales ilegibles: `null` = no enviar. Caer al
  *   número global mandaría el recordatorio desde el WhatsApp de otra clínica.
  */
-async function resolveTenantSender(tenantId: string): Promise<string | undefined | null> {
+export async function resolveTenantSender(tenantId: string): Promise<string | undefined | null> {
   const config = await db.channelConfig.findFirst({
     where: { tenantId, channelType: 'WHATSAPP', isActive: true },
     select: { credentials: true },

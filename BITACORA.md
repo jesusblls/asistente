@@ -10,6 +10,75 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-10] feat(webhooks): encuesta post-cita y revisión periódica
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Dos funciones que tiene la competencia, adaptadas a nuestra recepcionista
+por WhatsApp:
+
+1. **Encuesta después de la cita.** Entre 2 h y 48 h después de una cita
+   **completada**, el paciente califica su visita con tres botones: excelente,
+   bien, mejorable. Solo citas que recepción marcó como completadas, porque
+   mandarla a quien no llegó sería absurdo.
+   - La calificación se guarda en la cita (`surveyScore`, auditada). Solo
+     cuenta la primera respuesta, y solo del mismo paciente y clínica.
+   - **"Mejorable" cede el chat a recepción** y dispara el aviso por correo
+     que ya existía (motivo nuevo `LOW_SURVEY_SCORE`). La respuesta al
+     paciente promete que alguien del equipo le escribirá; sin el traspaso,
+     esa promesa sería falsa.
+2. **Invitación a revisión periódica.** A quien no ha vuelto en N meses
+   (`Tenant.recallMonths`, 6 por defecto, es decir la limpieza semestral) y
+   no tiene otra cita en agenda, se le invita por WhatsApp con un botón
+   "Agendar revisión"; el agente toma la solicitud como cualquier otra. Es
+   ingreso recurrente que hoy se pierde porque nadie lleva la cuenta.
+   - Una sola invitación por visita: `Patient.recallSentAt` se compara con la
+     fecha de esa visita.
+   - No se persigue a quien dejó de venir hace más de un año extra.
+
+Mismas reglas que los recordatorios:
+- un candado atómico evita envíos dobles entre instancias;
+- el trabajo de envío se escribe en la misma transacción;
+- nada sale a un chat en manos de recepción ni de una clínica suspendida;
+- fuera de la ventana de 24 h de WhatsApp solo sale con plantilla aprobada
+  (`WHATSAPP_SURVEY_TEMPLATE`, `WHATSAPP_RECALL_TEMPLATE`), y sin plantilla no
+  se intenta ni se marca.
+
+En Ajustes, cada clínica puede apagar la encuesta y elegir la revisión
+(desactivada, o cada 3, 6 o 12 meses).
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma`, `migrations/0009_survey_and_recall/`.
+- `apps/api/src/services/followups/followupService.ts` (nuevo), `apps/api/src/index.ts`.
+- `apps/api/src/services/reminders/reminderService.ts` — exporta `resolveTenantSender`.
+- `apps/api/src/routes/webhooks.ts` — botones `survey_<cita>_<puntaje>` y `recall_<paciente>`.
+- `apps/api/src/services/queue/handlers.ts` — respuesta de la encuesta y traspaso por calificación baja.
+- `apps/api/src/services/emailService.ts` — texto del aviso por calificación baja.
+- `apps/api/src/routes/admin/schemas.ts`, `tenants.ts` — `surveyEnabled`, `recallMonths`.
+- `apps/web/src/app/dashboard/settings/page.tsx`, `apps/web/src/context/TenantContext.tsx`.
+- `apps/api/src/followup-test-suite.ts` (nuevo), `apps/api/src/whatsapp-inbound-test-suite.ts`.
+- `.env.example`, `deploy/.env.production.example`.
+
+### Verificación
+- `prisma migrate diff` vacío.
+- Suite nueva 17/17. Cubre:
+  - ventanas de la encuesta, NO_SHOW excluido, clínica que la apagó;
+  - primera respuesta y respuesta ajena;
+  - revisión: cita en agenda, visita reciente, paciente perdido, clínica
+    apagada, sin repetición;
+  - sin plantilla no se encola.
+- WhatsApp 27/27: el botón "Mejorable" por el webhook guarda la calificación,
+  cede el chat y manda el aviso.
+- `npm run build`, `npm test` 23/23 suites, `npm run test:stress` 44/44, lint
+  sin errores nuevos.
+- En el navegador local se guardaron los ajustes (encuesta apagada, revisión
+  cada 12 meses) y se confirmó en la base.
+
+### Pendientes derivados
+- Crear en Meta las plantillas `WHATSAPP_SURVEY_TEMPLATE` y `WHATSAPP_RECALL_TEMPLATE`.
+- La encuesta depende de que recepción marque las citas como completadas.
+
 ## [2026-10-10] feat(web): resumen del día al abrir el panel
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

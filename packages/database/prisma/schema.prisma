@@ -16,6 +16,11 @@ model Tenant {
   address               String?
   emergencyInstructions String?
   welcomeMessage        String?
+  /// Encuesta de satisfacción por WhatsApp después de una cita completada.
+  surveyEnabled         Boolean           @default(true)
+  /// Meses tras la última visita para invitar al paciente a su revisión
+  /// (limpieza semestral). null = desactivado.
+  recallMonths          Int?              @default(6)
   isActive              Boolean           @default(true)
 
   /// Plan contratado: trial | consultorio | clinica-pro | cadenas.
@@ -170,6 +175,8 @@ model Patient {
   email         String?
   notes         String?
   isVip         Boolean        @default(false)
+  /// Última invitación a revisión periódica; evita repetirla por la misma visita.
+  recallSentAt  DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -208,6 +215,10 @@ model Appointment {
   notes              String?
   reminderSent24h    Boolean  @default(false)
   reminderSent2h     Boolean  @default(false)
+  /// Encuesta post-cita: cuándo se envió y la respuesta (3 excelente, 2 bien, 1 mejorable).
+  surveySentAt       DateTime?
+  surveyScore        Int?
+  surveyAnsweredAt   DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

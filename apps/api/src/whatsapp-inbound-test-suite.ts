@@ -458,6 +458,40 @@ async function runSuite() {
     );
 
     // ---------------------------------------------------------------
+    console.log('\n⭐ d2) Respuesta de la encuesta post-cita');
+    const waSurvey = `5257${DIGITS}`;
+    const surveyPatient = await db.patient.create({
+      data: { tenantId: tenant.id, fullName: 'Sara Encuesta', phoneE164: `+${waSurvey}`, whatsappId: waSurvey },
+    });
+    const visited = await db.appointment.create({
+      data: {
+        tenantId: tenant.id,
+        patientId: surveyPatient.id,
+        doctorId: tenant.doctors[0].id,
+        serviceId: tenant.services[0].id,
+        startTime: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        endTime: new Date(Date.now() - 4 * 60 * 60 * 1000),
+        status: 'COMPLETED',
+        surveySentAt: new Date(Date.now() - 60 * 60 * 1000),
+      },
+    });
+    const surveyAlerts: OutgoingEmail[] = [];
+    setHandoverAlertEmailSender(async (email) => {
+      surveyAlerts.push(email);
+    });
+    await postMeta(
+      metaPayload([change(ACTIVE_PHONE_ID, [buttonMessage(waSurvey, `survey_${visited.id}_1`, '😕 Mejorable')])])
+    );
+    await drainQueue();
+    setHandoverAlertEmailSender(null);
+    const visitedAfter = await db.appointment.findUnique({ where: { id: visited.id } });
+    const convSurvey = await conversationOf(tenant.id, waSurvey);
+    assert(visitedAfter?.surveyScore === 1, 'el botón de la encuesta guarda la calificación de esa cita');
+    assert(
+      convSurvey?.isHandedOverToHuman === true && surveyAlerts.some((email) => email.subject.includes('mejorable')),
+      'una calificación baja pasa el chat a recepción y le avisa por correo'
+    );
+
     console.log('\n⏸️ e) Clínica suspendida');
     const waS = `5251${DIGITS}`;
     const suspendedSent = sentTexts.length;

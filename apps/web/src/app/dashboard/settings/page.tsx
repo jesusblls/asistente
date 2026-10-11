@@ -44,6 +44,9 @@ export default function SettingsPage() {
     emergencyInstructions:
       activeTenant?.emergencyInstructions ||
       'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
+ 
+    surveyEnabled: activeTenant?.surveyEnabled ?? true,
+    recallMonths: activeTenant?.recallMonths === undefined ? 6 : activeTenant.recallMonths,
   }));
 
   if (activeTenant && activeTenant.id !== prevTenantId) {
@@ -58,6 +61,9 @@ export default function SettingsPage() {
       emergencyInstructions:
         activeTenant.emergencyInstructions ||
         'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
+
+      surveyEnabled: activeTenant.surveyEnabled ?? true,
+      recallMonths: activeTenant.recallMonths === undefined ? 6 : activeTenant.recallMonths,
     });
   }
 
@@ -94,6 +100,8 @@ export default function SettingsPage() {
         address: formData.address.trim(),
         welcomeMessage: formData.welcomeMessage.trim(),
         emergencyInstructions: formData.emergencyInstructions.trim(),
+        surveyEnabled: formData.surveyEnabled,
+        recallMonths: formData.recallMonths,
       };
 
       const res = await updateTenant(activeTenant.id, payload);
@@ -439,6 +447,52 @@ export default function SettingsPage() {
             />
             <p className="text-xs text-amber-700/90">
               Cuando el motor de triaje detecta signos de emergencia médica o dolor severo incapacitante, activa de inmediato este protocolo e instruye al paciente acudir al hospital de urgencias o marcar al 911.
+            </p>
+          </div>
+        </div>
+
+        {/* Seguimiento después de la cita */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              checked={isDemo ? true : formData.surveyEnabled}
+              disabled={isDemo}
+              onChange={(e) => setFormData((prev) => ({ ...prev, surveyEnabled: e.target.checked }))}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-800">Encuesta después de la cita</span>
+              <span className="block text-xs text-slate-500 mt-1 leading-relaxed">
+                Unas horas después de una cita marcada como <strong>completada</strong>, el paciente califica su visita
+                por WhatsApp. Si responde &ldquo;Mejorable&rdquo;, el chat pasa a recepción y te avisamos.
+              </span>
+            </span>
+          </label>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-2">
+            <label htmlFor="recallMonths" className="block text-sm font-semibold text-slate-800">
+              Invitación a revisión periódica
+            </label>
+            <select
+              id="recallMonths"
+              disabled={isDemo}
+              value={isDemo ? '6' : formData.recallMonths === null ? 'off' : String(formData.recallMonths)}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  recallMonths: e.target.value === 'off' ? null : Number(e.target.value),
+                }))
+              }
+              className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600"
+            >
+              <option value="off">Desactivada</option>
+              <option value="3">Cada 3 meses</option>
+              <option value="6">Cada 6 meses (limpieza semestral)</option>
+              <option value="12">Cada 12 meses</option>
+            </select>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              A quien no ha vuelto en ese tiempo y no tiene cita en agenda se le invita por WhatsApp a agendar su
+              revisión.
             </p>
           </div>
         </div>

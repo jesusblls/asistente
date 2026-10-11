@@ -47,6 +47,9 @@ export const updateTenantSchema = {
       address: { type: 'string', maxLength: 300 },
       welcomeMessage: { type: 'string', maxLength: 1000 },
       emergencyInstructions: { type: 'string', maxLength: 1000 },
+      surveyEnabled: { type: 'boolean' },
+      // null apaga la invitación a revisión periódica.
+      recallMonths: { type: ['integer', 'null'], minimum: 1, maximum: 24 },
     },
     additionalProperties: false,
   },

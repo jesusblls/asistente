@@ -7,6 +7,11 @@ import {
   stopReminderSweeper,
 } from './services/reminders/reminderService.js';
 import { startDepositSweeper, stopDepositSweeper } from './services/deposits/depositSweeper.js';
+import {
+  followUpsEnabled,
+  startFollowUpSweeper,
+  stopFollowUpSweeper,
+} from './services/followups/followupService.js';
 
 async function main() {
   const server = await buildServer();
@@ -35,6 +40,11 @@ async function main() {
       startDepositSweeper();
     }
 
+    // Encuesta post-cita e invitación a revisión periódica.
+    if (followUpsEnabled()) {
+      startFollowUpSweeper();
+    }
+
     server.log.info(`🚀 Servidor Asistente Omnicanal activo en: ${address}`);
     server.log.info(`📡 Webhook Meta: ${address}/webhooks/meta`);
     server.log.info(`📞 Webhook Twilio Voice: ${address}/voice/incoming`);
@@ -52,6 +62,7 @@ async function main() {
       await server.close();
       await stopReminderSweeper();
       await stopDepositSweeper();
+      await stopFollowUpSweeper();
       await jobQueue.stop();
     } catch (error) {
       server.log.error(error);

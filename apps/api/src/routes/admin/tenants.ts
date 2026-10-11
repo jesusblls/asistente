@@ -386,6 +386,8 @@ export async function tenantRoutes(fastify: FastifyInstance) {
             1000
           ),
         }),
+        ...(typeof body.surveyEnabled === 'boolean' && { surveyEnabled: body.surveyEnabled }),
+        ...(body.recallMonths !== undefined && { recallMonths: body.recallMonths as number | null }),
       };
 
       const updated = await db.$transaction(async (tx) => {

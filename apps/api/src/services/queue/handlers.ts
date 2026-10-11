@@ -3,6 +3,7 @@ import { OmnichannelAgent, evaluateTriage } from '@asistente/ai-agent';
 import { createLogger } from '@asistente/observability';
 import { WhatsAppService, type WhatsAppTemplate } from '../whatsappService.js';
 import { handoverAlertEmail, sendEmail, type EmailSender } from '../emailService.js';
+import { recordSurveyAnswer } from '../followups/followupService.js';
 import { JobQueue, PermanentJobError, type JobContext, type JobHandlerMap } from './queue.js';
 import { maskJobText } from './queue.js';
 import { ensureDepositLink } from '../deposits/depositLink.js';
@@ -31,7 +32,9 @@ export interface MetaInboundPayload {
    * `reschedule_<id>`). Viaja aparte del texto para no perder a qué cita se
    * refiere el paciente.
    */
-  buttonAction?: { kind: 'CONFIRM' | 'RESCHEDULE'; appointmentId: string };
+  buttonAction?:
+    | { kind: 'CONFIRM' | 'RESCHEDULE'; appointmentId: string }
+    | { kind: 'SURVEY'; appointmentId: string; score: number };
 }
 
 export type WhatsAppSendPayload =
@@ -306,6 +309,19 @@ async function decideInboundTurn(
   }
 
   const action = payload.buttonAction;
+  if (action?.kind === 'SURVEY') {
+    // Respuesta de la encuesta: no pasa por el agente. Una mala calificación
+    // se cede a recepción (y le llega el aviso), porque la respuesta al
+    // paciente le promete que alguien del equipo le escribirá.
+    const answer = await recordSurveyAnswer({
+      tenantId: conversation.tenantId,
+      patientId: conversation.patientId,
+      appointmentId: action.appointmentId,
+      score: action.score,
+    });
+    return { replyText: answer.replyText, handoverReason: answer.lowScore ? 'LOW_SURVEY_SCORE' : null };
+  }
+
   if (action?.kind === 'CONFIRM') {
     return confirmAppointmentFromButton(conversation, action.appointmentId);
   }

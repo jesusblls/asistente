@@ -109,6 +109,11 @@ const HANDOVER_REASON_TEXT: Record<string, { subject: string; detail: string }> 
     detail:
       'El asistente detectó síntomas de una posible emergencia vital. Ya le indicó al paciente llamar al 911 o acudir a urgencias, y dejó de responder para que recepción tome la conversación.',
   },
+  LOW_SURVEY_SCORE: {
+    subject: 'Un paciente calificó su visita como "mejorable"',
+    detail:
+      'Un paciente respondió la encuesta después de su cita con la calificación más baja. El asistente le dijo que alguien del equipo le escribirá y dejó la conversación en manos de recepción.',
+  },
   TRANSFER_REQUESTED: {
     subject: 'Un paciente pidió hablar con recepción',
     detail: 'El asistente le avisó al paciente que lo comunica con recepción y dejó de responder en esa conversación.',

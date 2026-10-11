@@ -79,6 +79,15 @@ function parseMetaMessage(message: Record<string, any>): ParsedMetaMessage {
     if (confirmId) {
       return { text: 'Confirmar Asistencia', buttonAction: { kind: 'CONFIRM', appointmentId: confirmId } };
     }
+    // Encuesta post-cita: `survey_<cita>_<puntaje>`.
+    const survey = /^survey_(.+)_([123])$/.exec(buttonId);
+    if (survey) {
+      return { text: title || 'Respuesta de encuesta', buttonAction: { kind: 'SURVEY', appointmentId: survey[1], score: Number(survey[2]) } };
+    }
+    // Invitación a revisión: el agente toma la solicitud como cualquier otra.
+    if (buttonId.startsWith('recall_')) {
+      return { text: 'Quiero agendar mi cita de revisión' };
+    }
     const rescheduleId = buttonId.startsWith('reschedule_') ? buttonId.slice('reschedule_'.length) : '';
     if (rescheduleId) {
       return { text: 'Reagendar Cita', buttonAction: { kind: 'RESCHEDULE', appointmentId: rescheduleId } };
