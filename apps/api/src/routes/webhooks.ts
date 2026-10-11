@@ -446,40 +446,86 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       body,
       webhookActor(request, 'mercadopago')
     );
+    return replyToDepositWebhook(request, reply, result);
+  });
 
-    // Pago no aprobado, evento ajeno o pago inexistente: se responde 200 para
-    // que Mercado Pago no reintente algo que nunca va a acreditarse.
-    if (result.outcome === 'IGNORED') {
-      request.log.info({ reason: result.reason }, 'Notificación de Mercado Pago sin acreditación');
-      return reply.status(200).send({
-        success: true,
-        ignored: true,
-        reason: result.reason,
-        appointmentId: result.appointmentId ?? null,
-      });
+  /**
+   * 4b. Aviso de pagos de la cuenta de Mercado Pago PROPIA de una clínica.
+   *
+   * Los anticipos se cobran con la cuenta de cada clínica, y la preferencia
+   * le pide a Mercado Pago avisar a esta URL. No se valida firma: el secreto
+   * de firma pertenece a la aplicación de la clínica en Mercado Pago, que la
+   * plataforma no tiene (y que muchas clínicas ni siquiera crean). En su
+   * lugar, el cuerpo del aviso no se cree: solo se usa el id del pago para
+   * consultarlo en Mercado Pago con el token de ESA clínica, y solo puede
+   * acreditar citas de esa misma clínica. Alguien que mande avisos falsos
+   * solo consigue que consultemos pagos que Mercado Pago no le confirmará.
+   */
+  fastify.post(
+    '/webhooks/mercadopago/clinica/:tenantId',
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { tenantId } = request.params as { tenantId: string };
+      const body = (request.body ?? {}) as Record<string, any>;
+      const query = (request.query ?? {}) as Record<string, string>;
+      // Mercado Pago a veces manda el aviso solo en la query (?type=payment&data.id=…).
+      const payload = {
+        type: body?.type || body?.topic || query.type || query.topic,
+        data: { id: body?.data?.id ?? query['data.id'] ?? query.id },
+        // Campos de simulación solo aplican fuera de producción (ver servicio).
+        ...(process.env.NODE_ENV === 'production'
+          ? {}
+          : { status: body?.status, external_reference: body?.external_reference, appointmentId: body?.appointmentId }),
+      };
+
+      const result = await MercadoPagoService.processPaymentWebhook(
+        payload,
+        webhookActor(request, 'mercadopago'),
+        { tenantId }
+      );
+      return replyToDepositWebhook(request, reply, result);
     }
+  );
+}
 
-    const { appointment, transitioned } = result;
-
-    // El aviso "Recibimos tu anticipo" va por la cola (reintentos si Meta
-    // falla). Se encola también en los duplicados a propósito: la dedupeKey
-    // por cita hace que solo exista un aviso, y así, si el encolado falló
-    // justo después de acreditar, el reintento de Mercado Pago lo recupera.
-    if (appointment.paymentStatus === 'DEPOSIT_PAID') {
-      await enqueueDepositNotice({
-        notice: 'PAID',
-        appointmentId: appointment.id,
-        tenantId: appointment.tenantId,
-      });
-    }
-
+/** Respuesta común a los avisos de anticipo (cuenta de la plataforma o de la clínica). */
+async function replyToDepositWebhook(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  result: Awaited<ReturnType<typeof MercadoPagoService.processPaymentWebhook>>
+) {
+  // Pago no aprobado, evento ajeno o pago inexistente: se responde 200 para
+  // que Mercado Pago no reintente algo que nunca va a acreditarse.
+  if (result.outcome === 'IGNORED') {
+    request.log.info({ reason: result.reason }, 'Notificación de Mercado Pago sin acreditación');
     return reply.status(200).send({
       success: true,
-      appointmentId: appointment.id,
-      paymentStatus: appointment.paymentStatus,
-      depositAmountMxn: appointment.depositAmountMxn,
-      duplicate: !transitioned,
+      ignored: true,
+      reason: result.reason,
+      appointmentId: result.appointmentId ?? null,
     });
+  }
+
+  const { appointment, transitioned } = result;
+
+  // El aviso "Recibimos tu anticipo" va por la cola (reintentos si Meta
+  // falla). Se encola también en los duplicados a propósito: la dedupeKey
+  // por cita hace que solo exista un aviso, y así, si el encolado falló
+  // justo después de acreditar, el reintento de Mercado Pago lo recupera.
+  if (appointment.paymentStatus === 'DEPOSIT_PAID') {
+    await enqueueDepositNotice({
+      notice: 'PAID',
+      appointmentId: appointment.id,
+      tenantId: appointment.tenantId,
+    });
+  }
+
+  return reply.status(200).send({
+    success: true,
+    appointmentId: appointment.id,
+    paymentStatus: appointment.paymentStatus,
+    depositAmountMxn: appointment.depositAmountMxn,
+    duplicate: !transitioned,
   });
 }
 

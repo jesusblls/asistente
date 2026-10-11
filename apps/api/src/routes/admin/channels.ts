@@ -1,6 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db, decryptCredentials, encryptCredentials, recordAudit, type Prisma } from '@asistente/database';
-import { normalizeMexicanPhone } from '@asistente/ai-agent';
+import {
+  MERCADOPAGO_CHANNEL,
+  normalizeMexicanPhone,
+  type MercadoPagoChannelCredentials,
+} from '@asistente/ai-agent';
 import { actorFromRequest } from '../../lib/audit.js';
 import { HttpError, requireRole } from '../../lib/http.js';
 import {
@@ -195,6 +199,105 @@ async function buildWhatsAppStatus(tenantId: string): Promise<WhatsAppStatus> {
   };
 }
 
+const MP_API_BASE = process.env.MERCADOPAGO_API_BASE || 'https://api.mercadopago.com';
+
+const putMercadoPagoSchema = {
+  body: {
+    type: 'object',
+    required: ['accessToken'],
+    properties: { accessToken: { type: 'string', minLength: 1, maxLength: 512 } },
+    additionalProperties: false,
+  },
+};
+
+interface MercadoPagoStatus {
+  configured: boolean;
+  /** CLINIC: cuenta propia · NONE: sin cuenta (en producción no se generan links de anticipo). */
+  source: 'CLINIC' | 'NONE';
+  userId: string | null;
+  nickname: string | null;
+  tokenLast4: string | null;
+  connectedAt: string | null;
+  readable: boolean;
+  /** Token de prueba (TEST-…): cobra en sandbox, no dinero real. */
+  testMode: boolean;
+}
+
+interface MercadoPagoVerification {
+  ok: boolean;
+  reason?: 'NETWORK' | 'UNAUTHORIZED' | 'WRONG_COUNTRY' | 'MP_ERROR';
+  message?: string;
+  userId?: string;
+  nickname?: string | null;
+  siteId?: string | null;
+}
+
+/** `GET /users/me` con el token: dice de quién es la cuenta. No cobra ni crea nada. */
+async function verifyWithMercadoPago(accessToken: string): Promise<MercadoPagoVerification> {
+  let response: Response;
+  try {
+    response = await fetch(`${MP_API_BASE}/users/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    return { ok: false, reason: 'NETWORK', message: 'No se pudo contactar a Mercado Pago desde el servidor.' };
+  }
+  const data = (await response.json().catch(() => ({}))) as { id?: number | string; nickname?: string; site_id?: string };
+  if (!response.ok || data.id === undefined) {
+    const unauthorized = response.status === 401 || response.status === 403;
+    return {
+      ok: false,
+      reason: unauthorized ? 'UNAUTHORIZED' : 'MP_ERROR',
+      message: unauthorized
+        ? 'Mercado Pago rechazó el token: revisa que sea el Access Token de producción completo.'
+        : `Mercado Pago respondió con error (${response.status}).`,
+    };
+  }
+  // Los anticipos son en pesos: una cuenta de otro país no puede cobrar MXN.
+  if (data.site_id && data.site_id !== 'MLM') {
+    return {
+      ok: false,
+      reason: 'WRONG_COUNTRY',
+      message: 'Esa cuenta de Mercado Pago no es de México: no puede cobrar anticipos en pesos.',
+      userId: String(data.id),
+      siteId: data.site_id,
+    };
+  }
+  return { ok: true, userId: String(data.id), nickname: data.nickname ?? null, siteId: data.site_id ?? null };
+}
+
+function readMercadoPagoCredentials(stored: string): MercadoPagoChannelCredentials | null {
+  try {
+    return JSON.parse(decryptCredentials(stored)) as MercadoPagoChannelCredentials;
+  } catch {
+    return null;
+  }
+}
+
+async function findMercadoPagoConfig(tenantId: string) {
+  return db.channelConfig.findFirst({ where: { tenantId, channelType: MERCADOPAGO_CHANNEL } });
+}
+
+async function buildMercadoPagoStatus(tenantId: string): Promise<MercadoPagoStatus> {
+  const config = await findMercadoPagoConfig(tenantId);
+  if (!config) {
+    return { configured: false, source: 'NONE', userId: null, nickname: null, tokenLast4: null, connectedAt: null, readable: true, testMode: false };
+  }
+  const credentials = readMercadoPagoCredentials(config.credentials);
+  const usable = Boolean(config.isActive && credentials?.accessToken);
+  return {
+    configured: usable,
+    source: usable ? 'CLINIC' : 'NONE',
+    userId: credentials?.userId ?? null,
+    nickname: credentials?.nickname ?? null,
+    tokenLast4: last4(credentials?.accessToken),
+    connectedAt: config.createdAt.toISOString(),
+    readable: credentials !== null,
+    testMode: Boolean(credentials?.accessToken?.startsWith('TEST-')),
+  };
+}
+
 export async function channelRoutes(fastify: FastifyInstance) {
   fastify.get('/api/channels', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = requireRole(request, ['ADMIN']);
@@ -212,11 +315,109 @@ export async function channelRoutes(fastify: FastifyInstance) {
         scope: 'PLATFORM',
         phoneE164: tenant?.phoneE164 ?? null,
       },
-      mercadoPago: {
-        configured: Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN),
-        scope: 'PLATFORM',
-      },
+      mercadoPago: await buildMercadoPagoStatus(user.tenantId),
     });
+  });
+
+  /**
+   * Conecta la cuenta de Mercado Pago de la clínica: a ella llegan los
+   * anticipos de sus pacientes. Solo ADMIN, token cifrado, nunca devuelto.
+   */
+  fastify.put(
+    '/api/channels/mercadopago',
+    { schema: putMercadoPagoSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = requireRole(request, ['ADMIN']);
+      const tenantId = user.tenantId;
+      const accessToken = (request.body as { accessToken: string }).accessToken.trim();
+
+      if (accessToken.length < 20 || /\s/.test(accessToken)) {
+        throw new HttpError(400, 'El Access Token no parece válido (cópialo completo desde Mercado Pago)');
+      }
+      // En producción solo dinero real: un token TEST- generaría links de
+      // sandbox que el paciente "paga" sin que llegue nada a la clínica.
+      if (process.env.NODE_ENV === 'production' && !accessToken.startsWith('APP_USR-')) {
+        throw new HttpError(400, 'Usa el Access Token de producción (empieza con APP_USR-), no el de prueba');
+      }
+
+      const verification = await verifyWithMercadoPago(accessToken);
+      if (!verification.ok && (process.env.NODE_ENV === 'production' || verification.reason === 'WRONG_COUNTRY')) {
+        throw new HttpError(verification.reason === 'NETWORK' ? 503 : 400, verification.message ?? 'Mercado Pago no verificó el token');
+      }
+
+      const credentials: MercadoPagoChannelCredentials = {
+        accessToken,
+        userId: verification.userId ?? 'sin-verificar',
+        nickname: verification.nickname ?? null,
+      };
+      let encrypted: string;
+      try {
+        encrypted = encryptCredentials(JSON.stringify(credentials));
+      } catch {
+        throw new HttpError(503, 'El servidor no tiene configurado el cifrado de credenciales');
+      }
+
+      const existing = await findMercadoPagoConfig(tenantId);
+      await db.$transaction(async (tx) => {
+        const row = await tx.channelConfig.upsert({
+          where: { tenantId_channelType: { tenantId, channelType: MERCADOPAGO_CHANNEL } },
+          create: { tenantId, channelType: MERCADOPAGO_CHANNEL, credentials: encrypted, isActive: true },
+          update: { credentials: encrypted, isActive: true },
+        });
+        await recordAudit(
+          {
+            tenantId,
+            actor: actorFromRequest(request),
+            action: existing ? 'UPDATE' : 'CREATE',
+            entityType: 'CHANNEL_CONFIG',
+            entityId: row.id,
+            metadata: {
+              channel: MERCADOPAGO_CHANNEL,
+              mercadoPagoUserId: credentials.userId,
+              verifiedWithMercadoPago: verification.ok,
+            },
+          },
+          tx
+        );
+      });
+
+      return reply.send({ mercadoPago: await buildMercadoPagoStatus(tenantId), verification });
+    }
+  );
+
+  /** Verifica el token guardado contra Mercado Pago (`GET /users/me`). No cobra nada. */
+  fastify.post('/api/channels/mercadopago/test', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requireRole(request, ['ADMIN']);
+    const config = await findMercadoPagoConfig(user.tenantId);
+    if (!config) throw new HttpError(404, 'Primero conecta la cuenta de Mercado Pago de la clínica');
+    const credentials = readMercadoPagoCredentials(config.credentials);
+    if (!credentials?.accessToken) {
+      return reply.send({ ok: false, reason: 'UNREADABLE', message: 'Las credenciales guardadas no se pueden leer. Vuelve a capturarlas.' });
+    }
+    return reply.send(await verifyWithMercadoPago(credentials.accessToken));
+  });
+
+  fastify.delete('/api/channels/mercadopago', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = requireRole(request, ['ADMIN']);
+    const tenantId = user.tenantId;
+    const existing = await findMercadoPagoConfig(tenantId);
+    if (!existing) throw new HttpError(404, 'La clínica no tiene Mercado Pago conectado');
+    const previous = readMercadoPagoCredentials(existing.credentials);
+    await db.$transaction(async (tx) => {
+      await tx.channelConfig.deleteMany({ where: { id: existing.id, tenantId } });
+      await recordAudit(
+        {
+          tenantId,
+          actor: actorFromRequest(request),
+          action: 'DELETE',
+          entityType: 'CHANNEL_CONFIG',
+          entityId: existing.id,
+          metadata: { channel: MERCADOPAGO_CHANNEL, mercadoPagoUserId: previous?.userId ?? null },
+        },
+        tx
+      );
+    });
+    return reply.send({ mercadoPago: await buildMercadoPagoStatus(tenantId) });
   });
 
   fastify.put(

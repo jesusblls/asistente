@@ -39,10 +39,21 @@ export interface WhatsAppStatus {
   readable: boolean;
 }
 
+export interface MercadoPagoStatus {
+  configured: boolean;
+  source: 'CLINIC' | 'NONE';
+  userId: string | null;
+  nickname: string | null;
+  tokenLast4: string | null;
+  connectedAt: string | null;
+  readable: boolean;
+  testMode: boolean;
+}
+
 interface ChannelsStatus {
   whatsapp: WhatsAppStatus;
   voice: { configured: boolean; scope: string; phoneE164: string | null };
-  mercadoPago: { configured: boolean; scope: string };
+  mercadoPago: MercadoPagoStatus;
 }
 
 type Notify = (tone: 'success' | 'error', text: string) => void;
@@ -370,6 +381,208 @@ function WhatsAppForm({
   );
 }
 
+/**
+ * Cuenta de Mercado Pago de la clínica: a ella llegan los anticipos de sus
+ * pacientes. Sin cuenta conectada, en producción no se generan links (nunca
+ * se cobra con la cuenta de la plataforma).
+ */
+function MercadoPagoForm({
+  status,
+  onSaved,
+  notify,
+}: {
+  status: MercadoPagoStatus;
+  onSaved: (status: MercadoPagoStatus) => void;
+  notify: Notify;
+}) {
+  const hasOwn = status.source === 'CLINIC' || !status.readable;
+  const [accessToken, setAccessToken] = useState('');
+  const [busy, setBusy] = useState<'save' | 'test' | 'delete' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy('save');
+    setError(null);
+    setTestResult(null);
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/api/channels/mercadopago`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: accessToken.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'No se pudo conectar la cuenta de Mercado Pago');
+        return;
+      }
+      setAccessToken('');
+      onSaved(data.mercadoPago);
+      if (data.verification?.ok) {
+        notify('success', `Mercado Pago conectado${data.verification.nickname ? `: ${data.verification.nickname}` : ''}`);
+      } else {
+        notify('error', `Guardado sin verificar: ${data.verification?.message || 'Mercado Pago no confirmó la cuenta'}`);
+      }
+    } catch {
+      setError('No se pudo conectar con el servidor');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const test = async () => {
+    setBusy('test');
+    setTestResult(null);
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/api/channels/mercadopago/test`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setTestResult({ ok: false, text: data.error || 'No se pudo probar la conexión' });
+      else if (data.ok) setTestResult({ ok: true, text: `Mercado Pago reconoce la cuenta${data.nickname ? `: ${data.nickname}` : ''}` });
+      else setTestResult({ ok: false, text: data.message || 'Mercado Pago no aceptó el token' });
+    } catch {
+      setTestResult({ ok: false, text: 'No se pudo conectar con el servidor' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async () => {
+    setBusy('delete');
+    setError(null);
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/api/channels/mercadopago`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || 'No se pudo desconectar la cuenta');
+        return;
+      }
+      setTestResult(null);
+      onSaved(data.mercadoPago);
+      notify('success', 'Cuenta de Mercado Pago desconectada');
+    } catch {
+      setError('No se pudo conectar con el servidor');
+    } finally {
+      setBusy(null);
+      setConfirmDelete(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-100 pb-5">
+        <div>
+          <h2 className="text-base lg:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-sky-600" />
+            Cuenta de Mercado Pago de la clínica
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl">
+            Los anticipos de tus pacientes se depositan directo en esta cuenta. Copia el <strong>Access Token de
+            producción</strong> desde Mercado Pago → Tus integraciones → Credenciales de producción (empieza con
+            APP_USR-).
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
+          <Lock className="w-3.5 h-3.5" />
+          Solo administradores · token cifrado
+        </span>
+      </div>
+
+      <label className="space-y-2 block text-sm">
+        <span className="font-semibold text-slate-800 text-xs flex items-center gap-1.5">
+          <KeyRound className="w-3.5 h-3.5 text-teal-600" />
+          Access Token
+        </span>
+        <input
+          type="password"
+          autoComplete="off"
+          className={cn(inputClass, 'font-mono')}
+          value={accessToken}
+          onChange={(e) => setAccessToken(e.target.value)}
+          placeholder={status.tokenLast4 ? `•••• ${status.tokenLast4} (escribe uno nuevo para reemplazarlo)` : 'APP_USR-…'}
+          required
+        />
+      </label>
+
+      {error && (
+        <p role="alert" className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 px-3.5 py-2 rounded-xl">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {error}
+        </p>
+      )}
+      {testResult && (
+        <p
+          role="status"
+          className={cn(
+            'flex items-center gap-2 text-sm px-3.5 py-2 rounded-xl border',
+            testResult.ok ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-800 bg-amber-50 border-amber-200'
+          )}
+        >
+          {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+          {testResult.text}
+        </p>
+      )}
+
+      <div className="pt-5 border-t border-slate-100 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          {hasOwn &&
+            (confirmDelete ? (
+              <span className="flex items-center gap-2 text-xs text-slate-600">
+                ¿Desconectar? Ya no se generarán links de anticipo.
+                <button
+                  type="button"
+                  onClick={remove}
+                  disabled={busy !== null}
+                  className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold disabled:opacity-60"
+                >
+                  {busy === 'delete' ? 'Quitando…' : 'Sí, desconectar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Desconectar cuenta
+              </button>
+            ))}
+        </div>
+        <div className="flex items-center gap-3 justify-end">
+          {hasOwn && (
+            <button
+              type="button"
+              onClick={test}
+              disabled={busy !== null}
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-60 flex items-center gap-2"
+            >
+              {busy === 'test' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
+              Probar conexión
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={busy !== null}
+            className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {busy === 'save' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {busy === 'save' ? 'Conectando…' : hasOwn ? 'Reemplazar token' : 'Conectar cuenta'}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 /** Tarjetas de muestra para el modo Demo: se rotulan como tales, sin métricas inventadas. */
 function DemoCards({ displayPhone }: { displayPhone: string }) {
   const demo: Badge = { tone: 'demo', label: 'Demo' };
@@ -570,12 +783,28 @@ export function ChannelsPanel({
           icon={<CreditCard className="w-5 h-5" />}
           iconClass="bg-sky-50 text-sky-600 border-sky-100"
           title="Mercado Pago"
-          badge={mercadoPago.configured ? { tone: 'ok', label: 'Disponible' } : { tone: 'off', label: 'No disponible aún' }}
+          badge={
+            mercadoPago.source === 'CLINIC'
+              ? mercadoPago.testMode
+                ? { tone: 'warn', label: 'Modo prueba' }
+                : { tone: 'ok', label: 'Cuenta propia' }
+              : !mercadoPago.readable
+                ? { tone: 'warn', label: 'Credenciales ilegibles' }
+                : { tone: 'off', label: 'Sin conectar' }
+          }
+          headline={mercadoPago.source === 'CLINIC' ? mercadoPago.nickname ?? undefined : undefined}
         >
-          {mercadoPago.configured ? (
-            <p>Los links de anticipo se generan con la cuenta de Mercado Pago de la plataforma.</p>
+          {mercadoPago.source === 'CLINIC' ? (
+            <p>
+              Los anticipos se depositan en tu cuenta · token terminado en{' '}
+              <span className="font-mono text-slate-700">{mercadoPago.tokenLast4 ?? '—'}</span>
+              {mercadoPago.testMode && ' · token de prueba: no cobra dinero real'}
+            </p>
           ) : (
-            <p>Los anticipos con Mercado Pago aún no están configurados en este servidor.</p>
+            <p className="text-amber-700">
+              Sin cuenta conectada no se generan links de anticipo: recepción tendrá que cobrarlos por su cuenta.
+              Conéctala abajo.
+            </p>
           )}
         </ChannelCard>
       </div>
@@ -586,6 +815,13 @@ export function ChannelsPanel({
         status={whatsapp}
         notify={notify}
         onSaved={(next) => setStatus((prev) => (prev ? { ...prev, whatsapp: next } : prev))}
+      />
+
+      <MercadoPagoForm
+        key={`${tenantId ?? ''}:mp:${mercadoPago.userId ?? 'nuevo'}`}
+        status={mercadoPago}
+        notify={notify}
+        onSaved={(next) => setStatus((prev) => (prev ? { ...prev, mercadoPago: next } : prev))}
       />
     </div>
   );

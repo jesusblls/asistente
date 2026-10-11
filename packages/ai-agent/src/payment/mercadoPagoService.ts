@@ -1,4 +1,11 @@
-import { db, diffChanges, recordAudit, type AuditActor, type Prisma } from '@asistente/database';
+import {
+  db,
+  decryptCredentials,
+  diffChanges,
+  recordAudit,
+  type AuditActor,
+  type Prisma,
+} from '@asistente/database';
 import { createLogger } from '@asistente/observability';
 import { roundMxn } from '../utils/money.js';
 
@@ -114,6 +121,64 @@ interface MercadoPagoPaymentResponse {
 
 const MP_API_BASE = process.env.MERCADOPAGO_API_BASE || 'https://api.mercadopago.com';
 
+/** Credenciales de la cuenta de Mercado Pago propia de una clínica (`ChannelConfig` MERCADOPAGO). */
+export interface MercadoPagoChannelCredentials {
+  accessToken: string;
+  userId: string;
+  nickname?: string | null;
+}
+
+export const MERCADOPAGO_CHANNEL = 'MERCADOPAGO';
+
+export interface ResolvedMercadoPagoToken {
+  accessToken: string;
+  /** CLINIC: cuenta propia de la clínica · PLATFORM: token global (solo fuera de producción). */
+  source: 'CLINIC' | 'PLATFORM';
+}
+
+/**
+ * Cuenta de Mercado Pago con la que se cobra el anticipo de una clínica.
+ *
+ * El anticipo es dinero del paciente para la clínica: debe caer en la cuenta
+ * de la clínica, no en la de la plataforma (que solo cobra las mensualidades).
+ * Por eso en producción NO hay respaldo al token global: una clínica que no ha
+ * conectado su cuenta simplemente no genera links (ver
+ * `DepositLinkUnavailableError`) y recepción le comparte cómo pagar. Fuera de
+ * producción el token global sigue sirviendo para sandbox y pruebas.
+ */
+export async function resolveMercadoPagoToken(tenantId: string): Promise<ResolvedMercadoPagoToken | null> {
+  const config = await db.channelConfig.findFirst({
+    where: { tenantId, channelType: MERCADOPAGO_CHANNEL, isActive: true },
+    select: { credentials: true },
+  });
+  if (config) {
+    try {
+      const credentials = JSON.parse(decryptCredentials(config.credentials)) as MercadoPagoChannelCredentials;
+      if (credentials.accessToken) return { accessToken: credentials.accessToken, source: 'CLINIC' };
+    } catch (error) {
+      logger.error('Credenciales de Mercado Pago de la clínica ilegibles', error, { tenantId });
+      return null;
+    }
+  }
+
+  const platformToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+  if (platformToken && process.env.NODE_ENV !== 'production') {
+    return { accessToken: platformToken, source: 'PLATFORM' };
+  }
+  return null;
+}
+
+/**
+ * URL a la que Mercado Pago avisa los pagos de los anticipos de una clínica.
+ * Es por clínica porque cada cuenta es distinta: el aviso solo trae el id del
+ * pago, y para consultarlo hay que saber con qué token hacerlo.
+ */
+export function clinicPaymentWebhookUrl(tenantId: string): string | undefined {
+  const host = process.env.PUBLIC_API_HOST?.trim();
+  if (!host) return process.env.MERCADOPAGO_WEBHOOK_URL || undefined;
+  return `https://${host}/webhooks/mercadopago/clinica/${encodeURIComponent(tenantId)}`;
+}
+
 export class MercadoPagoService {
   /**
    * Genera una preferencia de pago (link de cobro de anticipo) para el No-Show Shield en MXN.
@@ -157,13 +222,16 @@ export class MercadoPagoService {
 
     const effectiveServiceName = serviceName || appt.service?.name || 'Consulta Médica/Dental';
     const effectivePatient = patientName || appt.patient?.fullName || 'Paciente';
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    const resolved = await resolveMercadoPagoToken(appt.tenantId);
+    const accessToken = resolved?.accessToken;
 
     // El link simulado solo existe para desarrollo local; en producción sin
-    // credenciales se prefiere no mandar link a mandar uno que no cobra.
+    // la cuenta de la clínica se prefiere no mandar link a mandar uno que no
+    // cobra (o que cobra a la cuenta equivocada).
     if (!accessToken && process.env.NODE_ENV === 'production') {
-      logger.error('MERCADOPAGO_ACCESS_TOKEN ausente en producción: no se generó link de anticipo', undefined, {
+      logger.error('La clínica no tiene Mercado Pago conectado: no se generó link de anticipo', undefined, {
         appointmentId,
+        tenantId: appt.tenantId,
       });
       throw new DepositLinkUnavailableError();
     }
@@ -189,7 +257,10 @@ export class MercadoPagoService {
             },
           ],
           external_reference: appointmentId,
-          notification_url: process.env.MERCADOPAGO_WEBHOOK_URL || undefined,
+          notification_url:
+            resolved?.source === 'CLINIC'
+              ? clinicPaymentWebhookUrl(appt.tenantId)
+              : process.env.MERCADOPAGO_WEBHOOK_URL || undefined,
           metadata: { tenant_id: appt.tenantId, appointment_id: appointmentId },
           payer: patientEmail || appt.patient?.email ? { email: patientEmail || appt.patient?.email } : undefined,
         }),
@@ -284,9 +355,22 @@ export class MercadoPagoService {
    */
   static async processPaymentWebhook(
     payload: PaymentWebhookPayload,
-    auditActor: AuditActor = MERCADOPAGO_WEBHOOK_ACTOR
+    auditActor: AuditActor = MERCADOPAGO_WEBHOOK_ACTOR,
+    options: { tenantId?: string } = {}
   ): Promise<PaymentWebhookOutcome> {
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    // Aviso de la cuenta propia de una clínica: el pago se consulta con SU
+    // token y solo puede acreditar citas de esa clínica. Si la clínica ya no
+    // tiene cuenta conectada, no hay con qué verificar y no se acredita nada.
+    let accessToken: string | undefined;
+    if (options.tenantId) {
+      const resolved = await resolveMercadoPagoToken(options.tenantId);
+      accessToken = resolved?.accessToken;
+      if (!accessToken && process.env.NODE_ENV === 'production') {
+        return ignored('clinica_sin_mercadopago');
+      }
+    } else {
+      accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    }
     const paymentId = payload.data?.id ? String(payload.data.id) : undefined;
     const notificationType = payload.type || payload.topic;
 
@@ -329,6 +413,14 @@ export class MercadoPagoService {
       });
       if (!appointment) {
         return ignored('cita_no_encontrada', appointmentId);
+      }
+      // Un pago de la cuenta de una clínica jamás acredita la cita de otra.
+      if (options.tenantId && appointment.tenantId !== options.tenantId) {
+        logger.error('Pago de la cuenta de una clínica con referencia a la cita de otra', undefined, {
+          tenantId: options.tenantId,
+          paymentId,
+        });
+        return ignored('cita_de_otra_clinica');
       }
 
       const expectedAmount =
@@ -387,10 +479,13 @@ export class MercadoPagoService {
 
     const exists = await db.appointment.findUnique({
       where: { id: targetAppointmentId },
-      select: { id: true },
+      select: { id: true, tenantId: true },
     });
     if (!exists) {
       return ignored('cita_no_encontrada', targetAppointmentId);
+    }
+    if (options.tenantId && exists.tenantId !== options.tenantId) {
+      return ignored('cita_de_otra_clinica');
     }
 
     return { outcome: 'PAID', ...(await this.markDepositAsPaidOnce(targetAppointmentId, auditActor)) };

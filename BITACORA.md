@@ -10,6 +10,72 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-10] feat(payments): cobrar anticipos con el mercado pago de cada clínica
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Decisión del dueño, después de revisar a la competencia: los anticipos de los
+pacientes caían en la cuenta de Mercado Pago **de la plataforma**
+(`MERCADOPAGO_ACCESS_TOKEN` global), aunque es dinero de la clínica. Eso
+obligaba a la plataforma a reembolsar a cada clínica y la volvía intermediaria
+de cobros que no le corresponden. Ahora cada clínica conecta su propia cuenta y
+el dinero va directo ahí.
+
+- **Conexión (Ajustes → Canales, solo ADMIN).** `PUT/POST test/DELETE
+  /api/channels/mercadopago`. El Access Token se guarda cifrado en
+  `ChannelConfig` MERCADOPAGO, nunca se devuelve (solo sus últimos 4) y se
+  audita sin secretos. Antes de guardarlo se verifica con `GET /users/me`:
+  - en producción solo se aceptan tokens `APP_USR-` (dinero real; un `TEST-`
+    generaría links de sandbox que no le pagan a nadie);
+  - se rechaza una cuenta de otro país, que no puede cobrar en MXN.
+- **Cobro.** `createDepositPreference` resuelve el token con
+  `resolveMercadoPagoToken(tenantId)`. **En producción no hay respaldo al
+  token global**: una clínica sin cuenta conectada no genera links
+  (`DepositLinkUnavailableError`, ya manejado: la confirmación dice que
+  recepción compartirá cómo pagar y la cita no se cancela sola). Fuera de
+  producción el token global sigue sirviendo para sandbox.
+- **Aviso de pago por clínica.** La preferencia pide a Mercado Pago avisar a
+  `/webhooks/mercadopago/clinica/:tenantId`. No se valida firma, porque el
+  secreto pertenece a la aplicación de la clínica en Mercado Pago, que la
+  plataforma no tiene. En su lugar no se le cree nada al cuerpo:
+  - solo se usa el id del pago, para consultarlo en Mercado Pago con el token
+    de esa clínica;
+  - solo se acreditan citas de esa misma clínica;
+  - hay rate limit.
+
+  Un aviso falso solo consigue que consultemos un pago que Mercado Pago no le
+  confirma.
+- La ruta global `/webhooks/mercadopago` sigue igual, con firma, para las
+  mensualidades de la plataforma.
+
+### Archivos tocados
+- `packages/ai-agent/src/payment/mercadoPagoService.ts` — `resolveMercadoPagoToken`, `clinicPaymentWebhookUrl`, token por clínica y verificación de clínica en el webhook.
+- `apps/api/src/routes/webhooks.ts` — ruta por clínica y respuesta compartida.
+- `apps/api/src/routes/admin/channels.ts` — conexión, prueba y baja de la cuenta.
+- `apps/web/src/components/dashboard/settings/ChannelsPanel.tsx` — tarjeta y formulario.
+- `apps/api/src/mercadopago-clinic-test-suite.ts` — suite nueva.
+- `.env.example`, `deploy/.env.production.example`.
+
+### Verificación
+- Suite nueva 16/16. Cubre:
+  - solo ADMIN, token cifrado y nunca devuelto, cuenta de otro país rechazada;
+  - la preferencia usa el token de la clínica y su URL de aviso;
+  - el aviso consulta el pago con ese token;
+  - un pago de otra cuenta o que apunta a una cita de otra clínica no acredita
+    nada;
+  - en producción sin cuenta no hay link.
+- `npm run build`, `npm test` 21/21 suites, `npm run test:stress` 44/44, lint
+  de web sin errores nuevos.
+- En el navegador local, con un token falso: el servidor llegó a Mercado Pago
+  real, que lo rechazó; en desarrollo se guarda marcado "sin verificar" y la
+  tarjeta cambia de estado.
+
+### Pendientes derivados
+- Cada clínica debe conectar su cuenta para cobrar anticipos en producción.
+- Más adelante convendría el flujo OAuth de Mercado Pago ("Conectar con
+  Mercado Pago") en lugar de pegar el token.
+
 ## [2026-10-09] feat(webhooks): avisar por correo al personal cuando la ia cede un chat
 
 **Autor:** Claude Opus 5.5 · **Commit:** `3f76a85`
