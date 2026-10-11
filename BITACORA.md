@@ -12,7 +12,7 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ## [2026-10-10] feat(web): portal público para que el paciente agende solo
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `546eed5`
 
 ### Qué se hizo
 Idea tomada de la competencia: un enlace propio de cada clínica
@@ -80,7 +80,7 @@ En Ajustes: interruptor del portal y enlace para copiar.
 
 ## [2026-10-10] feat(webhooks): encuesta post-cita y revisión periódica
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `ec6d77b`
 
 ### Qué se hizo
 Dos funciones que tiene la competencia, adaptadas a nuestra recepcionista
@@ -149,7 +149,7 @@ En Ajustes, cada clínica puede apagar la encuesta y elegir la revisión
 
 ## [2026-10-10] feat(web): resumen del día al abrir el panel
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `c511676`
 
 ### Qué se hizo
 Idea tomada de la competencia (su "briefing" de cada mañana) y adaptada.
@@ -198,7 +198,7 @@ Cada renglón enlaza a la pantalla donde se resuelve.
 
 ## [2026-10-10] feat(payments): cobrar anticipos con el mercado pago de cada clínica
 
-**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+**Autor:** Claude Opus 5.5 · **Commit:** `1cfa73a`
 
 ### Qué se hizo
 Decisión del dueño, después de revisar a la competencia: los anticipos de los
