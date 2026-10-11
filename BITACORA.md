@@ -10,6 +10,55 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-10] feat(web): resumen del día al abrir el panel
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Idea tomada de la competencia (su "briefing" de cada mañana) y adaptada.
+Recepción empezaba el día recorriendo la agenda y la bandeja para saber qué
+había pendiente. Ahora el inicio del panel abre con una tarjeta "Tu día":
+- citas de hoy y cuántas quedan;
+- la próxima cita (hora, paciente y tratamiento) y las de mañana;
+- primeras visitas;
+- anticipos pendientes, con su monto;
+- chats que esperan a recepción y mensajes que no se entregaron en las
+  últimas 24 h, en rojo;
+- cuántas citas agendó el asistente en la semana.
+
+Cada renglón enlaza a la pantalla donde se resuelve.
+
+- **Datos, no IA.** La competencia lo hace con un modelo de lenguaje.
+  Aquí cada cifra sale de una consulta (`GET /api/summary/today`), así que
+  no puede "resumir" algo que no pasó.
+- **"Hoy" se corta en la zona de la clínica** (CDMX), no del servidor, que
+  corre en UTC: a las 7 p. m. de la CDMX el servidor ya va en el día
+  siguiente.
+- **Primera visita:** paciente sin visitas previas. Una cita pasada
+  cancelada o de no-show no cuenta como visita, y la prueba lo cubre.
+- **Auditoría:** leer el resumen expone nombres de pacientes, así que queda
+  en la bitácora como una consulta de agenda.
+- **Demo:** en modo Demo la tarjeta muestra un ejemplo rotulado como tal.
+
+### Archivos tocados
+- `apps/api/src/routes/admin/summary.ts` (nuevo), `routes/admin/index.ts`, `apps/api/package.json` (`date-fns`, `date-fns-tz`).
+- `apps/api/src/summary-test-suite.ts` (nuevo).
+- `apps/web/src/components/dashboard/TodaySummary.tsx` (nuevo), `apps/web/src/app/dashboard/page.tsx`.
+
+### Verificación
+- Suite nueva 9/9. Cubre:
+  - corte del día en la CDMX y cita de ayer a las 23:30 excluida;
+  - canceladas excluidas;
+  - primera visita con historial cancelado;
+  - anticipos pendientes, chats en espera y próxima cita;
+  - 403 para otra clínica.
+
+  Los horarios de la prueba no dependen de la hora en que corre.
+- `npm run build`, `npm test`, lint sin errores nuevos.
+- En el navegador local, en escritorio y a 375 px sin scroll horizontal. Ahí
+  apareció y se corrigió el saludo "Dra.." (tomaba solo la primera palabra
+  del nombre).
+
 ## [2026-10-10] feat(payments): cobrar anticipos con el mercado pago de cada clínica
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

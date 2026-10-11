@@ -20,6 +20,7 @@ import { useTenant } from '../../context/TenantContext';
 import { API_BASE_URL, apiFetch } from '../../lib/api';
 import { formatMexicanPhone } from '../../lib/format';
 import { usePolling } from '../../hooks/usePolling';
+import { TodaySummary } from '../../components/dashboard/TodaySummary';
 
 const STATUS_LABELS: Record<string, string> = {
   CONFIRMED: 'Confirmada',
@@ -330,6 +331,8 @@ export default function DashboardOverviewPage() {
           </Link>
         </div>
       </div>
+
+      <TodaySummary isDemo={mode === 'demo'} tenantId={activeTenantId} refreshKey={dataVersion} />
 
       {/* Aviso de error de sincronización (no se inventan datos si la API falla) */}
       {mode === 'live' && liveError && (
