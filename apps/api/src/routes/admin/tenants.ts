@@ -387,6 +387,7 @@ export async function tenantRoutes(fastify: FastifyInstance) {
           ),
         }),
         ...(typeof body.surveyEnabled === 'boolean' && { surveyEnabled: body.surveyEnabled }),
+        ...(typeof body.publicBookingEnabled === 'boolean' && { publicBookingEnabled: body.publicBookingEnabled }),
         ...(body.recallMonths !== undefined && { recallMonths: body.recallMonths as number | null }),
       };
 

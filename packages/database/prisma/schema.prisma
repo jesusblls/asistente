@@ -21,6 +21,8 @@ model Tenant {
   /// Meses tras la última visita para invitar al paciente a su revisión
   /// (limpieza semestral). null = desactivado.
   recallMonths          Int?              @default(6)
+  /// Portal público de citas (/agenda/<slug>) donde el paciente agenda solo.
+  publicBookingEnabled  Boolean           @default(true)
   isActive              Boolean           @default(true)
 
   /// Plan contratado: trial | consultorio | clinica-pro | cadenas.

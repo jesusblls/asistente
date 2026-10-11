@@ -189,6 +189,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   MESSENGER: 'Messenger',
   PHONE_CALL: 'Llamada',
   WEBCHAT: 'Webchat',
+  WEB_PORTAL: 'Portal de citas',
 };
 
 function StatusBadge({ status }: { status: string }) {

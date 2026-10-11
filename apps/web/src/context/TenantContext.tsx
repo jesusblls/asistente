@@ -39,6 +39,7 @@ export interface TenantItem {
   welcomeMessage?: string | null;
   emergencyInstructions?: string | null;
   surveyEnabled?: boolean;
+  publicBookingEnabled?: boolean;
   recallMonths?: number | null;
 }
 

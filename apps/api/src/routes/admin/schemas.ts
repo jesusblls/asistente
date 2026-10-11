@@ -48,6 +48,7 @@ export const updateTenantSchema = {
       welcomeMessage: { type: 'string', maxLength: 1000 },
       emergencyInstructions: { type: 'string', maxLength: 1000 },
       surveyEnabled: { type: 'boolean' },
+      publicBookingEnabled: { type: 'boolean' },
       // null apaga la invitación a revisión periódica.
       recallMonths: { type: ['integer', 'null'], minimum: 1, maximum: 24 },
     },
@@ -129,7 +130,7 @@ export const createAppointmentSchema = {
       symptoms: { type: 'string', maxLength: 1000 },
       channelOrigin: {
         type: 'string',
-        enum: ['WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'PHONE_CALL', 'WEBCHAT'],
+        enum: ['WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'PHONE_CALL', 'WEBCHAT', 'WEB_PORTAL'],
       },
       tenantId: { type: 'string' },
     },

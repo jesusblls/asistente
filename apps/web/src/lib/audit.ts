@@ -125,6 +125,7 @@ const CHANNEL_INLINE: Record<string, string> = {
   INSTAGRAM: 'Instagram',
   MESSENGER: 'Messenger',
   WEBCHAT: 'chat web',
+  WEB_PORTAL: 'el portal de citas',
 };
 
 const CHANNEL_TITLE: Record<string, string> = {
@@ -133,6 +134,7 @@ const CHANNEL_TITLE: Record<string, string> = {
   INSTAGRAM: 'Instagram',
   MESSENGER: 'Messenger',
   WEBCHAT: 'Chat web',
+  WEB_PORTAL: 'Portal de citas',
 };
 
 const STATUS_LABELS: Record<string, string> = {

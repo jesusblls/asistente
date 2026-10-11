@@ -299,6 +299,12 @@ export class SchedulerService {
      * ninguna si el nuevo horario ya no está libre.
      */
     replacesAppointmentId?: string;
+    /**
+     * No renombrar a un paciente que ya existe con ese teléfono. Lo usa el
+     * portal público: ahí nadie está identificado, y sin esto cualquiera
+     * podría cambiar el nombre de un paciente escribiendo su teléfono.
+     */
+    keepExistingPatientName?: boolean;
   }) {
     const {
       tenantId,
@@ -312,6 +318,7 @@ export class SchedulerService {
       auditActor,
       auditMetadata,
       replacesAppointmentId,
+      keepExistingPatientName = false,
     } = params;
 
     const patientPhoneE164 = normalizeMexicanPhone(patientPhone);
@@ -434,7 +441,7 @@ export class SchedulerService {
 
       let patient;
       if (existingPatient) {
-        if (existingPatient.fullName !== patientFullName) {
+        if (!keepExistingPatientName && existingPatient.fullName !== patientFullName) {
           patient = await tx.patient.update({
             where: { id: existingPatient.id },
             data: { fullName: patientFullName },

@@ -10,6 +10,74 @@ debe tener su entrada aquí. Las entradas más recientes van arriba.
 
 ---
 
+## [2026-10-10] feat(web): portal público para que el paciente agende solo
+
+**Autor:** Claude Opus 5.5 · **Commit:** `pendiente`
+
+### Qué se hizo
+Idea tomada de la competencia: un enlace propio de cada clínica
+(`/agenda/<slug>`) que puede compartir en Instagram, Google Maps o su sitio.
+El paciente elige el tratamiento (con precio y anticipo), el especialista (o
+"el primero disponible"), el día y un horario libre, y deja nombre y celular.
+La confirmación le llega por WhatsApp con el link de anticipo si aplica, la
+misma que manda el chat. Reutiliza todo lo que ya existía: horarios libres,
+reglas de agenda, anticipos, confirmación y recordatorios.
+
+Son las únicas rutas de `/api` sin sesión (`/api/public/clinics/:slug…`,
+registradas fuera de `adminRoutes`), así que se diseñaron para exponer lo
+mínimo:
+- **Qué clínica se publica.** Solo activas, no suspendidas, con onboarding
+  terminado y el portal encendido (`Tenant.publicBookingEnabled`, migración
+  0010). Cualquier otro caso responde 404, igual que un slug inexistente.
+- **Qué se publica.** Solo el catálogo (nombre, dirección, teléfono,
+  servicios y doctores) y los horarios libres, sin decir quién ocupa los
+  demás. Nada de pacientes.
+- **Agendar.** Pasa por `SchedulerService.bookAppointment`, con horario del
+  doctor, choques, cupo del plan, clínica y auditoría (actor ANONYMOUS,
+  canal `WEB_PORTAL`).
+- **Hueco cerrado.** `bookAppointment` renombraba a un paciente existente si
+  el nombre no coincidía. Desde un portal anónimo, cualquiera podía cambiar
+  el nombre de un paciente escribiendo su teléfono. Nueva opción
+  `keepExistingPatientName` que el portal siempre usa.
+- **Contra abuso:**
+  - 5 envíos por hora por IP;
+  - campo trampa para bots, que responde "ok" sin delatarse;
+  - máximo 2 citas futuras en línea por celular;
+  - fechas solo dentro de 60 días;
+  - la confirmación va al celular capturado, así que quien use un teléfono
+    ajeno no ve nada de vuelta.
+- **Consentimiento.** Casilla de aviso de privacidad obligatoria (LFPDPPP).
+
+En Ajustes: interruptor del portal y enlace para copiar.
+
+### Archivos tocados
+- `packages/database/prisma/schema.prisma`, `migrations/0010_public_booking/`.
+- `packages/ai-agent/src/calendar/scheduler.ts` — `keepExistingPatientName`.
+- `apps/api/src/routes/publicBooking.ts` (nuevo), `apps/api/src/server.ts`.
+- `apps/api/src/routes/admin/schemas.ts`, `tenants.ts` — `publicBookingEnabled`, canal `WEB_PORTAL`.
+- `apps/web/src/app/agenda/[slug]/page.tsx` (nuevo).
+- `apps/web/src/app/dashboard/settings/page.tsx`, `context/TenantContext.tsx`, `dashboard/patients/page.tsx`, `lib/audit.ts` — interruptor, enlace y etiqueta del canal.
+- `apps/api/src/public-booking-test-suite.ts` (nuevo).
+
+### Verificación
+- `prisma migrate diff` vacío.
+- Suite nueva 19/19. Cubre:
+  - catálogo sin pacientes; 404 por slug inexistente, portal apagado u
+    onboarding incompleto;
+  - horarios y fechas lejanas;
+  - privacidad, celular inválido, bot, servicio de otra clínica;
+  - reserva con canal, auditoría ANONYMOUS y confirmación encolada;
+  - horario tomado, no renombrar, tope por celular y límite por IP.
+- `npm run build`, `npm test` 24/24 suites, `npm run test:stress` 44/44, e2e
+  13/13, lint sin errores nuevos.
+- En el navegador local se agendó una cita completa. Ahí se corrigieron las
+  mayúsculas de la fecha ("12 De Octubre") y la etiqueta accesible de los
+  botones de hora, que anunciaba al doctor y no la hora.
+
+### Pendientes derivados
+- Verificación del celular con código (OTP por WhatsApp) para cerrar del
+  todo el uso de teléfonos ajenos; por ahora lo frenan los límites.
+
 ## [2026-10-10] feat(webhooks): encuesta post-cita y revisión periódica
 
 **Autor:** Claude Opus 5.5 · **Commit:** `pendiente`

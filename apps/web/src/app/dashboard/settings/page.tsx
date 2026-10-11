@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   PhoneCall,
   MessageSquare,
@@ -29,6 +29,40 @@ const DEMO_SETTINGS = {
     'En caso de traumatismo facial grave, pérdida de conciencia o dolor incapacitante, indicar al paciente acudir al Hospital Español de inmediato o marcar al 911.',
 };
 
+function PortalLink({ slug, notify }: { slug: string; notify: (tone: 'success' | 'error', text: string) => void }) {
+  const [origin, setOrigin] = useState('');
+  useEffect(() => {
+    queueMicrotask(() => setOrigin(window.location.origin));
+  }, []);
+  const url = `${origin}/agenda/${slug}`;
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+      <a
+        href={`/agenda/${slug}`}
+        target="_blank"
+        rel="noreferrer"
+        className="flex-1 font-mono text-xs text-teal-800 bg-white border border-teal-200 rounded-lg px-3 py-2 truncate hover:underline"
+      >
+        {url}
+      </a>
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            notify('success', 'Enlace del portal copiado');
+          } catch {
+            notify('error', 'No se pudo copiar; selecciónalo y cópialo a mano');
+          }
+        }}
+        className="px-3 py-2 rounded-lg text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white"
+      >
+        Copiar enlace
+      </button>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { mode, setMode, activeTenant, updateTenant, refreshTenants } = useTenant();
 
@@ -46,6 +80,7 @@ export default function SettingsPage() {
       'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
  
     surveyEnabled: activeTenant?.surveyEnabled ?? true,
+    publicBookingEnabled: activeTenant?.publicBookingEnabled ?? true,
     recallMonths: activeTenant?.recallMonths === undefined ? 6 : activeTenant.recallMonths,
   }));
 
@@ -63,6 +98,7 @@ export default function SettingsPage() {
         'En caso de traumatismo facial grave, pérdida de conciencia o dificultad para respirar, indicar al paciente acudir de inmediato al hospital más cercano o marcar al 911.',
 
       surveyEnabled: activeTenant.surveyEnabled ?? true,
+      publicBookingEnabled: activeTenant.publicBookingEnabled ?? true,
       recallMonths: activeTenant.recallMonths === undefined ? 6 : activeTenant.recallMonths,
     });
   }
@@ -101,6 +137,7 @@ export default function SettingsPage() {
         welcomeMessage: formData.welcomeMessage.trim(),
         emergencyInstructions: formData.emergencyInstructions.trim(),
         surveyEnabled: formData.surveyEnabled,
+        publicBookingEnabled: formData.publicBookingEnabled,
         recallMonths: formData.recallMonths,
       };
 
@@ -449,6 +486,29 @@ export default function SettingsPage() {
               Cuando el motor de triaje detecta signos de emergencia médica o dolor severo incapacitante, activa de inmediato este protocolo e instruye al paciente acudir al hospital de urgencias o marcar al 911.
             </p>
           </div>
+        </div>
+
+        {/* Portal público de citas */}
+        <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-4 space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              checked={isDemo ? true : formData.publicBookingEnabled}
+              disabled={isDemo}
+              onChange={(e) => setFormData((prev) => ({ ...prev, publicBookingEnabled: e.target.checked }))}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-800">Portal de citas en línea</span>
+              <span className="block text-xs text-slate-500 mt-1 leading-relaxed">
+                Tus pacientes eligen tratamiento, especialista y horario libre, y reciben la confirmación (y el link de
+                anticipo, si aplica) por WhatsApp. Compártelo en tu Instagram, Google Maps o sitio web.
+              </span>
+            </span>
+          </label>
+          {!isDemo && activeTenant?.slug && formData.publicBookingEnabled && (
+            <PortalLink slug={activeTenant.slug} notify={notify} />
+          )}
         </div>
 
         {/* Seguimiento después de la cita */}

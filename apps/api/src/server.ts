@@ -20,6 +20,7 @@ import type { EmailSender } from './services/emailService.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { voiceRoutes } from './routes/voice.js';
 import { adminRoutes } from './routes/admin.js';
+import { publicBookingRoutes } from './routes/publicBooking.js';
 
 export interface BuildServerOptions {
   logger?: boolean | Record<string, unknown>;
@@ -253,6 +254,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 
   await server.register(webhookRoutes);
   await server.register(voiceRoutes);
+  // Portal público de citas: fuera de `adminRoutes`, que exige sesión.
+  await server.register(publicBookingRoutes);
   await server.register(adminRoutes);
 
   if (options.startQueueWorker) {
